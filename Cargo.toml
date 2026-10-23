@@ -1,0 +1,16 @@
+[package]
+name = "ikigai-ui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+resolver = "3"
+license = "MIT OR Apache-2.0"
+description = "The shared UI path for ikigai hosts, as resources: vendored htmx, the token stylesheet, the shell script and the page shell, compiled in or overridden from a directory, plus the UI test kit."
+authors = ["Brian Sletten <brian.sletten@gmail.com>"]
+repository = "https://github.com/ikigai-rs/ikigai-ui"
+homepage = "https://github.com/ikigai-rs/ikigai-ui"
+readme = "README.md"
+keywords = ["ikigai", "roc", "htmx", "ui", "module"]
+categories = ["web-programming", "wasm"]
+
+[dependencies]
