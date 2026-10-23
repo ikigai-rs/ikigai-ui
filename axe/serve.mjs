@@ -9,6 +9,15 @@
 // (`site.push.cut(paths)`, `site.push.resync()`; `site.push.streams()` lists each open stream's
 // `path=` subscriptions). `/_live/count` is the live demo view's answer: the view, with a count
 // that rises on each read, or a 500 while `site.live.fail` is set.
+//
+// For the timing checks it can also hold things at exact moments: `site.push.refuse = text`
+// answers the stream with a 400 and that text, as an edge does past `max_subscriptions`;
+// `site.push.hold()` keeps every stream opened after it unregistered and silent (no `ready`, no
+// cuts) until `site.push.release()`, which is the gap between a page closing one stream and its
+// next one listening. `/_live/view/{id}` is a further live view the test configures with
+// `site.live.views[id] = { push, attrs }` (its `data-ui-push` and any more attributes): each read
+// is counted in `site.live.reads[id]`, and while `site.live.views[id].hold` is set a read waits
+// (`site.live.waiting[id]` counts them) until `site.live.release(id)`.
 import { createServer } from "node:http";
 import { readFile, readdir } from "node:fs/promises";
 import { join, extname, resolve, sep } from "node:path";
@@ -17,6 +26,8 @@ export const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
   "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; " +
   "object-src 'none'";
+
+const READY = "retry: 2000\n\nevent: ready\nid: 0\ndata: {}\n\n";
 
 const BY_EXTENSION = {
   ".html": "text/html; charset=utf-8",
@@ -47,7 +58,22 @@ export async function serve(dir) {
     types = {};
   }
   const streams = new Set();
-  const live = { count: 0, fail: false };
+  const held = [];
+  const live = {
+    count: 0,
+    fail: false,
+    views: {},
+    reads: {},
+    waiting: {},
+    gates: {},
+    release: (id) => {
+      const gates = live.gates[id] || [];
+      live.gates[id] = [];
+      live.waiting[id] = 0;
+      if (live.views[id]) live.views[id].hold = false;
+      for (const open of gates) open();
+    },
+  };
   const send = (frame) => {
     for (const s of streams) s.res.write(frame);
   };
@@ -56,20 +82,65 @@ export async function serve(dir) {
     cut: (paths) =>
       send(`event: cut\ndata: ${JSON.stringify({ thread: "urn:test:thread", sequence: 1, invalidated: [], more: 0, paths })}\n\n`),
     resync: () => send(`event: resync\ndata: {"reason":"dropped","dropped":1}\n\n`),
+    refuse: null,
+    holding: false,
+    hold: () => {
+      push.holding = true;
+    },
+    held: () => held.length,
+    release: () => {
+      push.holding = false;
+      for (const stream of held.splice(0)) {
+        if (stream.res.writableEnded || stream.res.destroyed) continue;
+        stream.res.write(READY);
+        streams.add(stream);
+      }
+    },
   };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     const path = decodeURIComponent(url.pathname);
     if (path === "/_push") {
+      if (push.refuse !== null) {
+        res.writeHead(400, { "content-type": "text/plain", "content-security-policy": CSP }).end(push.refuse);
+        return;
+      }
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-store",
         "content-security-policy": CSP,
       });
-      res.write("retry: 2000\n\nevent: ready\nid: 0\ndata: {}\n\n");
       const stream = { res, paths: url.searchParams.getAll("path") };
+      req.on("close", () => {
+        streams.delete(stream);
+        const at = held.indexOf(stream);
+        if (at >= 0) held.splice(at, 1);
+      });
+      if (push.holding) {
+        // Headers only: the page's EventSource is open and hears nothing yet.
+        res.flushHeaders();
+        held.push(stream);
+        return;
+      }
+      res.write(READY);
       streams.add(stream);
-      req.on("close", () => streams.delete(stream));
+      return;
+    }
+    const view = /^\/_live\/view\/([a-z0-9-]+)$/.exec(path);
+    if (view && live.views[view[1]]) {
+      const id = view[1];
+      const spec = live.views[id];
+      if (spec.hold) {
+        live.waiting[id] = (live.waiting[id] || 0) + 1;
+        await new Promise((ok) => (live.gates[id] = [...(live.gates[id] || []), ok]));
+      }
+      live.reads[id] = (live.reads[id] || 0) + 1;
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": CSP })
+        .end(
+          `<div id="${id}" hx-get="/_live/view/${id}" hx-trigger="ikigai:cut" hx-swap="outerHTML" ` +
+            `data-ui-push="${spec.push || ""}" ${spec.attrs || ""}>${id} ${live.reads[id]}</div>`,
+        );
       return;
     }
     if (path === "/_live/count") {
@@ -113,8 +184,10 @@ export async function serve(dir) {
     live,
     close: () =>
       new Promise((ok) => {
-        for (const s of streams) s.res.end();
+        for (const s of [...streams, ...held]) s.res.end();
         streams.clear();
+        held.length = 0;
+        for (const id of Object.keys(live.gates)) live.release(id);
         server.closeAllConnections();
         server.close(ok);
       }),

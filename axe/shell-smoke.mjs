@@ -210,6 +210,98 @@ await check("a page with no live view opens no stream", async (page) => {
   if (site.push.streams().length > opened) return "a page with no live view opened a stream";
 });
 
+// ---- the three timing and visibility gaps (ledger #2151), each driven at an exact moment ------
+const until = async (test, what) => {
+  for (let i = 0; i < 50; i += 1) {
+    if (test()) return null;
+    await new Promise((ok) => setTimeout(ok, 100));
+  }
+  return what;
+};
+
+// The same sequence for a view whose indicator is itself (htmx's default, which the class check
+// already covered) and for one whose indicator is elsewhere: the first is the harness's control.
+for (const [name, indicator] of [["self", ""], ["elsewhere", 'hx-indicator="#spin"']]) {
+  await check(`a cut during a refetch is sent again (indicator ${name})`, async (page) => {
+    await page.goto(live);
+    if (!(await subscribed(["/_live/count"]))) return "no stream";
+    const id = `ind-${name}`;
+    site.live.views[id] = { push: "/_live/count", attrs: indicator };
+    site.live.reads[id] = 0;
+    await add(
+      page,
+      `<span id="spin">working</span><div id="${id}" hx-get="/_live/view/${id}" hx-trigger="ikigai:cut" ` +
+        `hx-swap="outerHTML" ${indicator} data-ui-push="/_live/count">${id} 0</div>`,
+    );
+    site.live.views[id].hold = true;
+    site.push.cut(["/_live/count"]);
+    if (await until(() => site.live.waiting[id] === 1, "x")) return "the first refetch never left";
+    // The second cut lands while the first refetch is still on the wire.
+    const counted = site.live.count;
+    site.push.cut(["/_live/count"]);
+    await page.waitForTimeout(300);
+    // The neighbor on the same path takes that cut once; a held cut never loops through it.
+    const neighbor = site.live.count - counted;
+    site.live.release(id);
+    if (neighbor !== 1) return `the neighbor view refetched ${neighbor} times for one cut`;
+    if (await until(() => site.live.reads[id] >= 2, "x")) return `the held cut was dropped: ${site.live.reads[id]} read(s)`;
+  });
+}
+
+await check("a stream reopened for a new path set misses no cut in the gap", async (page) => {
+  await page.goto(live);
+  if (!(await subscribed(["/_live/count"]))) return "no stream";
+  const before = await countText(page);
+  site.live.views.more = { push: "/_live/more" };
+  site.push.hold();
+  try {
+    // A view that loads itself: its swap changes the declared paths, so the stream reopens.
+    await add(page, '<div id="more" hx-get="/_live/view/more" hx-trigger="load" hx-swap="outerHTML" data-ui-push="/_live/more"></div>');
+    const reopened = await until(
+      () => site.push.held() === 1 && !site.push.streams().some((s) => s.includes("/_live/count")),
+      `the stream did not reopen: open ${JSON.stringify(site.push.streams())}, held ${site.push.held()}`,
+    );
+    if (reopened) return reopened;
+    // Nobody is listening now: the old stream is closed and the new one is not registered yet.
+    site.push.cut(["/_live/count"]);
+  } finally {
+    site.push.release();
+  }
+  if (!(await subscribed(["/_live/count", "/_live/more"]))) return `not resubscribed: ${JSON.stringify(site.push.streams())}`;
+  const changed = await page
+    .waitForFunction((b) => document.getElementById("count-focus").textContent !== b, before, { timeout: 3000 })
+    .then(() => true, () => false);
+  if (!changed) return "the cut in the gap was missed";
+});
+
+await check("a refused stream is said once in #status, and only then", async (page) => {
+  site.push.refuse = "3 subscriptions; a stream carries at most 2";
+  try {
+    await page.goto(live);
+    await page.locator("#status p.ui-note").waitFor({ timeout: 5000 });
+    await page.waitForTimeout(500);
+    const notes = await page.locator("#status p.ui-note").count();
+    if (notes !== 1) return `${notes} notes in #status`;
+    if ((await page.locator("#main p.ui-note").count()) !== 0) return "a note in #main";
+    // A new path set opens a new stream, refused too: the note stands, never said again.
+    await page.evaluate(() => (window.__note = document.querySelector("#status p.ui-note")));
+    site.live.views.refused = { push: "/_live/refused" };
+    const opened = site.live.reads.refused || 0;
+    await add(page, '<div id="refused" hx-get="/_live/view/refused" hx-trigger="load" hx-swap="outerHTML" data-ui-push="/_live/refused"></div>');
+    if (await until(() => (site.live.reads.refused || 0) > opened, "x")) return "the new view never loaded";
+    await page.waitForTimeout(500);
+    const same = await page.evaluate(() => document.querySelector("#status p.ui-note") === window.__note);
+    if (!same) return "a second refusal was said again";
+  } finally {
+    site.push.refuse = null;
+  }
+  // An accepted stream says nothing.
+  await page.goto(live);
+  if (!(await subscribed(["/_live/count"]))) return "no stream";
+  await page.waitForTimeout(300);
+  if ((await page.textContent("#status")) !== "") return "an accepted stream wrote to #status";
+});
+
 await browser.close();
 await site.close();
 console.log(`${failures} failure(s)`);

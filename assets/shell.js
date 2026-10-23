@@ -28,8 +28,16 @@
 //    sends it to all of them, so a live view says hx-trigger="ikigai:cut" and htmx refetches
 //    it. Its own requests are quiet, like [data-ui-quiet]'s, and focus is kept (4). A cut that
 //    arrives while the element's request is in flight is not dropped: it is sent again once
-//    that request settles. After every swap the declared paths are read again, and the stream
-//    is reopened only when they changed. Nothing from the stream is parsed as markup.
+//    that request settles. In flight is tracked on the element itself, from htmx:beforeSend to
+//    htmx:afterRequest, not only by htmx's htmx-request class, which htmx puts on the
+//    INDICATOR (so a view with hx-indicator elsewhere would look idle). After every swap the
+//    declared paths are read again, and the stream is reopened only when they changed; a
+//    reopened stream refetches every view once its `ready` arrives, because a cut between the
+//    old stream closing and the new one listening was heard by nobody. (A new EventSource
+//    cannot send Last-Event-ID, and the door answers one with a resync anyway: it keeps no
+//    history.) A stream the door refuses (a 400 past its subscription bound) is said once in
+//    #status; a stream that is only reconnecting says nothing. Nothing from the stream is
+//    parsed as markup.
 (function () {
   "use strict";
   var KEY = "ikigai-ui:theme";
@@ -175,7 +183,12 @@
   // ---- 5. live views ----------------------------------------------------------------------------
   var stream = null;
   var subscribed = "";
-  var pending = {};
+  // The live views a cut reached while their own request was in flight: [{ el, paths }].
+  var pending = [];
+  // In flight, kept on the element itself (htmx's htmx-request class goes on the INDICATOR).
+  var inFlight = new WeakSet();
+  var sentBy = new WeakMap();
+  var refusalSaid = false;
   function pushUrl() {
     var meta = document.querySelector('meta[name="ikigai-ui-push"]');
     return meta && meta.getAttribute("content");
@@ -189,21 +202,42 @@
     return Array.prototype.slice.call(document.querySelectorAll("[data-ui-push]"));
   }
   function busy(el) {
-    return el.classList && el.classList.contains("htmx-request");
+    return inFlight.has(el);
   }
+  // beforeSend, not beforeRequest: a request another handler cancels is never sent and never
+  // reaches afterRequest, so marking it at beforeRequest would hold its cuts forever.
+  document.addEventListener("htmx:beforeSend", function (e) {
+    var d = e.detail || {};
+    if (!d.elt || !d.elt.hasAttribute || !d.elt.hasAttribute("data-ui-push")) return;
+    inFlight.add(d.elt);
+    if (d.xhr) sentBy.set(d.xhr, d.elt);
+  });
+  // afterRequest names the element only while it is in the document (after an outerHTML swap
+  // it names the parent, measured), so the request is matched by its xhr.
+  document.addEventListener("htmx:afterRequest", function (e) {
+    var d = e.detail || {};
+    var elt = (d.xhr && sentBy.get(d.xhr)) || d.elt;
+    if (elt) inFlight["delete"](elt);
+  });
   function cut(el) {
     el.dispatchEvent(new CustomEvent("ikigai:cut"));
   }
   // Every view that declared one of `paths` (every view, for null) is refetched now, or once its
-  // request in flight settles.
+  // request in flight settles. What is held is the VIEW, not its paths: holding paths would
+  // send the cut again to every other view on them, whose refetch would hold it again, a loop
+  // for as long as the request is out.
   function refresh(paths) {
     views().forEach(function (el) {
       var mine = declared(el);
       var hit = paths === null || mine.some(function (p) { return paths.indexOf(p) >= 0; });
       if (!hit) return;
-      if (busy(el)) mine.forEach(function (p) { pending[p] = true; });
+      if (busy(el)) hold(el, mine);
       else cut(el);
     });
+  }
+  function hold(el, paths) {
+    for (var i = 0; i < pending.length; i += 1) if (pending[i].el === el) return;
+    pending.push({ el: el, paths: paths });
   }
   function subscribe() {
     var url = pushUrl();
@@ -217,12 +251,29 @@
     var key = url && paths.length && window.EventSource ? url + "\n" + paths.join("\n") : "";
     if (key === subscribed) return;
     subscribed = key;
+    var reopened = !!stream;
     if (stream) stream.close();
     stream = null;
     if (!key) return;
     var query = paths.map(function (p) { return "path=" + encodeURIComponent(p); }).join("&");
-    stream = new EventSource(url + (url.indexOf("?") >= 0 ? "&" : "?") + query);
-    stream.addEventListener("cut", function (e) {
+    var opened = new EventSource(url + (url.indexOf("?") >= 0 ? "&" : "?") + query);
+    stream = opened;
+    if (reopened) {
+      // The gap between the old stream and this one ends at this one's first `ready`.
+      var gap = function () {
+        opened.removeEventListener("ready", gap);
+        if (stream === opened) refresh(null);
+      };
+      opened.addEventListener("ready", gap);
+    }
+    opened.addEventListener("error", function () {
+      // CLOSED is EventSource giving up (a refusal: a 4xx, a wrong media type); CONNECTING is
+      // an ordinary reconnect, which is quiet.
+      if (opened.readyState !== 2 || stream !== opened || refusalSaid) return;
+      refusalSaid = true;
+      status("Live updates are off: the server refused this page's update stream. Reload to see changes.", false);
+    });
+    opened.addEventListener("cut", function (e) {
       var event = null;
       try {
         event = JSON.parse(e.data);
@@ -233,22 +284,43 @@
       // An event this script cannot read is treated as a resync: refetching too much is safe.
       refresh(named);
     });
-    stream.addEventListener("resync", function () {
+    opened.addEventListener("resync", function () {
       refresh(null);
     });
   }
   document.addEventListener("DOMContentLoaded", subscribe);
-  function flush() {
-    var again = Object.keys(pending);
-    pending = {};
-    if (again.length) refresh(again);
+  // Send each held cut whose request is done. A view still in the document gets it now. A view
+  // its own swap replaced gets it through its replacement (the element with its id), and only
+  // once THAT swap has settled (`settled` names its target): before then htmx has not wired the
+  // new element, and an event sent to it is lost (measured). A replaced view with nothing of
+  // its id left in the document is dropped; its content is gone. So a live view that swaps
+  // outerHTML wants an id.
+  function flush(settled) {
+    var held = pending;
+    pending = [];
+    held.forEach(function (h) {
+      if (busy(h.el)) return pending.push(h);
+      if (document.contains(h.el)) return cut(h.el);
+      if (!h.el.id) {
+        // Without an id the replacement cannot be told apart: after a settle, its paths are
+        // refetched, which may refetch a neighbor too. Refetching too much is safe.
+        if (!settled) return pending.push(h);
+        return refresh(h.paths);
+      }
+      var next = document.getElementById(h.el.id);
+      if (!next) return;
+      if (!settled || (settled !== h.el && settled.id !== h.el.id)) return pending.push(h);
+      if (next.hasAttribute("data-ui-push")) cut(next);
+    });
   }
   // A failed request swaps nothing and never settles, so a held cut is also sent after it.
   document.addEventListener("htmx:afterRequest", function () {
-    window.setTimeout(flush, 0);
+    window.setTimeout(function () {
+      flush(null);
+    }, 0);
   });
-  document.addEventListener("htmx:afterSettle", function () {
-    flush();
+  document.addEventListener("htmx:afterSettle", function (e) {
+    flush((e.detail && e.detail.target) || null);
     subscribe();
   });
   window.addEventListener("pagehide", function () {
