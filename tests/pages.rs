@@ -22,10 +22,12 @@ fn the_pages_match_their_snapshots() {
             )
         })
         .collect();
-    rendered.push((
-        "about.html".into(),
-        text(&kernel, "urn:demo:page:about", &[]),
-    ));
+    for name in ["about", "live"] {
+        rendered.push((
+            format!("{name}.html"),
+            text(&kernel, &format!("urn:demo:page:{name}"), &[]),
+        ));
+    }
     rendered.push((
         "tokens.css".into(),
         text(&kernel, ikigai_ui::TOKENS_CSS, &[]),
@@ -121,14 +123,129 @@ fn two_families_share_one_kernel() {
 }
 
 #[test]
-fn a_page_name_reaches_the_fragment_as_one_segment() {
-    // Pinned on purpose: compose percent-encodes a template argument in an IRI as one segment,
-    // so `a:b` arrives as `a%3Ab` (see `ikigai_ui::pages`).
+fn a_page_name_reaches_the_fragment_whole() {
+    // `{+name}` (ikigai-fn 0.5.1): `page:a:b` shows `fragment:a:b` and `title:a:b`, in the
+    // host's own spelling, with no percent-encoding to undo (ledger #2140).
+    let fixed = |id: &str, body: &'static str| {
+        ikigai_core::FnEndpoint::new(id, move |_| {
+            Ok(ikigai_core::Representation::new(
+                ikigai_core::ReprType::new(HTML),
+                body.as_bytes().to_vec(),
+            )
+            .cacheable())
+        })
+    };
+    let item = ikigai_core::EndpointSpace::new()
+        .bind(
+            ikigai_core::Exact::new("urn:demo:title:a:b"),
+            fixed("t", "A colon"),
+        )
+        .bind(
+            ikigai_core::Exact::new("urn:demo:fragment:a:b"),
+            fixed("f", "<h1>a:b</h1>"),
+        );
+    let kernel = host_with(None, vec![Arc::new(item)]);
+    let page = text(&kernel, "urn:demo:page:a:b", &[]);
+    assert!(page.contains("<title>A colon</title>"), "{page}");
+    assert!(
+        page.contains("<main id=\"main\" tabindex=\"-1\">\n<h1>a:b</h1>"),
+        "{page}"
+    );
+}
+
+#[test]
+fn a_page_name_is_bounded_before_anything_is_read() {
+    // The name is captured from the REQUESTED IRI and reaches the host's names under
+    // `{+name}`, so anything that could leave `{base}fragment:{name}` is refused.
     let kernel = host(None);
-    match source(&kernel, "urn:demo:page:a:b") {
-        Err(Error::NotFound(why)) => assert!(why.contains("a%3Ab"), "{why}"),
+    for name in [
+        "a/b", "a#b", "a/../b", "a%2Fb", "a%3Ab", "a?b", "a@b", "a!b", "a$b", "a&b", "a=b", "a+b",
+        "a,b",
+    ] {
+        let iri = format!("urn:demo:page:{name}");
+        match source(&kernel, &iri) {
+            Err(Error::InvalidArgument { name: arg, detail }) => {
+                assert_eq!(arg, "name");
+                assert!(detail.contains(name), "{detail}");
+            }
+            other => panic!("{iri}: {other:?}"),
+        }
+    }
+    // The unreserved characters and `:` are a name.
+    match source(&kernel, "urn:demo:page:Item_5.v~2-x:y") {
+        Err(Error::NotFound(why)) => assert!(why.contains("Item_5.v~2-x:y"), "{why}"),
         other => panic!("{other:?}"),
     }
+}
+
+#[test]
+fn a_family_s_head_holds_what_the_host_fixed_in_order() {
+    let page = text(&host(None), "urn:demo:page:about", &[]);
+    let head = &page[..page.find("</head>").unwrap()];
+    let htmx = head.find("/ui/htmx").unwrap();
+    let css = head
+        .find("\n<link rel=\"stylesheet\" href=\"/demo/demo.css\">")
+        .unwrap();
+    let push = head
+        .find("\n<meta name=\"ikigai-ui-push\" content=\"/_push\">")
+        .unwrap();
+    assert!(htmx < css && css < push, "{head}");
+    // A request argument of the head's own name changes nothing.
+    assert_eq!(
+        page,
+        text(
+            &host(None),
+            "urn:demo:page:about",
+            &[("head", "<script>"), ("push", "/evil")]
+        )
+    );
+}
+
+#[test]
+fn a_family_with_no_head_renders_the_plain_shell() {
+    // `pages(…)` over the demo app's names, with no head additions.
+    let kernel = ikigai_core::Kernel::new(Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(ikigai_ui::space()) as Arc<dyn ikigai_core::Space>,
+        Arc::new(ikigai_ui::pages("plain", "urn:demo:").unwrap()),
+        Arc::new(demo_app()),
+    ])));
+    let page = text(&kernel, "urn:demo:page:about", &[]);
+    assert!(
+        page.contains("defer></script>\n</head>"),
+        "nothing between htmx and </head>: {page}"
+    );
+    assert!(!page.contains("ikigai-ui-push"));
+    assert_eq!(text(&kernel, "urn:iki:ui:head:plain", &[]), "");
+}
+
+#[test]
+fn a_head_url_is_checked_and_escaped() {
+    let base = || ikigai_ui::Pages::new("app", "urn:app:");
+    for bad in [
+        "javascript:alert(1)",
+        "//evil.example/x.css",
+        "app.css",
+        " /app.css",
+        "data:text/css,x",
+    ] {
+        assert!(base().stylesheet(bad).build().is_err(), "stylesheet {bad}");
+        assert!(base().script(bad).build().is_err(), "script {bad}");
+        assert!(base().push(bad).build().is_err(), "push {bad}");
+    }
+    assert!(base()
+        .stylesheet("https://cdn.example/a.css")
+        .script("/a.js")
+        .push("/_ikigai/push?x=1")
+        .build()
+        .is_ok());
+    // A quote in a URL stays inside its attribute.
+    let app = ikigai_core::EndpointSpace::new();
+    let kernel = ikigai_core::Kernel::new(Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(base().script("/a\"b.js").build().unwrap()) as Arc<dyn ikigai_core::Space>,
+        Arc::new(app),
+    ])));
+    let head = text(&kernel, "urn:iki:ui:head:app", &[]);
+    assert_eq!(head, "\n<script src=\"/a&quot;b.js\" defer></script>");
 }
 
 #[test]

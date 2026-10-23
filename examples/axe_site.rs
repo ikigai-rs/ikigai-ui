@@ -26,6 +26,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let path = format!("/{}", iri.trim_start_matches("urn:iki:").replace(':', "/"));
         files.push((path, rep.repr_type.media_type, rep.bytes));
     }
+    // The demo family's own stylesheet, which every demo page links from its head.
+    files.push((
+        common::DEMO_CSS_PATH.to_string(),
+        "text/css".to_string(),
+        common::DEMO_CSS.as_bytes().to_vec(),
+    ));
     // Every demo page in every theme.
     for (name, _, _) in common::PAGES {
         for theme in ikigai_ui::THEMES {

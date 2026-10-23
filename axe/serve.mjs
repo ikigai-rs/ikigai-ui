@@ -3,6 +3,12 @@
 // D6) on every answer, so an inline script or style attribute fails as it would on a real
 // door. `/_status/{code}` answers that status with a short plain body, for the shell smoke
 // test's refusals.
+//
+// It also stands in for a door's push stream (D9) at `/_push`: an event stream that opens with
+// `ready`, as the cli's does, and sends `cut` and `resync` when the test says so
+// (`site.push.cut(paths)`, `site.push.resync()`; `site.push.streams()` lists each open stream's
+// `path=` subscriptions). `/_live/count` is the live demo view's answer: the view, with a count
+// that rises on each read, or a 500 while `site.live.fail` is set.
 import { createServer } from "node:http";
 import { readFile, readdir } from "node:fs/promises";
 import { join, extname, resolve, sep } from "node:path";
@@ -40,8 +46,46 @@ export async function serve(dir) {
   } catch {
     types = {};
   }
+  const streams = new Set();
+  const live = { count: 0, fail: false };
+  const send = (frame) => {
+    for (const s of streams) s.res.write(frame);
+  };
+  const push = {
+    streams: () => [...streams].map((s) => s.paths),
+    cut: (paths) =>
+      send(`event: cut\ndata: ${JSON.stringify({ thread: "urn:test:thread", sequence: 1, invalidated: [], more: 0, paths })}\n\n`),
+    resync: () => send(`event: resync\ndata: {"reason":"dropped","dropped":1}\n\n`),
+  };
   const server = createServer(async (req, res) => {
-    const path = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+    const url = new URL(req.url, "http://localhost");
+    const path = decodeURIComponent(url.pathname);
+    if (path === "/_push") {
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-store",
+        "content-security-policy": CSP,
+      });
+      res.write("retry: 2000\n\nevent: ready\nid: 0\ndata: {}\n\n");
+      const stream = { res, paths: url.searchParams.getAll("path") };
+      streams.add(stream);
+      req.on("close", () => streams.delete(stream));
+      return;
+    }
+    if (path === "/_live/count") {
+      if (live.fail) {
+        res.writeHead(500, { "content-type": "text/plain", "content-security-policy": CSP }).end("the count is down");
+        return;
+      }
+      live.count += 1;
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": CSP })
+        .end(
+          `<div id="count" class="demo-live" hx-get="/_live/count" hx-trigger="ikigai:cut" hx-swap="outerHTML" data-ui-push="">` +
+            `<button id="count-focus" type="button">Count ${live.count}</button></div>`,
+        );
+      return;
+    }
     const status = /^\/_status\/(\d{3})$/.exec(path);
     if (status) {
       res
@@ -65,6 +109,14 @@ export async function serve(dir) {
   await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
   return {
     base: `http://127.0.0.1:${server.address().port}`,
-    close: () => new Promise((ok) => server.close(ok)),
+    push,
+    live,
+    close: () =>
+      new Promise((ok) => {
+        for (const s of streams) s.res.end();
+        streams.clear();
+        server.closeAllConnections();
+        server.close(ok);
+      }),
   };
 }

@@ -4,7 +4,7 @@
 // paint. It touches only <html> while it runs; everything else waits for htmx's events, which
 // bubble to `document`.
 //
-// It does four things htmx does not:
+// It does five things htmx does not:
 // 1. The theme (D12). `theme=` in the URL wins and is remembered; with none, a remembered choice
 //    replaces the server's `auto`. A chooser is a real <select name="theme" data-ui-theme> in a
 //    GET form, so it works with no script; with one, a change applies at once.
@@ -20,6 +20,16 @@
 // 4. Focus after a swap (D13). A swap into #main moves focus to its first heading (or #main); a
 //    swap that took the focused element gives focus to the element with the same id in the new
 //    content, else to the swapped region. Focus is never left on <body>.
+// 5. Live views (D9). With the door's push stream named in <head>
+//    (<meta name="ikigai-ui-push" content="/_ikigai/push">, which ikigai_ui::Pages::push
+//    writes), every element that declares what it shows with data-ui-push (whitespace-separated
+//    paths, or empty for its own hx-get) is subscribed, one path= each, on ONE EventSource. A
+//    `cut` sends "ikigai:cut" to the elements that declared one of its `paths`, and a `resync`
+//    sends it to all of them, so a live view says hx-trigger="ikigai:cut" and htmx refetches
+//    it. Its own requests are quiet, like [data-ui-quiet]'s, and focus is kept (4). A cut that
+//    arrives while the element's request is in flight is not dropped: it is sent again once
+//    that request settles. After every swap the declared paths are read again, and the stream
+//    is reopened only when they changed. Nothing from the stream is parsed as markup.
 (function () {
   "use strict";
   var KEY = "ikigai-ui:theme";
@@ -70,7 +80,9 @@
 
   // ---- 2 and 3. refusals, failures and the status region -------------------------------------
   function quiet(elt) {
-    return !!(elt && elt.closest && elt.closest("[data-ui-quiet]"));
+    if (!elt || !elt.closest) return false;
+    // A live view's own request is a refetch, never a message (5).
+    return !!(elt.closest("[data-ui-quiet]") || (elt.hasAttribute && elt.hasAttribute("data-ui-push")));
   }
   function status(text, alert) {
     var area = document.getElementById("status");
@@ -158,5 +170,93 @@
     var again = hadFocus && document.getElementById(hadFocus);
     var region = document.contains(target) ? target : target.id && document.getElementById(target.id);
     focusOn(again || region || document.getElementById("main"));
+  });
+
+  // ---- 5. live views ----------------------------------------------------------------------------
+  var stream = null;
+  var subscribed = "";
+  var pending = {};
+  function pushUrl() {
+    var meta = document.querySelector('meta[name="ikigai-ui-push"]');
+    return meta && meta.getAttribute("content");
+  }
+  function declared(el) {
+    var named = (el.getAttribute("data-ui-push") || "").trim();
+    if (!named) named = (el.getAttribute("hx-get") || "").trim();
+    return named ? named.split(/\s+/) : [];
+  }
+  function views() {
+    return Array.prototype.slice.call(document.querySelectorAll("[data-ui-push]"));
+  }
+  function busy(el) {
+    return el.classList && el.classList.contains("htmx-request");
+  }
+  function cut(el) {
+    el.dispatchEvent(new CustomEvent("ikigai:cut"));
+  }
+  // Every view that declared one of `paths` (every view, for null) is refetched now, or once its
+  // request in flight settles.
+  function refresh(paths) {
+    views().forEach(function (el) {
+      var mine = declared(el);
+      var hit = paths === null || mine.some(function (p) { return paths.indexOf(p) >= 0; });
+      if (!hit) return;
+      if (busy(el)) mine.forEach(function (p) { pending[p] = true; });
+      else cut(el);
+    });
+  }
+  function subscribe() {
+    var url = pushUrl();
+    var paths = [];
+    views().forEach(function (el) {
+      declared(el).forEach(function (p) {
+        if (paths.indexOf(p) < 0) paths.push(p);
+      });
+    });
+    paths.sort();
+    var key = url && paths.length && window.EventSource ? url + "\n" + paths.join("\n") : "";
+    if (key === subscribed) return;
+    subscribed = key;
+    if (stream) stream.close();
+    stream = null;
+    if (!key) return;
+    var query = paths.map(function (p) { return "path=" + encodeURIComponent(p); }).join("&");
+    stream = new EventSource(url + (url.indexOf("?") >= 0 ? "&" : "?") + query);
+    stream.addEventListener("cut", function (e) {
+      var event = null;
+      try {
+        event = JSON.parse(e.data);
+      } catch (err) {
+        event = null;
+      }
+      var named = event && Array.isArray(event.paths) ? event.paths : null;
+      // An event this script cannot read is treated as a resync: refetching too much is safe.
+      refresh(named);
+    });
+    stream.addEventListener("resync", function () {
+      refresh(null);
+    });
+  }
+  document.addEventListener("DOMContentLoaded", subscribe);
+  function flush() {
+    var again = Object.keys(pending);
+    pending = {};
+    if (again.length) refresh(again);
+  }
+  // A failed request swaps nothing and never settles, so a held cut is also sent after it.
+  document.addEventListener("htmx:afterRequest", function () {
+    window.setTimeout(flush, 0);
+  });
+  document.addEventListener("htmx:afterSettle", function () {
+    flush();
+    subscribe();
+  });
+  window.addEventListener("pagehide", function () {
+    if (stream) stream.close();
+    stream = null;
+    subscribed = "";
+  });
+  window.addEventListener("pageshow", function (e) {
+    if (e.persisted) subscribe();
   });
 })();

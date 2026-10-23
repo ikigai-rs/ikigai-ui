@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false,"historyCacheSize":10,"refreshOnHistoryMiss":true}'>
+<title>Live</title>
+<link rel="stylesheet" href="/ui/tokens.css">
+<script src="/ui/shell.js"></script>
+<script src="/ui/htmx" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" defer></script>
+<link rel="stylesheet" href="/demo/demo.css">
+<meta name="ikigai-ui-push" content="/_push">
+</head>
+<body>
+<a class="ui-skip" href="#main">Skip to content</a>
+<header>
+<nav aria-label="Site"><a href="/demo/page/home">Demo</a> <a href="/demo/page/about">About</a></nav>
+<form class="chooser" method="get"><label for="theme">Theme</label> <select id="theme" name="theme" data-ui-theme><option value="auto">Match system</option><option value="light">Light</option><option value="dark">Dark</option><option value="high-contrast">High contrast</option></select> <button type="submit">Apply</button></form>
+</header>
+<div id="status" role="status" aria-live="polite"></div>
+<main id="main" tabindex="-1">
+<h1>Live</h1>
+<p>The count is refetched when the push stream reports a cut on it.</p>
+<div id="count" class="demo-live" hx-get="/_live/count" hx-trigger="ikigai:cut" hx-swap="outerHTML" data-ui-push=""><button id="count-focus" type="button">Count 0</button></div>
+<button id="elsewhere" type="button">Elsewhere</button>
+</main>
+</body>
+</html>

@@ -8,9 +8,11 @@ behavior, and the same tests.
 |---|---|
 | `urn:iki:ui:htmx` | htmx 2.0.4, vendored and SHA-256 pinned; the shell loads it with `integrity=` and configures it once (`allowEval:false`, `allowScriptTags:false`) |
 | `urn:iki:ui:tokens.css` | one token set (gonk's names) in light, dark and high contrast; `auto` follows the system, `prefers-contrast: more` picks high contrast, `data-theme` overrides; every pair contrast-tested (WCAG 2.2 AA, AAA for high contrast) |
-| `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint |
+| `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint, and live views refetched from the door's push stream |
 | `urn:iki:ui:template:shell` | the page shell: landmarks, a skip link, the status region, no inline script or style |
-| `pages(family, base)` | your `{base}page:{name}` pages: the shell over your `{base}header`, `{base}title:{name}` and `{base}fragment:{name}` |
+| `pages(family, base)` | your `{base}page:{name}` pages: the shell over your `{base}header`, `{base}title:{name}` and `{base}fragment:{name}`; a name with `:` in it (`item:5`) reaches them whole |
+| `Pages::new(family, base)` | the same, with your own stylesheets and scripts in `<head>` and the door's push stream named for live views |
+| `artifacts(&[Artifact], dir)` | your own artifacts, with the same two deliveries: compiled in, or a file under your directory prefix |
 
 ```rust
 let kernel = Kernel::new(Arc::new(Fallback::new(vec![
@@ -34,7 +36,20 @@ directory cannot add a name and nothing here serves a header or a CSP: those bel
 
 **The page splices what the host says, never what the request says.** A page's fragment is
 fixed by its own name and family, so a request argument cannot point the shell at another
-resource.
+resource. The page name is bounded before anything is read (RFC 3986's unreserved characters
+and `:`; no `/ ? # %`), so it picks among your own `{base}fragment:…` names and nothing else.
+
+**Live views.** Name the push stream on the family (`Pages::new(…).push("/_ikigai/push")`, the
+cli door's path), and a view that says what it shows refetches itself on a cut:
+
+```html
+<div id="board" hx-get="/app/fragment/board" hx-trigger="ikigai:cut" hx-swap="outerHTML" data-ui-push="">…</div>
+```
+
+`data-ui-push` holds the paths the view shows (empty: its own `hx-get`). The shell script opens
+one `EventSource` for every such view on the page, sends `ikigai:cut` to the views a cut's
+`paths` name (all of them on a `resync`), keeps the refetch quiet and keeps focus. The door
+grants `urn:cap:kernel:listen` for the stream to answer.
 
 ## The test kit
 

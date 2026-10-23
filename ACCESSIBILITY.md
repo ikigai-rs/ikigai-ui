@@ -11,6 +11,7 @@ test, not a review.
 | Landmarks: a skip link, one `<header>`, one `<main id="main" tabindex="-1">`, one status region | `tests/pages.rs` |
 | Focus after a swap: a swap into `#main` focuses its first heading; focus is never left on `<body>` | `axe/shell-smoke.mjs`, in Chromium |
 | Refusals as text, in place, and a 403 disables its control; quiet elements never announce | `axe/shell-smoke.mjs` |
+| A live view's refetch (D9) never announces, leaves no note, and keeps focus where it was, inside the view or not | `axe/shell-smoke.mjs` |
 | A theme chooser that works with no script; `prefers-color-scheme`, `prefers-contrast: more` and `prefers-reduced-motion` honored | `tests/palettes.rs`, `axe/shell-smoke.mjs` |
 | Touch targets of 24 px for navigation links (SC 2.5.8) | axe |
 | WCAG 2.0/2.1/2.2 A and AA rules on every demo page, in light, dark and more-contrast media, under the door default CSP | `axe/check.mjs` in CI |

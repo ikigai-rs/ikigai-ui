@@ -18,7 +18,7 @@ use ikigai_core::Verb;
 #[test]
 fn conforms() {
     let kernel = common::host(None);
-    let pages = Arc::new(ikigai_ui::pages("demo", "urn:demo:").unwrap());
+    let pages = Arc::new(common::demo_pages());
     let report = Suite::new()
         .fixture(Fixture::new("ui-palette", Verb::Source).binding("name", "light"))
         .fixture(Fixture::new("ui-page-demo", Verb::Source).binding("name", "home"))
@@ -32,6 +32,8 @@ fn conforms() {
         .pure("ui-palette")
         .cacheable("ui-palette")
         .cacheable("ui-page-demo")
+        .pure("ui-head-demo")
+        .cacheable("ui-head-demo")
         .pure("demo-header")
         .pure("demo-title")
         .pure("demo-fragment")
@@ -50,6 +52,7 @@ fn conforms() {
         "ui-tokens-css",
         "ui-palette",
         "ui-page-demo",
+        "ui-head-demo",
     ] {
         assert!(
             report.to_string().contains(id),

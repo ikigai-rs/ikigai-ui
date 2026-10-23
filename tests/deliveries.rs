@@ -176,3 +176,79 @@ fn a_directory_cannot_add_a_name() {
     }
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A host's own artifacts get the same two deliveries (`ikigai_ui::artifacts`): compiled in,
+/// a file under the host's directory prefix wins, and a write to it recomputes the answer.
+#[test]
+fn a_host_s_own_artifacts_have_both_deliveries() {
+    const MINE: [ikigai_ui::Artifact; 2] = [
+        ikigai_ui::Artifact {
+            iri: "urn:app:app.css",
+            id: "app-css",
+            file: "app.css",
+            media_type: "text/css",
+            bytes: b"main { margin: 0; }\n",
+        },
+        ikigai_ui::Artifact {
+            iri: "urn:app:app.js",
+            id: "app-js",
+            file: "app.js",
+            media_type: "text/javascript",
+            bytes: b"// compiled in\n",
+        },
+    ];
+    let dir = scratch("host-artifacts");
+    let kernel = ikigai_core::Kernel::new(Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(ikigai_ui::artifacts(&MINE, "urn:app:dir:").unwrap())
+            as Arc<dyn ikigai_core::Space>,
+        Arc::new(EndpointSpace::new().bind(
+            UriTemplate::parse("urn:app:dir:{path}").unwrap(),
+            ikigai_fs::FileEndpoint::new(dir.clone()).cacheable(),
+        )),
+    ])));
+    assert_eq!(
+        source(&kernel, "urn:app:app.css").unwrap().bytes,
+        MINE[0].bytes
+    );
+    issue(
+        &kernel,
+        Verb::Sink,
+        "urn:app:dir:app.css",
+        &[("content", b"main { margin: 1rem; }\n")],
+    )
+    .unwrap();
+    let css = source(&kernel, "urn:app:app.css").unwrap();
+    assert_eq!(
+        css.bytes, b"main { margin: 1rem; }\n",
+        "the Sink cut the thread"
+    );
+    assert_eq!(
+        css.repr_type.media_type, "text/css",
+        "the name fixes the type"
+    );
+    assert_eq!(
+        source(&kernel, "urn:app:app.js").unwrap().bytes,
+        MINE[1].bytes
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_host_s_artifact_list_is_checked() {
+    let one = ikigai_ui::ARTIFACTS[0];
+    assert!(ikigai_ui::artifacts(&[], "urn:app:dir:").is_err(), "empty");
+    assert!(
+        ikigai_ui::artifacts(&[one, one], "urn:app:dir:").is_err(),
+        "a duplicate IRI"
+    );
+    let mut bad = one;
+    bad.iri = "not an iri";
+    assert!(
+        ikigai_ui::artifacts(&[bad], "urn:app:dir:").is_err(),
+        "a bad IRI"
+    );
+    assert!(
+        ikigai_ui::artifacts(&[one], "").is_err(),
+        "no scheme in the override"
+    );
+}
