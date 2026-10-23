@@ -1,6 +1,6 @@
 [package]
 name = "ikigai-ui"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 # ikigai-core needs 1.87 (`usize::is_multiple_of`); the shared CI's msrv job holds it there.
 rust-version = "1.87"
