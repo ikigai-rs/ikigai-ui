@@ -48,8 +48,13 @@ cli door's path), and a view that says what it shows refetches itself on a cut:
 
 `data-ui-push` holds the paths the view shows (empty: its own `hx-get`). The shell script opens
 one `EventSource` for every such view on the page, sends `ikigai:cut` to the views a cut's
-`paths` name (all of them on a `resync`), keeps the refetch quiet and keeps focus. The door
-grants `urn:cap:kernel:listen` for the stream to answer.
+`paths` name (all of them on a `resync`), keeps the refetch quiet and keeps focus. A cut that
+lands while a view's own request is in flight is sent again once it settles (tracked on the
+view, so an `hx-indicator` elsewhere does not hide it); a view that swaps `outerHTML` wants an
+`id`, which is how its replacement is found. When a swap changes the declared paths the stream
+is reopened, and every view is refetched once the new stream is ready, since a cut in the gap
+was heard by nobody. A stream the door refuses (a `400` past its subscription bound) is said
+once in `#status`. The door grants `urn:cap:kernel:listen` for the stream to answer.
 
 ## The test kit
 
