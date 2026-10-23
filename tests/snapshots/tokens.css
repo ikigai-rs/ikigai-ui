@@ -1,6 +1,6 @@
 /* ikigai-ui: the token stylesheet (UI conventions D12).
  *
- * Composed from the palette tables (urn:ui:palette:{name}); no color is written here.
+ * Composed from the palette tables (urn:iki:ui:palette:{name}); no color is written here.
  * auto (no data-theme, or data-theme="auto") follows prefers-color-scheme, and
  * prefers-contrast: more selects high contrast; data-theme on <html> overrides both.
  */

@@ -72,7 +72,7 @@ fn no_artifact_writes_a_color_and_every_var_is_defined() {
     let kernel = host(None);
     let css = text(&kernel, ikigai_ui::TOKENS_CSS, &[]);
     for a in &ikigai_ui::ARTIFACTS {
-        if a.iri == "urn:ui:htmx" {
+        if a.iri == "urn:iki:ui:htmx" {
             continue; // vendored as it is; it states no color (includeIndicatorStyles is off)
         }
         let source = std::str::from_utf8(a.bytes).unwrap();
@@ -105,7 +105,7 @@ fn no_artifact_writes_a_color_and_every_var_is_defined() {
 fn the_turtle_face_is_one_triple_per_token() {
     let kernel = host(None);
     for p in PALETTES {
-        let iri = format!("urn:ui:palette:{}", p.name);
+        let iri = format!("urn:iki:ui:palette:{}", p.name);
         let rep = issue(
             &kernel,
             ikigai_core::Verb::Source,
@@ -118,11 +118,11 @@ fn the_turtle_face_is_one_triple_per_token() {
         assert_eq!(ttl.lines().count(), TOKENS.len());
         assert!(!ttl.contains("_:"), "no blank nodes");
         for (t, v) in p.colors {
-            assert!(ttl.contains(&format!("<{iri}> <urn:ui:token:{t}> \"{v}\" .\n")));
+            assert!(ttl.contains(&format!("<{iri}> <urn:iki:ui:token:{t}> \"{v}\" .\n")));
         }
     }
     assert!(matches!(
-        source(&kernel, "urn:ui:palette:chartreuse"),
+        source(&kernel, "urn:iki:ui:palette:chartreuse"),
         Err(ikigai_core::Error::NotFound(_))
     ));
 }

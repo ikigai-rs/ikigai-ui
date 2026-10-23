@@ -15,10 +15,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let kernel = common::host(None);
     let mut files: Vec<(String, String, Vec<u8>)> = Vec::new();
-    // The assets, at the paths the shell links them by (the mechanical rule: /ui/x is urn:ui:x).
-    for iri in ["urn:ui:htmx", "urn:ui:shell.js", ikigai_ui::TOKENS_CSS] {
+    // The assets, at the paths the shell links them by (the door's route-table entry:
+    // /ui/x is urn:iki:ui:x).
+    for iri in [
+        "urn:iki:ui:htmx",
+        "urn:iki:ui:shell.js",
+        ikigai_ui::TOKENS_CSS,
+    ] {
         let rep = common::source(&kernel, iri)?;
-        let path = format!("/{}", iri.trim_start_matches("urn:").replace(':', "/"));
+        let path = format!("/{}", iri.trim_start_matches("urn:iki:").replace(':', "/"));
         files.push((path, rep.repr_type.media_type, rep.bytes));
     }
     // Every demo page in every theme.

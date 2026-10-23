@@ -6,10 +6,10 @@ behavior, and the same tests.
 
 | name | what you get |
 |---|---|
-| `urn:ui:htmx` | htmx 2.0.4, vendored and SHA-256 pinned; the shell loads it with `integrity=` and configures it once (`allowEval:false`, `allowScriptTags:false`) |
-| `urn:ui:tokens.css` | one token set (gonk's names) in light, dark and high contrast; `auto` follows the system, `prefers-contrast: more` picks high contrast, `data-theme` overrides; every pair contrast-tested (WCAG 2.2 AA, AAA for high contrast) |
-| `urn:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint |
-| `urn:ui:template:shell` | the page shell: landmarks, a skip link, the status region, no inline script or style |
+| `urn:iki:ui:htmx` | htmx 2.0.4, vendored and SHA-256 pinned; the shell loads it with `integrity=` and configures it once (`allowEval:false`, `allowScriptTags:false`) |
+| `urn:iki:ui:tokens.css` | one token set (gonk's names) in light, dark and high contrast; `auto` follows the system, `prefers-contrast: more` picks high contrast, `data-theme` overrides; every pair contrast-tested (WCAG 2.2 AA, AAA for high contrast) |
+| `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint |
+| `urn:iki:ui:template:shell` | the page shell: landmarks, a skip link, the status region, no inline script or style |
 | `pages(family, base)` | your `{base}page:{name}` pages: the shell over your `{base}header`, `{base}title:{name}` and `{base}fragment:{name}` |
 
 ```rust
@@ -19,15 +19,16 @@ let kernel = Kernel::new(Arc::new(Fallback::new(vec![
     Arc::new(my_app),                                  // urn:app:header, :title:{name}, :fragment:{name}
     // Optional: override any artifact from a directory, golden-threaded.
     Arc::new(EndpointSpace::new().bind(
-        UriTemplate::parse("urn:ui:dir:{path}")?,
+        UriTemplate::parse("urn:iki:ui:dir:{path}")?,
         ikigai_fs::FileEndpoint::new("ui/").cacheable(),
     )),
 ])));
-// Route /ui/{…} to urn:ui:{…} (the mechanical rule) and /app/page/{name} to urn:app:page:{name}.
+// Door routes: /ui/{…} → urn:iki:ui:{…} (one route-table prefix entry, D10) and
+// /app/page/{name} → urn:app:page:{name} (the mechanical rule).
 ```
 
 **Compiled in, or from a directory, under the same names.** Every artifact is compiled in. Bind
-a directory at `urn:ui:dir:` and a file there (`shell.html`, `shell.js`, `tokens.template.css`,
+a directory at `urn:iki:ui:dir:` and a file there (`shell.html`, `shell.js`, `tokens.template.css`,
 `htmx.min.js`) replaces that one artifact, and a write to it recomputes every page over it. A
 directory cannot add a name and nothing here serves a header or a CSP: those belong to the door.
 

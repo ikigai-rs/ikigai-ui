@@ -93,7 +93,7 @@ fn a_request_cannot_choose_what_a_page_splices() {
         &[
             ("family", "evil"),
             ("name", "home"),
-            ("main", "urn:ui:shell.js"),
+            ("main", "urn:iki:ui:shell.js"),
         ],
     );
     assert_eq!(plain, tried);

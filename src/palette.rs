@@ -1,7 +1,7 @@
 //! The palette tables (UI conventions D12): the only place a color is written.
 //!
 //! Every UI that binds this crate gets its colors from these tables, through the token
-//! stylesheet `urn:ui:tokens.css`. Token names are gonk.css's (`--bg` through `--line`) plus
+//! stylesheet `urn:iki:ui:tokens.css`. Token names are gonk.css's (`--bg` through `--line`) plus
 //! the four the other palettes need (`--ok-fg`, `--focus`, `--warn`, `--warn-fg`). The light and
 //! dark values start from gonk.css and the high-contrast values from ikigai-name; where a
 //! starting value missed the floor, the table says so beside it.
@@ -83,7 +83,7 @@ pub const PAIRS: [(&str, &str, Kind); 16] = [
 /// One palette: a name `theme=` accepts and a value for every token in [`TOKENS`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Palette {
-    /// The name `theme=` and `urn:ui:palette:{name}` use.
+    /// The name `theme=` and `urn:iki:ui:palette:{name}` use.
     pub name: &'static str,
     /// The label a chooser shows.
     pub label: &'static str,
@@ -115,7 +115,7 @@ impl Palette {
 
     /// The palette as CSS custom-property declarations, one per line, indented for the
     /// token stylesheet, with no final newline (the template's line supplies it): the `text/plain`
-    /// face of `urn:ui:palette:{name}`.
+    /// face of `urn:iki:ui:palette:{name}`.
     ///
     /// ```
     /// let css = ikigai_ui::palette::LIGHT.declarations();
@@ -131,11 +131,11 @@ impl Palette {
     }
 
     /// The palette as Turtle, one triple per token: the subject is the palette's IRI and the
-    /// predicate the token's (`urn:ui:token:{name}`). No blank nodes.
+    /// predicate the token's (`urn:iki:ui:token:{name}`). No blank nodes.
     ///
     /// ```
     /// let ttl = ikigai_ui::palette::DARK.turtle();
-    /// assert!(ttl.starts_with("<urn:ui:palette:dark> <urn:ui:token:bg> \"#0d1117\" .\n"));
+    /// assert!(ttl.starts_with("<urn:iki:ui:palette:dark> <urn:iki:ui:token:bg> \"#0d1117\" .\n"));
     /// assert_eq!(ttl.lines().count(), 14);
     /// ```
     pub fn turtle(&self) -> String {
@@ -143,7 +143,7 @@ impl Palette {
             .iter()
             .map(|(t, v)| {
                 format!(
-                    "<urn:ui:palette:{}> <urn:ui:token:{t}> \"{v}\" .\n",
+                    "<urn:iki:ui:palette:{}> <urn:iki:ui:token:{t}> \"{v}\" .\n",
                     self.name
                 )
             })

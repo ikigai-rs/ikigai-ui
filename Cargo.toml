@@ -48,7 +48,7 @@ ikigai-ui = { path = ".", features = ["testkit"] }
 futures = "0.3"
 # The module recipe as one test (tests/conformance.rs), at the current minor.
 ikigai-conformance = "0.10.0"
-# The directory delivery (D17), for real: ikigai-fs's FileEndpoint at urn:ui:dir:{path}.
+# The directory delivery (D17), for real: ikigai-fs's FileEndpoint at urn:iki:ui:dir:{path}.
 ikigai-fs = "0.1.9"
 # tests/htmx.rs holds the vendored bytes to the published digests.
 sha2 = "0.10"
