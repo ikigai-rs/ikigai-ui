@@ -1,0 +1,7 @@
+# Line endings: LF in the repository AND in every checkout, whatever core.autocrlf says.
+# These files are held to a SHA-256 (the vendored htmx, its integrity value in the shell,
+# and the escaping vectors copied verbatim from ikigai-fn), and devtools `vector-drift`
+# compares verbatim copies byte for byte, so a CRLF checkout would be drift.
+vendor/* -text
+src/testkit/*.json text eol=lf
+assets/* text eol=lf

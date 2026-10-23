@@ -10,3 +10,14 @@ jobs:
     uses: ikigai-rs/.github/.github/workflows/rust.yml@main
     with:
       wasm-lib: true
+  # axe and the shell script's browser checks over the demo site (non-cargo, so local to
+  # this repo: field guide 9g), through the same reusable workflow a UI repo calls, at THIS
+  # commit's checker. Unconditional on purpose: a path filter is a gate that silently does
+  # not run (9c).
+  axe:
+    uses: ./.github/workflows/axe.yml
+    with:
+      prepare: cargo run --example axe_site -- target/axe-site
+      site: target/axe-site
+      checker-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      smoke: true

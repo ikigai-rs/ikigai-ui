@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" data-theme="$h{{theme}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false,"historyCacheSize":10,"refreshOnHistoryMiss":true}'>
+<title>$h{urn:ui:title:{family}:{name}}</title>
+<link rel="stylesheet" href="/ui/tokens.css">
+<script src="/ui/shell.js"></script>
+<script src="/ui/htmx" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" defer></script>
+</head>
+<body>
+<a class="ui-skip" href="#main">Skip to content</a>
+<header>
+$r{urn:ui:header:{family}}
+</header>
+<div id="status" role="status" aria-live="polite"></div>
+<main id="main" tabindex="-1">
+$r{urn:ui:main:{family}:{name}}
+</main>
+</body>
+</html>
