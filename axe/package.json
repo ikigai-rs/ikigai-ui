@@ -1,0 +1,12 @@
+{
+  "name": "ikigai-ui-axe",
+  "private": true,
+  "description": "axe over a static site of rendered pages (UI conventions D13, D18).",
+  "type": "module",
+  "dependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "axe-core": "4.13.0",
+    "playwright": "1.64.0",
+    "playwright-core": "1.64.0"
+  }
+}

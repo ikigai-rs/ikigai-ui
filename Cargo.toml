@@ -2,7 +2,10 @@
 name = "ikigai-ui"
 version = "0.1.0"
 edition = "2021"
+# ikigai-core needs 1.87 (`usize::is_multiple_of`); the shared CI's msrv job holds it there.
 rust-version = "1.87"
+# MSRV-aware resolution: each dependency's newest version that still builds on
+# `rust-version`, since CI commits no lockfile.
 resolver = "3"
 license = "MIT OR Apache-2.0"
 description = "The shared UI path for ikigai hosts, as resources: vendored htmx, the token stylesheet, the shell script and the page shell, compiled in or overridden from a directory, plus the UI test kit."
@@ -12,5 +15,45 @@ homepage = "https://github.com/ikigai-rs/ikigai-ui"
 readme = "README.md"
 keywords = ["ikigai", "roc", "htmx", "ui", "module"]
 categories = ["web-programming", "wasm"]
+# The crate is the library, its compiled-in artifacts and the test kit. The repo's tests,
+# examples and the axe checker are the repo's.
+exclude = ["/tests", "/examples", "/axe", "/.github"]
+
+[features]
+default = []
+# The UI test kit (UI conventions D18), for a UI repo's dev-dependency.
+testkit = ["dep:ikigai-a11y", "dep:serde_json", "dep:futures-executor"]
 
 [dependencies]
+# 0.1.110 is the true minimum: `AliasTable::{exact,prefix}_at_root`, which `pages` uses so a
+# family's header, titles and fragments resolve from the root (ledger #2061). Under 0.x a
+# caret is a range: every 0.1.x from 0.1.110 on, never 0.2.
+ikigai-core = "0.1.110"
+# The shell and the token stylesheet are ikigai-fn compose templates (`composeOver`, named
+# instances). 0.5.0 is the floor for the escaping they rely on: `$h` per FND-H's rule set, and
+# an argument spliced into a marker IRI percent-encoded as one segment (ledger #1813), plus
+# `ikigai_fn::html`, which the test kit runs the vectors against. A caret on 0.5.0 is <0.6.0.
+ikigai-fn = "0.5.0"
+# The test kit only. ikigai-a11y's `ratio` and `Rgba` are the contrast math every other UI
+# test uses (default features off: no syntect). 0.3.0 is the current minor; <0.4.0.
+ikigai-a11y = { version = "0.3.0", optional = true }
+# The test kit's vectors reader. 1.0 is every serde_json there is.
+serde_json = { version = "1.0", optional = true }
+# The test kit's `render`, which drives a kernel from a synchronous test.
+futures-executor = { version = "0.3", optional = true }
+
+[dev-dependencies]
+# This crate's own tests use the test kit, as a UI repo does.
+ikigai-ui = { path = ".", features = ["testkit"] }
+futures = "0.3"
+# The module recipe as one test (tests/conformance.rs), at the current minor.
+ikigai-conformance = "0.10.0"
+# The directory delivery (D17), for real: ikigai-fs's FileEndpoint at urn:ui:dir:{path}.
+ikigai-fs = "0.1.9"
+# tests/htmx.rs holds the vendored bytes to the published digests.
+sha2 = "0.10"
+base64 = "0.22"
+
+[package.metadata.docs.rs]
+# Document the test kit too.
+features = ["testkit"]

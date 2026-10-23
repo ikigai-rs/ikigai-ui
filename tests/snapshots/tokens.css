@@ -1,0 +1,135 @@
+/* ikigai-ui: the token stylesheet (UI conventions D12).
+ *
+ * Composed from the palette tables (urn:ui:palette:{name}); no color is written here.
+ * auto (no data-theme, or data-theme="auto") follows prefers-color-scheme, and
+ * prefers-contrast: more selects high contrast; data-theme on <html> overrides both.
+ */
+
+:root {
+  color-scheme: light;
+  --radius: 0.5rem;
+  --gap: 0.75rem;
+  --bg: #ffffff;
+  --surface: #f4f6f8;
+  --fg: #1b1f24;
+  --muted: #545d68;
+  --accent: #0b5cad;
+  --accent-fg: #ffffff;
+  --danger: #a8200d;
+  --danger-fg: #ffffff;
+  --ok: #19703a;
+  --ok-fg: #ffffff;
+  --warn: #8a4b00;
+  --warn-fg: #ffffff;
+  --line: #848d97;
+  --focus: #0b5cad;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]), :root[data-theme="auto"] {
+    color-scheme: dark;
+  --bg: #0d1117;
+  --surface: #161b22;
+  --fg: #e6edf3;
+  --muted: #9ea8b3;
+  --accent: #6cb6ff;
+  --accent-fg: #0d1117;
+  --danger: #ff9b8f;
+  --danger-fg: #0d1117;
+  --ok: #5bd07a;
+  --ok-fg: #0d1117;
+  --warn: #e3b341;
+  --warn-fg: #0d1117;
+  --line: #656d76;
+  --focus: #6cb6ff;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root:not([data-theme]), :root[data-theme="auto"] {
+    color-scheme: dark;
+  --bg: #000000;
+  --surface: #1a1a1a;
+  --fg: #ffffff;
+  --muted: #e0e0e0;
+  --accent: #ffe066;
+  --accent-fg: #000000;
+  --danger: #ff9e9e;
+  --danger-fg: #000000;
+  --ok: #7ee787;
+  --ok-fg: #000000;
+  --warn: #ffd33d;
+  --warn-fg: #000000;
+  --line: #ffffff;
+  --focus: #ffe066;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f4f6f8;
+  --fg: #1b1f24;
+  --muted: #545d68;
+  --accent: #0b5cad;
+  --accent-fg: #ffffff;
+  --danger: #a8200d;
+  --danger-fg: #ffffff;
+  --ok: #19703a;
+  --ok-fg: #ffffff;
+  --warn: #8a4b00;
+  --warn-fg: #ffffff;
+  --line: #848d97;
+  --focus: #0b5cad;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --surface: #161b22;
+  --fg: #e6edf3;
+  --muted: #9ea8b3;
+  --accent: #6cb6ff;
+  --accent-fg: #0d1117;
+  --danger: #ff9b8f;
+  --danger-fg: #0d1117;
+  --ok: #5bd07a;
+  --ok-fg: #0d1117;
+  --warn: #e3b341;
+  --warn-fg: #0d1117;
+  --line: #656d76;
+  --focus: #6cb6ff;
+}
+
+:root[data-theme="high-contrast"] {
+  color-scheme: dark;
+  --bg: #000000;
+  --surface: #1a1a1a;
+  --fg: #ffffff;
+  --muted: #e0e0e0;
+  --accent: #ffe066;
+  --accent-fg: #000000;
+  --danger: #ff9e9e;
+  --danger-fg: #000000;
+  --ok: #7ee787;
+  --ok-fg: #000000;
+  --warn: #ffd33d;
+  --warn-fg: #000000;
+  --line: #ffffff;
+  --focus: #ffe066;
+}
+
+/* The shell's own rules: what the shell template and the shell script need. */
+body { margin: 0; background: var(--bg); color: var(--fg); }
+a { color: var(--accent); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+nav a { display: inline-block; padding: 0.25rem 0.5rem; } /* 24px targets (WCAG 2.2 SC 2.5.8) */
+.ui-skip { position: absolute; left: -999px; top: 0; }
+.ui-skip:focus { left: 0.5rem; top: 0.5rem; z-index: 10; padding: 0.5rem; background: var(--bg); color: var(--fg); }
+.ui-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ui-note { color: var(--danger); margin: var(--gap) 0; }
+#status:empty { display: none; }
+[aria-busy="true"] { cursor: progress; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

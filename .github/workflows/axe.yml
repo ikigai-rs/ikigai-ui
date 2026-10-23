@@ -1,0 +1,68 @@
+# axe as a CI step a UI repo calls (UI conventions D13, D18).
+#
+#   jobs:
+#     axe:
+#       uses: ikigai-rs/ikigai-ui/.github/workflows/axe.yml@main
+#       with:
+#         prepare: cargo run --example axe_site -- target/axe-site
+#         site: target/axe-site
+#
+# `prepare` writes a static site (ikigai_ui::testkit::site does it from rendered pages);
+# the job serves it with the door default CSP and runs axe/check.mjs over every .html in
+# it, in light, dark and more-contrast media. Any axe violation, page error or console
+# error fails the job, and so does a site with no pages.
+name: axe
+on:
+  workflow_call:
+    inputs:
+      prepare:
+        description: The command that writes the site (run from the caller's checkout root).
+        type: string
+        required: true
+      site:
+        description: The directory the command writes, relative to the caller's checkout root.
+        type: string
+        required: true
+      rust:
+        description: Install a stable Rust toolchain and cache it before `prepare`.
+        type: boolean
+        default: true
+      checker-ref:
+        description: The ikigai-ui commit or branch whose axe/ checker to run.
+        type: string
+        default: main
+      smoke:
+        description: Also run axe/shell-smoke.mjs (ikigai-ui's own shell checks) over the site.
+        type: boolean
+        default: false
+jobs:
+  axe:
+    name: axe (WCAG 2.2 AA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ikigai-rs/ikigai-ui
+          ref: ${{ inputs.checker-ref }}
+          path: .ikigai-ui-checker
+      - if: ${{ inputs.rust }}
+        uses: dtolnay/rust-toolchain@stable
+      - if: ${{ inputs.rust }}
+        uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the checker (exact pins, from its lock)
+        working-directory: .ikigai-ui-checker/axe
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium
+        working-directory: .ikigai-ui-checker/axe
+        run: npx playwright install --with-deps chromium
+      - name: Write the site
+        run: ${{ inputs.prepare }}
+      - name: axe
+        run: node .ikigai-ui-checker/axe/check.mjs "${{ inputs.site }}"
+      - name: Shell smoke
+        if: ${{ inputs.smoke }}
+        run: node .ikigai-ui-checker/axe/shell-smoke.mjs "${{ inputs.site }}"
