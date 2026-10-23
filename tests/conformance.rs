@@ -35,7 +35,7 @@ fn conforms() {
         .pure("demo-header")
         .pure("demo-title")
         .pure("demo-fragment")
-        .namespace("urn:ui:token:")
+        .namespace("urn:iki:ui:token:")
         .self_named_space("ui", ikigai_ui::space)
         .host_named_space("ikigai_ui::pages(family, base)", pages)
         .run_blocking(&kernel);

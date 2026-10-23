@@ -5,7 +5,7 @@ use base64::Engine;
 use sha2::{Digest, Sha256, Sha384};
 
 fn htmx() -> &'static [u8] {
-    ikigai_ui::artifact("urn:ui:htmx").unwrap().bytes
+    ikigai_ui::artifact("urn:iki:ui:htmx").unwrap().bytes
 }
 
 #[test]

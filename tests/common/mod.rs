@@ -1,5 +1,5 @@
 //! A test host: ikigai-ui's space, one page family (`demo`, under `urn:demo:`) with a header,
-//! titles and fragments, and optionally a directory bound at `urn:ui:dir:{path}` through
+//! titles and fragments, and optionally a directory bound at `urn:iki:ui:dir:{path}` through
 //! ikigai-fs, the way a host overrides an artifact (D17's Delivery A).
 #![allow(dead_code)] // each test binary uses its own part of this module
 
@@ -104,7 +104,7 @@ pub fn demo_app() -> EndpointSpace {
         )
 }
 
-/// A host. `dir` binds a directory at `urn:ui:dir:{path}` (cacheable, so the golden thread
+/// A host. `dir` binds a directory at `urn:iki:ui:dir:{path}` (cacheable, so the golden thread
 /// is observable); `None` binds nothing there, so every artifact is compiled in.
 pub fn host(dir: Option<&Path>) -> Kernel {
     host_with(dir, Vec::new())
@@ -120,7 +120,7 @@ pub fn host_with(dir: Option<&Path>, extra: Vec<Arc<dyn Space>>) -> Kernel {
     spaces.push(Arc::new(demo_app()));
     if let Some(dir) = dir {
         spaces.push(Arc::new(EndpointSpace::new().bind(
-            UriTemplate::parse("urn:ui:dir:{path}").unwrap(),
+            UriTemplate::parse("urn:iki:ui:dir:{path}").unwrap(),
             ikigai_fs::FileEndpoint::new(dir.to_path_buf()).cacheable(),
         )));
     }

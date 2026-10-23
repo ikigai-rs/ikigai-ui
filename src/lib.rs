@@ -1,4 +1,4 @@
-//! `ikigai-ui`: the shared UI path for ikigai hosts, as resources under `urn:ui:`.
+//! `ikigai-ui`: the shared UI path for ikigai hosts, as resources under `urn:iki:ui:`.
 //!
 //! One crate every UI host binds to get the shared artifacts (UI conventions D7, D12, D14,
 //! D17) and, behind the `testkit` feature, the shared tests (D18). It holds no state and does
@@ -9,19 +9,19 @@
 //!
 //! | name | kind | what it is |
 //! |---|---|---|
-//! | `urn:ui:htmx` | artifact | the vendored htmx ([`HTMX_VERSION`], [`HTMX_SHA256`]) |
-//! | `urn:ui:shell.js` | artifact | the shell script: refusals, the status region, focus after a swap, the theme (D14) |
-//! | `urn:ui:template:shell` | artifact | the page shell, a compose template (D1, D8, D13) |
-//! | `urn:ui:template:tokens` | artifact | the token stylesheet's template |
-//! | `urn:ui:palette:{name}` | data | a palette table ([`palette`]): CSS declarations, or Turtle with `as=text/turtle` |
-//! | `urn:ui:tokens.css` | composition | the template filled with the palettes: `auto`, light, dark, high contrast |
+//! | `urn:iki:ui:htmx` | artifact | the vendored htmx ([`HTMX_VERSION`], [`HTMX_SHA256`]) |
+//! | `urn:iki:ui:shell.js` | artifact | the shell script: refusals, the status region, focus after a swap, the theme (D14) |
+//! | `urn:iki:ui:template:shell` | artifact | the page shell, a compose template (D1, D8, D13) |
+//! | `urn:iki:ui:template:tokens` | artifact | the token stylesheet's template |
+//! | `urn:iki:ui:palette:{name}` | data | a palette table ([`palette`]): CSS declarations, or Turtle with `as=text/turtle` |
+//! | `urn:iki:ui:tokens.css` | composition | the template filled with the palettes: `auto`, light, dark, high contrast |
 //! | a host's `{base}page:{name}` | composition | the shell over the host's fragment, from [`pages`] |
 //!
 //! ## Two deliveries, one set of names (D17)
 //!
 //! Each artifact is compiled in. A host that binds a directory at [`DIR`] (ikigai-fs's
-//! `FileEndpoint` under `urn:ui:dir:{path}`) overrides any artifact per name: the artifact
-//! reads `urn:ui:dir:{file}` first and falls back to its compiled-in bytes only when THAT read
+//! `FileEndpoint` under `urn:iki:ui:dir:{path}`) overrides any artifact per name: the artifact
+//! reads `urn:iki:ui:dir:{file}` first and falls back to its compiled-in bytes only when THAT read
 //! is `NotFound` (the file is absent) or `Unresolved` (nothing is bound at [`DIR`]). Any other
 //! failure, a denial included, passes through. Because the fallback is taken on the directory
 //! atom's own absence, the answer hangs from that atom's golden thread, and a write to the
@@ -67,8 +67,9 @@
 //! assert!(page.contains("<main id=\"main\" tabindex=\"-1\">\n<h1>Hello</h1>\n</main>"));
 //! ```
 //!
-//! A door routes `/ui/{…}` to `urn:ui:{…}` by the mechanical rule, which is where the shell
-//! links them: `/ui/tokens.css`, `/ui/shell.js`, `/ui/htmx`.
+//! A door routes `/ui/{…}` to `urn:iki:ui:{…}`, which is where the shell links them:
+//! `/ui/tokens.css`, `/ui/shell.js`, `/ui/htmx`. That is one route-table prefix entry (D10);
+//! the mechanical rule alone would put them at `/iki/ui/{…}`.
 
 #![forbid(unsafe_code)]
 
@@ -87,9 +88,9 @@ pub mod testkit;
 /// The name [`space`] claims: `urn:iki:space:ui`.
 pub const SPACE_ID: &str = "urn:iki:space:ui";
 
-/// Where an artifact looks for its override: `urn:ui:dir:{file}`, for each file [`ARTIFACTS`]
+/// Where an artifact looks for its override: `urn:iki:ui:dir:{file}`, for each file [`ARTIFACTS`]
 /// names. A host binds a directory here; with nothing bound, every artifact is compiled in.
-pub const DIR: &str = "urn:ui:dir:";
+pub const DIR: &str = "urn:iki:ui:dir:";
 
 /// The vendored htmx's release.
 pub const HTMX_VERSION: &str = "2.0.4";
@@ -103,12 +104,12 @@ pub const HTMX_INTEGRITY: &str =
 /// The values `theme=` takes (D12). `auto` follows the viewer's system.
 pub const THEMES: [&str; 4] = ["auto", "light", "dark", "high-contrast"];
 
-/// The shell template: `urn:ui:template:shell`.
-pub const SHELL: &str = "urn:ui:template:shell";
-/// The token stylesheet's template: `urn:ui:template:tokens`.
-pub const TOKENS_TEMPLATE: &str = "urn:ui:template:tokens";
-/// The token stylesheet: `urn:ui:tokens.css`.
-pub const TOKENS_CSS: &str = "urn:ui:tokens.css";
+/// The shell template: `urn:iki:ui:template:shell`.
+pub const SHELL: &str = "urn:iki:ui:template:shell";
+/// The token stylesheet's template: `urn:iki:ui:template:tokens`.
+pub const TOKENS_TEMPLATE: &str = "urn:iki:ui:template:tokens";
+/// The token stylesheet: `urn:iki:ui:tokens.css`.
+pub const TOKENS_CSS: &str = "urn:iki:ui:tokens.css";
 
 const HTML: &str = "text/html; charset=utf-8";
 const JS: &str = "text/javascript";
@@ -137,14 +138,14 @@ pub struct Artifact {
 /// Every artifact, the whole set a directory can override.
 pub const ARTIFACTS: [Artifact; 4] = [
     Artifact {
-        iri: "urn:ui:htmx",
+        iri: "urn:iki:ui:htmx",
         id: "ui-htmx",
         file: "htmx.min.js",
         media_type: JS,
         bytes: include_bytes!("../vendor/htmx-2.0.4.min.js"),
     },
     Artifact {
-        iri: "urn:ui:shell.js",
+        iri: "urn:iki:ui:shell.js",
         id: "ui-shell-js",
         file: "shell.js",
         media_type: JS,
@@ -210,7 +211,7 @@ fn artifact_endpoint(a: &'static Artifact) -> AsyncFnEndpoint {
 
 // --- the palettes ------------------------------------------------------------------------
 
-/// `urn:ui:palette:{name}`: a palette table, as CSS declarations (`text/plain`, the face the
+/// `urn:iki:ui:palette:{name}`: a palette table, as CSS declarations (`text/plain`, the face the
 /// token template splices) or as Turtle (`as=text/turtle`).
 fn palette_endpoint() -> FnEndpoint {
     FnEndpoint::new("ui-palette", |inv: &Invocation<'_>| {
@@ -257,7 +258,7 @@ fn palette_endpoint() -> FnEndpoint {
 
 // --- the token stylesheet -------------------------------------------------------------------
 
-/// `urn:ui:tokens.css`: the token template filled with the palettes. No view code: a
+/// `urn:iki:ui:tokens.css`: the token template filled with the palettes. No view code: a
 /// `composeOver` under its own name and contract, as ikigai-toolbox's views are.
 fn tokens_endpoint() -> AsyncFnEndpoint {
     let composer = Arc::new(
@@ -277,7 +278,7 @@ fn tokens_endpoint() -> AsyncFnEndpoint {
             .summary(
                 "The shared token stylesheet (UI conventions D12): every palette behind \
                  prefers-color-scheme, prefers-contrast and data-theme on <html>, plus the \
-                 shell's own rules. Composed from urn:ui:template:tokens and the palettes.",
+                 shell's own rules. Composed from urn:iki:ui:template:tokens and the palettes.",
             )
             .verb(Verb::Source)
             .verb(Verb::Meta)
@@ -296,7 +297,7 @@ pub fn space() -> EndpointSpace {
     }
     space
         .bind(Exact::new(TOKENS_CSS), tokens_endpoint())
-        .bind(template("urn:ui:palette:{name}"), palette_endpoint())
+        .bind(template("urn:iki:ui:palette:{name}"), palette_endpoint())
         .named(space_iri("ui"))
 }
 
@@ -360,9 +361,18 @@ pub fn pages(family: &str, base: &str) -> Result<Alias, PagesError> {
         page_endpoint(family.to_string()),
     );
     let aliases = AliasTable::new()
-        .exact_at_root(format!("urn:ui:header:{family}"), format!("{base}header"))
-        .prefix_at_root(format!("urn:ui:title:{family}:"), format!("{base}title:"))
-        .prefix_at_root(format!("urn:ui:main:{family}:"), format!("{base}fragment:"));
+        .exact_at_root(
+            format!("urn:iki:ui:header:{family}"),
+            format!("{base}header"),
+        )
+        .prefix_at_root(
+            format!("urn:iki:ui:title:{family}:"),
+            format!("{base}title:"),
+        )
+        .prefix_at_root(
+            format!("urn:iki:ui:main:{family}:"),
+            format!("{base}fragment:"),
+        );
     Ok(Alias::new(Arc::new(aliases), Arc::new(doors)))
 }
 

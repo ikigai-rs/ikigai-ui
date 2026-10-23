@@ -1,4 +1,4 @@
-//! D17: two deliveries, the same names. A directory bound at `urn:ui:dir:` overrides an
+//! D17: two deliveries, the same names. A directory bound at `urn:iki:ui:dir:` overrides an
 //! artifact per name, falls back to the compiled-in bytes only on the directory atom's own
 //! absence, and is golden-threaded: a write to the file recomputes everything over it.
 
@@ -59,17 +59,17 @@ fn a_directory_overrides_one_artifact_by_name() {
     let dir = scratch("one");
     std::fs::write(dir.join("shell.js"), "// the host's own shell\n").unwrap();
     let kernel = host(Some(&dir));
-    let js = source(&kernel, "urn:ui:shell.js").unwrap();
+    let js = source(&kernel, "urn:iki:ui:shell.js").unwrap();
     assert_eq!(js.bytes, b"// the host's own shell\n");
     assert_eq!(
         js.repr_type.media_type, "text/javascript",
         "the name fixes the type"
     );
     // Every other artifact is still compiled in.
-    let htmx = source(&kernel, "urn:ui:htmx").unwrap();
+    let htmx = source(&kernel, "urn:iki:ui:htmx").unwrap();
     assert_eq!(
         htmx.bytes,
-        ikigai_ui::artifact("urn:ui:htmx").unwrap().bytes
+        ikigai_ui::artifact("urn:iki:ui:htmx").unwrap().bytes
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -107,11 +107,11 @@ fn a_write_to_the_directory_recomputes_the_artifact_and_the_stylesheet() {
         compiled
     );
 
-    let mine = ":root { --bg: $h{urn:ui:palette:dark} }\n";
+    let mine = ":root { --bg: $h{urn:iki:ui:palette:dark} }\n";
     issue(
         &kernel,
         Verb::Sink,
-        "urn:ui:dir:tokens.template.css",
+        "urn:iki:ui:dir:tokens.template.css",
         &[("content", mine.as_bytes())],
     )
     .unwrap();
@@ -126,7 +126,13 @@ fn a_write_to_the_directory_recomputes_the_artifact_and_the_stylesheet() {
         "{after}"
     );
 
-    issue(&kernel, Verb::Delete, "urn:ui:dir:tokens.template.css", &[]).unwrap();
+    issue(
+        &kernel,
+        Verb::Delete,
+        "urn:iki:ui:dir:tokens.template.css",
+        &[],
+    )
+    .unwrap();
     assert_eq!(text(&kernel, ikigai_ui::TOKENS_CSS, &[]), before);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -144,9 +150,12 @@ fn a_refusal_from_the_directory_is_not_a_fallback() {
             .verb(Verb::Source)
             .verb(Verb::Meta),
     );
-    let dir = EndpointSpace::new().bind(UriTemplate::parse("urn:ui:dir:{path}").unwrap(), refusing);
+    let dir = EndpointSpace::new().bind(
+        UriTemplate::parse("urn:iki:ui:dir:{path}").unwrap(),
+        refusing,
+    );
     let kernel = host_with(None, vec![Arc::new(dir)]);
-    match source(&kernel, "urn:ui:shell.js") {
+    match source(&kernel, "urn:iki:ui:shell.js") {
         Err(Error::Denied(why)) => assert!(why.contains("urn:cap:example:ui-dir"), "{why}"),
         other => panic!("a denial passes through, got {other:?}"),
     }
@@ -159,7 +168,7 @@ fn a_directory_cannot_add_a_name() {
     std::fs::write(dir.join("evil.js"), "alert(1)").unwrap();
     std::fs::write(dir.join("csp"), "default-src *").unwrap();
     let kernel = host(Some(&dir));
-    for iri in ["urn:ui:evil.js", "urn:ui:csp", "urn:ui:headers"] {
+    for iri in ["urn:iki:ui:evil.js", "urn:iki:ui:csp", "urn:iki:ui:headers"] {
         assert!(
             matches!(source(&kernel, iri), Err(Error::Unresolved(_))),
             "{iri} is not a UI name"
