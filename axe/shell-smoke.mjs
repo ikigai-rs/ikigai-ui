@@ -137,6 +137,79 @@ await check("theme= is applied and remembered, and the chooser changes it", asyn
   if ((await page.getAttribute("html", "data-theme")) !== "auto") return "auto did not forget the choice";
 });
 
+// ---- live views (D9): the push stream stand-in in serve.mjs -----------------------------------
+const live = site.base + "/live-auto.html";
+
+async function subscribed(paths) {
+  const want = JSON.stringify(paths);
+  for (let i = 0; i < 50; i += 1) {
+    if (site.push.streams().some((s) => JSON.stringify(s) === want)) return true;
+    await new Promise((ok) => setTimeout(ok, 100));
+  }
+  return false;
+}
+const countText = (page) => page.textContent("#count-focus");
+
+await check("a live view subscribes to what it shows, and only its own cut refetches it", async (page) => {
+  await page.goto(live);
+  if (!(await subscribed(["/_live/count"]))) return `no stream for /_live/count: ${JSON.stringify(site.push.streams())}`;
+  await page.focus("#elsewhere");
+  const before = await countText(page);
+  site.push.cut(["/_live/other"]);
+  await page.waitForTimeout(300);
+  if ((await countText(page)) !== before) return "a cut on another path refetched it";
+  site.push.cut(["/_live/count"]);
+  await page.waitForFunction((b) => document.getElementById("count-focus").textContent !== b, before);
+  if ((await page.textContent("#status")) !== "") return "a refetch wrote to #status";
+  const where = await page.evaluate(() => document.activeElement && document.activeElement.id);
+  if (where !== "elsewhere") return `focus moved to ${where}`;
+});
+
+await check("focus inside a live view is kept across its refetch", async (page) => {
+  await page.goto(live);
+  if (!(await subscribed(["/_live/count"]))) return "no stream";
+  await page.focus("#count-focus");
+  const before = await countText(page);
+  site.push.cut(["/_live/count"]);
+  await page.waitForFunction((b) => document.getElementById("count-focus").textContent !== b, before);
+  await page.waitForTimeout(100);
+  const where = await page.evaluate(() => document.activeElement && document.activeElement.id);
+  if (where !== "count-focus") return `focus is on ${where}`;
+});
+
+await check("a resync refetches every live view", async (page) => {
+  await page.goto(live);
+  if (!(await subscribed(["/_live/count"]))) return "no stream";
+  const before = await countText(page);
+  site.push.resync();
+  await page.waitForFunction((b) => document.getElementById("count-focus").textContent !== b, before);
+});
+
+await check("a live view's failed refetch is quiet and stacks nothing", async (page) => {
+  await page.goto(live);
+  if (!(await subscribed(["/_live/count"]))) return "no stream";
+  site.live.fail = true;
+  try {
+    site.push.cut(["/_live/count"]);
+    await page.waitForTimeout(300);
+    site.push.cut(["/_live/count"]);
+    await page.waitForTimeout(300);
+  } finally {
+    site.live.fail = false;
+  }
+  if ((await page.textContent("#status")) !== "") return "a failed refetch wrote to #status";
+  if ((await page.locator("p.ui-note").count()) !== 0) return "a failed refetch left a note";
+  if (!(await page.locator("#count-focus").isEnabled())) return "the view was disabled";
+});
+
+await check("a page with no live view opens no stream", async (page) => {
+  const opened = site.push.streams().length;
+  await page.goto(home);
+  await page.waitForTimeout(300);
+  // home declares no live view, so nothing subscribes even though its head names the stream.
+  if (site.push.streams().length > opened) return "a page with no live view opened a stream";
+});
+
 await browser.close();
 await site.close();
 console.log(`${failures} failure(s)`);

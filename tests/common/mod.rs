@@ -1,5 +1,5 @@
-//! A test host: ikigai-ui's space, one page family (`demo`, under `urn:demo:`) with a header,
-//! titles and fragments, and optionally a directory bound at `urn:iki:ui:dir:{path}` through
+//! A test host: ikigai-ui's space, one page family (`demo`, under `urn:demo:`, with its own
+//! stylesheet and the push stream, D9) with a header, titles and fragments, and optionally a directory bound at `urn:iki:ui:dir:{path}` through
 //! ikigai-fs, the way a host overrides an artifact (D17's Delivery A).
 #![allow(dead_code)] // each test binary uses its own part of this module
 
@@ -24,8 +24,25 @@ pub const HEADER: &str = "<nav aria-label=\"Site\"><a href=\"/demo/page/home\">D
 <option value=\"high-contrast\">High contrast</option></select> \
 <button type=\"submit\">Apply</button></form>";
 
-/// The demo pages: (name, title, fragment).
-pub const PAGES: [(&str, &str, &str); 2] = [
+/// The demo family's own stylesheet, at [`DEMO_CSS_PATH`]: only tokens, no colors.
+pub const DEMO_CSS: &str = ".demo-live { border: 1px solid var(--line); padding: 0.5rem; }\n";
+/// Where the demo family's stylesheet is served.
+pub const DEMO_CSS_PATH: &str = "/demo/demo.css";
+/// The push stream the demo family names. The axe server answers it (axe/serve.mjs).
+pub const PUSH_PATH: &str = "/_push";
+
+/// The demo family: [`DEMO_CSS_PATH`] and [`PUSH_PATH`] in every page's head.
+pub fn demo_pages() -> ikigai_core::Alias {
+    ikigai_ui::Pages::new("demo", "urn:demo:")
+        .stylesheet(DEMO_CSS_PATH)
+        .push(PUSH_PATH)
+        .build()
+        .unwrap()
+}
+
+/// The demo pages: (name, title, fragment). `live` holds a view that refetches itself when
+/// the push stream reports a cut on `/_live/count`, which axe/serve.mjs answers.
+pub const PAGES: [(&str, &str, &str); 3] = [
     (
         "home",
         "Home & <welcome>",
@@ -38,6 +55,14 @@ pub const PAGES: [(&str, &str, &str); 2] = [
         "about",
         "About",
         "<h1>About</h1>\n<p>The fragment is a resource; the page composes it.</p>",
+    ),
+    (
+        "live",
+        "Live",
+        "<h1>Live</h1>\n<p>The count is refetched when the push stream reports a cut on it.</p>\n\
+<div id=\"count\" class=\"demo-live\" hx-get=\"/_live/count\" hx-trigger=\"ikigai:cut\" hx-swap=\"outerHTML\" data-ui-push=\"\">\
+<button id=\"count-focus\" type=\"button\">Count 0</button></div>\n\
+<button id=\"elsewhere\" type=\"button\">Elsewhere</button>",
     ),
 ];
 
@@ -112,10 +137,8 @@ pub fn host(dir: Option<&Path>) -> Kernel {
 
 /// [`host`], with extra spaces ahead of the demo app.
 pub fn host_with(dir: Option<&Path>, extra: Vec<Arc<dyn Space>>) -> Kernel {
-    let mut spaces: Vec<Arc<dyn Space>> = vec![
-        Arc::new(ikigai_ui::space()),
-        Arc::new(ikigai_ui::pages("demo", "urn:demo:").unwrap()),
-    ];
+    let mut spaces: Vec<Arc<dyn Space>> =
+        vec![Arc::new(ikigai_ui::space()), Arc::new(demo_pages())];
     spaces.extend(extra);
     spaces.push(Arc::new(demo_app()));
     if let Some(dir) = dir {

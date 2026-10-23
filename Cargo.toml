@@ -30,10 +30,11 @@ testkit = ["dep:ikigai-a11y", "dep:serde_json", "dep:futures-executor"]
 # caret is a range: every 0.1.x from 0.1.110 on, never 0.2.
 ikigai-core = "0.1.110"
 # The shell and the token stylesheet are ikigai-fn compose templates (`composeOver`, named
-# instances). 0.5.0 is the floor for the escaping they rely on: `$h` per FND-H's rule set, and
-# an argument spliced into a marker IRI percent-encoded as one segment (ledger #1813), plus
-# `ikigai_fn::html`, which the test kit runs the vectors against. A caret on 0.5.0 is <0.6.0.
-ikigai-fn = "0.5.0"
+# instances). 0.5.1 is the floor: `{+name}`, RFC 6570 reserved expansion in a marker IRI, which
+# the shell's title and main markers use so a page name with `:` reaches its fragment whole
+# (ledger #2140, ikigai-rs/ikigai-fn#20); plus 0.5.0's escaping (`$h` per FND-H's rule set, ledger #1813)
+# and `ikigai_fn::html`, which the head slot and the test kit use. A caret on 0.5.1 is <0.6.0.
+ikigai-fn = "0.5.1"
 # The test kit only. ikigai-a11y's `ratio` and `Rgba` are the contrast math every other UI
 # test uses (default features off: no syntect). 0.3.0 is the current minor; <0.4.0.
 ikigai-a11y = { version = "0.3.0", optional = true }
