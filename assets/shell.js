@@ -35,9 +35,10 @@
 //    reopened stream refetches every view once its `ready` arrives, because a cut between the
 //    old stream closing and the new one listening was heard by nobody. (A new EventSource
 //    cannot send Last-Event-ID, and the door answers one with a resync anyway: it keeps no
-//    history.) A stream the door refuses (a 400 past its subscription bound) is said once in
-//    #status; a stream that is only reconnecting says nothing. Nothing from the stream is
-//    parsed as markup.
+//    history.) A page back from the back-forward cache is a reopen too: its stream closed at
+//    pagehide, so a cut made while it sat in the cache was heard by nobody. A stream the door
+//    refuses (a 400 past its subscription bound) is said once in #status; a stream that is
+//    only reconnecting says nothing. Nothing from the stream is parsed as markup.
 (function () {
   "use strict";
   var KEY = "ikigai-ui:theme";
@@ -189,6 +190,9 @@
   var inFlight = new WeakSet();
   var sentBy = new WeakMap();
   var refusalSaid = false;
+  // Set at pagehide when a stream was open: if the page comes back from the back-forward cache,
+  // its next stream is a reopen.
+  var away = false;
   function pushUrl() {
     var meta = document.querySelector('meta[name="ikigai-ui-push"]');
     return meta && meta.getAttribute("content");
@@ -249,9 +253,11 @@
     });
     paths.sort();
     var key = url && paths.length && window.EventSource ? url + "\n" + paths.join("\n") : "";
+    var back = away;
+    away = false;
     if (key === subscribed) return;
     subscribed = key;
-    var reopened = !!stream;
+    var reopened = !!stream || back;
     if (stream) stream.close();
     stream = null;
     if (!key) return;
@@ -325,6 +331,7 @@
   });
   window.addEventListener("pagehide", function () {
     if (stream) stream.close();
+    away = !!stream;
     stream = null;
     subscribed = "";
   });
