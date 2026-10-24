@@ -16,8 +16,8 @@ const site = await serve(dir);
 const browser = await chromium.launch();
 let failures = 0;
 
-async function check(name, run) {
-  const context = await browser.newContext();
+async function check(name, run, on = browser) {
+  const context = await on.newContext();
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -301,6 +301,43 @@ await check("a refused stream is said once in #status, and only then", async (pa
   await page.waitForTimeout(300);
   if ((await page.textContent("#status")) !== "") return "an accepted stream wrote to #status";
 });
+
+// The back-forward cache (ledger #2161). Playwright launches Chromium with bfcache off
+// ("--disable-back-forward-cache"), and its default headless shell refuses it anyway
+// ("BackForwardCacheDisabledForDelegate", measured), so this check runs in the full Chromium
+// build (channel "chromium", which `playwright install chromium` installs too) without that one
+// switch. It fails unless the page really came back from the cache (pageshow persisted): a page
+// that was loaded again instead would refetch everything and prove nothing.
+const bfcache = await chromium.launch({ channel: "chromium", ignoreDefaultArgs: ["--disable-back-forward-cache"] });
+await check("a page back from the back-forward cache misses no cut made while it was away", async (page) => {
+  await page.goto(live);
+  if (!(await subscribed(["/_live/count"]))) return "no stream";
+  const before = await countText(page);
+  await page.evaluate(() => {
+    window.__restored = false;
+    window.addEventListener("pageshow", (e) => (window.__restored = e.persisted));
+  });
+  await page.goto(home);
+  const closed = await until(
+    () => !site.push.streams().some((s) => s.includes("/_live/count")),
+    `the stream stayed open after pagehide: ${JSON.stringify(site.push.streams())}`,
+  );
+  if (closed) return closed;
+  // Nobody is listening: the page sits in the cache with its stream closed.
+  site.push.cut(["/_live/count"]);
+  // A restore from the cache fires no load event: wait for the commit, then for pageshow.
+  await page.goBack({ waitUntil: "commit" });
+  const restored = await page
+    .waitForFunction(() => window.__restored === true, null, { timeout: 5000 })
+    .then(() => true, () => false);
+  if (!restored) return "the page was not restored from the back-forward cache";
+  if (!(await subscribed(["/_live/count"]))) return `not resubscribed: ${JSON.stringify(site.push.streams())}`;
+  const changed = await page
+    .waitForFunction((b) => document.getElementById("count-focus").textContent !== b, before, { timeout: 3000 })
+    .then(() => true, () => false);
+  if (!changed) return "the cut made while the page was in the back-forward cache was missed";
+}, bfcache);
+await bfcache.close();
 
 await browser.close();
 await site.close();
