@@ -58,7 +58,7 @@ once in `#status`. The door grants `urn:cap:kernel:listen` for the stream to ans
 
 ## The test kit
 
-`ikigai-ui = { version = "0.1", features = ["testkit"] }` as a dev-dependency gives a UI repo:
+`ikigai-ui = { version = "0.3", features = ["testkit"] }` as a dev-dependency gives a UI repo:
 
 - `snapshot`: pages held to files in the repo (written once, never re-blessed by a switch);
 - `vectors`: FND-H's escaping and link vectors, ikigai-fn's file verbatim, to run any escaper against;
