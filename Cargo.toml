@@ -50,9 +50,10 @@ futures-executor = { version = "0.3", optional = true }
 # This crate's own tests use the test kit, as a UI repo does.
 ikigai-ui = { path = ".", features = ["testkit"] }
 futures = "0.3"
-# The module recipe as one test (tests/conformance.rs), at the current minor. 0.11.0 is the
-# release on ikigai-core 0.2.0 and turns on the DATATYPES and FAILURES checks by default.
-ikigai-conformance = "0.11.0"
+# The module recipe as one test (tests/conformance.rs), at the current minor. 0.12.0 turns on
+# the BODIES and BODY-INPUTS checks by default (ledger #2559); its floor pulls ikigai-core
+# 0.2.4+ into the test build only. A caret on it is <0.13.0.
+ikigai-conformance = "0.12.0"
 # The directory delivery (D17), for real: ikigai-fs's FileEndpoint at urn:iki:ui:dir:{path}.
 # 0.2.0 is the release on ikigai-core 0.2.0.
 ikigai-fs = "0.2.0"

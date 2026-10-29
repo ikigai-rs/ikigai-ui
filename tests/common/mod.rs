@@ -137,6 +137,12 @@ pub fn host(dir: Option<&Path>) -> Kernel {
 
 /// [`host`], with extra spaces ahead of the demo app.
 pub fn host_with(dir: Option<&Path>, extra: Vec<Arc<dyn Space>>) -> Kernel {
+    Kernel::new(root(dir, extra))
+}
+
+/// The root space [`host_with`] builds its kernel from, for a test that needs the same `Arc`
+/// beside the kernel (the conformance suite's `body_space`).
+pub fn root(dir: Option<&Path>, extra: Vec<Arc<dyn Space>>) -> Arc<dyn Space> {
     let mut spaces: Vec<Arc<dyn Space>> =
         vec![Arc::new(ikigai_ui::space()), Arc::new(demo_pages())];
     spaces.extend(extra);
@@ -147,7 +153,7 @@ pub fn host_with(dir: Option<&Path>, extra: Vec<Arc<dyn Space>>) -> Kernel {
             ikigai_fs::FileEndpoint::new(dir.to_path_buf()).cacheable(),
         )));
     }
-    Kernel::new(Arc::new(Fallback::new(spaces)))
+    Arc::new(Fallback::new(spaces))
 }
 
 pub fn issue(
