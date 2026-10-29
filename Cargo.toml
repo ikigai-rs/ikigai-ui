@@ -52,7 +52,7 @@ ikigai-ui = { path = ".", features = ["testkit"] }
 futures = "0.3"
 # The module recipe as one test (tests/conformance.rs), at the current minor. 0.11.0 is the
 # release on ikigai-core 0.2.0 and turns on the DATATYPES and FAILURES checks by default.
-ikigai-conformance = "0.11.0"
+ikigai-conformance = "0.12.0"
 # The directory delivery (D17), for real: ikigai-fs's FileEndpoint at urn:iki:ui:dir:{path}.
 # 0.2.0 is the release on ikigai-core 0.2.0.
 ikigai-fs = "0.2.0"
