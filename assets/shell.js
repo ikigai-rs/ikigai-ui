@@ -178,6 +178,11 @@
     status(name ? name + ": " + text : text, false, true);
     return true;
   }
+  function fail(detail, text, code) {
+    var elt = detail && detail.elt;
+    if (quiet(elt)) return;
+    if (!noteAt(elt, detail && detail.target, text, code)) status(text, true);
+  }
   document.addEventListener("htmx:responseError", function (e) {
     var xhr = e.detail && e.detail.xhr;
     var text = ((xhr && xhr.responseText) || "").trim().slice(0, 500);
