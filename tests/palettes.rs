@@ -4,7 +4,9 @@
 mod common;
 
 use common::*;
-use ikigai_ui::palette::{palette, PALETTES, TOKENS};
+use ikigai_ui::palette::{
+    palette, Kind, FLOOR_DECORATIVE, FLOOR_ENHANCED, FLOOR_NON_TEXT, PALETTES, TOKENS,
+};
 use ikigai_ui::testkit::{contrast, lint};
 
 #[test]
@@ -125,4 +127,38 @@ fn the_turtle_face_is_one_triple_per_token() {
         source(&kernel, "urn:iki:ui:palette:chartreuse"),
         Err(ikigai_core::Error::NotFound(_))
     ));
+}
+
+#[test]
+fn every_palette_splits_line_from_rule() {
+    use ikigai_ui::palette::PAIRS;
+    let rows = contrast::measure(&PALETTES);
+    for p in PALETTES {
+        assert!(p.get("line").is_some(), "{}: --line", p.name);
+        assert!(p.get("rule").is_some(), "{}: --rule", p.name);
+    }
+    // --line is a component border (SC 1.4.11): 3:1 or better on both grounds, everywhere.
+    for ground in ["bg", "surface"] {
+        assert!(
+            PAIRS.contains(&("line", ground, Kind::NonText)),
+            "--line on --{ground}"
+        );
+        assert!(
+            PAIRS.iter().any(|(f, b, _)| *f == "rule" && *b == ground),
+            "--rule on --{ground}"
+        );
+    }
+    for r in rows.iter().filter(|r| r.fg == "line") {
+        assert!(r.ratio >= FLOOR_NON_TEXT, "{r}");
+    }
+    // --rule is decorative and exempt from 3:1, but it has a stated minimum, and high contrast
+    // holds it to its AAA floor like every other pair.
+    for r in rows.iter().filter(|r| r.fg == "rule") {
+        assert!(r.ratio >= FLOOR_DECORATIVE, "{r}");
+        if r.palette == "high-contrast" {
+            assert!(r.ratio >= FLOOR_ENHANCED, "{r}");
+        }
+    }
+    // gonk's own light divider, which the 3:1 floor refused for --line.
+    assert_eq!(palette("light").unwrap().get("rule"), Some("#c9d1d9"));
 }

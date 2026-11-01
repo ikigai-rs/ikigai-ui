@@ -2,9 +2,14 @@
 //!
 //! Every UI that binds this crate gets its colors from these tables, through the token
 //! stylesheet `urn:iki:ui:tokens.css`. Token names are gonk.css's (`--bg` through `--line`) plus
-//! the four the other palettes need (`--ok-fg`, `--focus`, `--warn`, `--warn-fg`). The light and
-//! dark values start from gonk.css and the high-contrast values from ikigai-name; where a
-//! starting value missed the floor, the table says so beside it.
+//! the four the other palettes need (`--ok-fg`, `--focus`, `--warn`, `--warn-fg`) and `--rule`.
+//! The light and dark values start from gonk.css and the high-contrast values from ikigai-name;
+//! where a starting value missed the floor, the table says so beside it.
+//!
+//! Lines come in two kinds (D12 as amended, ledger #2133). `--line` is a component border, the
+//! edge that identifies a control (an input, a button), held to the 3:1 non-text floor of
+//! WCAG 2.2 SC 1.4.11. `--rule` is a decorative line (a table rule, a section divider), which
+//! SC 1.4.11 exempts; it is held only to [`FLOOR_DECORATIVE`], so no palette makes it vanish.
 //!
 //! [`PAIRS`] is the contrast floor as data: every foreground/ground pair the shared CSS draws,
 //! with the minimum each must clear. The test kit measures it with ikigai-a11y, for every
@@ -19,7 +24,7 @@
 
 /// The color tokens, in the order every palette states them. A new token is a change to the
 /// conventions record (D12) and to every palette.
-pub const TOKENS: [&str; 14] = [
+pub const TOKENS: [&str; 15] = [
     "bg",
     "surface",
     "fg",
@@ -33,6 +38,7 @@ pub const TOKENS: [&str; 14] = [
     "warn",
     "warn-fg",
     "line",
+    "rule",
     "focus",
 ];
 
@@ -43,6 +49,10 @@ pub const LAYOUT: [(&str, &str); 2] = [("radius", "0.5rem"), ("gap", "0.75rem")]
 pub const FLOOR_TEXT: f64 = 4.5;
 /// WCAG 2.2 SC 1.4.11 (AA): a border or a focus ring against its ground.
 pub const FLOOR_NON_TEXT: f64 = 3.0;
+/// A decorative line (`--rule`) against its ground. SC 1.4.11 exempts it; this is ikigai-ui's own
+/// minimum, below gonk's lightest divider (1.42:1 on `--surface`), so a palette cannot make a
+/// rule vanish.
+pub const FLOOR_DECORATIVE: f64 = 1.3;
 /// WCAG 2.2 SC 1.4.6 (AAA): what the high-contrast palette holds EVERY pair to.
 pub const FLOOR_ENHANCED: f64 = 7.0;
 
@@ -51,17 +61,19 @@ pub const FLOOR_ENHANCED: f64 = 7.0;
 pub enum Kind {
     /// Text: [`FLOOR_TEXT`].
     Text,
-    /// A border or focus ring: [`FLOOR_NON_TEXT`].
+    /// A component border or focus ring: [`FLOOR_NON_TEXT`].
     NonText,
+    /// A decorative line: [`FLOOR_DECORATIVE`].
+    Decorative,
 }
 
 /// Every pair the shared CSS draws: (foreground token, ground token, kind).
 ///
-/// D12's list (`--fg`, `--muted` and each `-fg` on its own color; `--line` and `--focus` on
-/// their grounds), plus `--accent` and `--danger` as text on both grounds, because the token
+/// D12's list (`--fg`, `--muted` and each `-fg` on its own color; `--line`, `--rule` and
+/// `--focus` on their grounds), plus `--accent` and `--danger` as text on both grounds, because the token
 /// stylesheet colors links with `--accent` and refusal notes with `--danger`. The focus ring is
 /// drawn outside its control (`outline-offset`), so its ground is the page, never the control.
-pub const PAIRS: [(&str, &str, Kind); 16] = [
+pub const PAIRS: [(&str, &str, Kind); 18] = [
     ("fg", "bg", Kind::Text),
     ("fg", "surface", Kind::Text),
     ("muted", "bg", Kind::Text),
@@ -76,6 +88,8 @@ pub const PAIRS: [(&str, &str, Kind); 16] = [
     ("warn-fg", "warn", Kind::Text),
     ("line", "bg", Kind::NonText),
     ("line", "surface", Kind::NonText),
+    ("rule", "bg", Kind::Decorative),
+    ("rule", "surface", Kind::Decorative),
     ("focus", "bg", Kind::NonText),
     ("focus", "surface", Kind::NonText),
 ];
@@ -92,7 +106,7 @@ pub struct Palette {
     /// Hold every pair to [`FLOOR_ENHANCED`] (the high-contrast palette).
     pub enhanced: bool,
     /// `(token, #rrggbb)`, in [`TOKENS`] order.
-    pub colors: [(&'static str, &'static str); 14],
+    pub colors: [(&'static str, &'static str); 15],
 }
 
 impl Palette {
@@ -110,6 +124,7 @@ impl Palette {
             (true, _) => FLOOR_ENHANCED,
             (false, Kind::Text) => FLOOR_TEXT,
             (false, Kind::NonText) => FLOOR_NON_TEXT,
+            (false, Kind::Decorative) => FLOOR_DECORATIVE,
         }
     }
 
@@ -120,7 +135,7 @@ impl Palette {
     /// ```
     /// let css = ikigai_ui::palette::LIGHT.declarations();
     /// assert!(css.starts_with("  --bg: #ffffff;\n  --surface: #f4f6f8;\n"));
-    /// assert_eq!(css.lines().count(), 14);
+    /// assert_eq!(css.lines().count(), 15);
     /// ```
     pub fn declarations(&self) -> String {
         self.colors
@@ -136,7 +151,7 @@ impl Palette {
     /// ```
     /// let ttl = ikigai_ui::palette::DARK.turtle();
     /// assert!(ttl.starts_with("<urn:iki:ui:palette:dark> <urn:iki:ui:token:bg> \"#0d1117\" .\n"));
-    /// assert_eq!(ttl.lines().count(), 14);
+    /// assert_eq!(ttl.lines().count(), 15);
     /// ```
     pub fn turtle(&self) -> String {
         self.colors
@@ -170,8 +185,10 @@ pub const LIGHT: Palette = Palette {
         ("ok-fg", "#ffffff"),
         ("warn", "#8a4b00"),
         ("warn-fg", "#ffffff"),
-        // gonk.css has #c9d1d9, 1.54:1 on --bg: below the 3:1 non-text floor.
+        // gonk.css has #c9d1d9, 1.54:1 on --bg: below the 3:1 non-text floor, so it is --rule.
         ("line", "#848d97"),
+        // gonk.css's --line: 1.54:1 on --bg, 1.42:1 on --surface.
+        ("rule", "#c9d1d9"),
         ("focus", "#0b5cad"),
     ],
 };
@@ -195,8 +212,10 @@ pub const DARK: Palette = Palette {
         ("ok-fg", "#0d1117"),
         ("warn", "#e3b341"),
         ("warn-fg", "#0d1117"),
-        // gonk.css has #30363d, 1.55:1 on --bg: below the 3:1 non-text floor.
+        // gonk.css has #30363d, 1.55:1 on --bg: below the 3:1 non-text floor, so it is --rule.
         ("line", "#656d76"),
+        // gonk.css's --line: 1.55:1 on --bg, 1.42:1 on --surface.
+        ("rule", "#30363d"),
         ("focus", "#6cb6ff"),
     ],
 };
@@ -221,6 +240,8 @@ pub const HIGH_CONTRAST: Palette = Palette {
         ("warn", "#ffd33d"),
         ("warn-fg", "#000000"),
         ("line", "#ffffff"),
+        // Held to 7:1 like every pair here: 17.4:1 on --surface.
+        ("rule", "#ffffff"),
         ("focus", "#ffe066"),
     ],
 };

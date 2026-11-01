@@ -7,7 +7,7 @@ behavior, and the same tests.
 | name | what you get |
 |---|---|
 | `urn:iki:ui:htmx` | htmx 2.0.4, vendored and SHA-256 pinned; the shell loads it with `integrity=` and configures it once (`allowEval:false`, `allowScriptTags:false`) |
-| `urn:iki:ui:tokens.css` | one token set (gonk's names) in light, dark and high contrast; `auto` follows the system, `prefers-contrast: more` picks high contrast, `data-theme` overrides; every pair contrast-tested (WCAG 2.2 AA, AAA for high contrast) |
+| `urn:iki:ui:tokens.css` | one token set (gonk's names, with `--line` for component borders and `--rule` for decorative lines) in light, dark and high contrast; `auto` follows the system, `prefers-contrast: more` picks high contrast, `data-theme` overrides; every pair contrast-tested (WCAG 2.2 AA, AAA for high contrast) |
 | `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint, and live views refetched from the door's push stream |
 | `urn:iki:ui:template:shell` | the page shell: landmarks, a skip link, the status region, no inline script or style |
 | `pages(family, base)` | your `{base}page:{name}` pages: the shell over your `{base}header`, `{base}title:{name}` and `{base}fragment:{name}`; a name with `:` in it (`item:5`) reaches them whole |
@@ -58,7 +58,7 @@ once in `#status`. The door grants `urn:cap:kernel:listen` for the stream to ans
 
 ## The test kit
 
-`ikigai-ui = { version = "0.3", features = ["testkit"] }` as a dev-dependency gives a UI repo:
+`ikigai-ui = { version = "0.4", features = ["testkit"] }` as a dev-dependency gives a UI repo:
 
 - `snapshot`: pages held to files in the repo (written once, never re-blessed by a switch);
 - `vectors`: FND-H's escaping and link vectors, ikigai-fn's file verbatim, to run any escaper against;
@@ -83,6 +83,18 @@ error or console error, in light, dark and more-contrast media.
 
 The UI conventions record (D7, D12, D13, D14, D17, D18) is the design; this crate is its shared
 path. Migrating the existing apps onto it comes after the demo app and book.
+
+Two of those decisions stand as amended on 2026-11-01 (ledger #2133, carried out in #2832):
+
+- **D13, one status region.** `#status` is the page's only live region. A refusal note beside its
+  control is plain text with no role; the control points at it with `aria-describedby` (removed
+  when the note goes), and `#status` says the same sentence politely, naming the control
+  ("Load details: not found"). `role="alert"` is kept for a failure with no control to sit
+  beside. Quiet elements and live views say nothing.
+- **D12, the 3:1 floor on component borders only.** `--line` is the border that identifies a
+  control (an input, a button) and is held to SC 1.4.11's 3:1. `--rule` is a decorative line (a
+  table rule, a section divider), which SC 1.4.11 exempts; it is held to a stated 1.3:1 so no
+  palette can make it vanish, and light keeps gonk's `#c9d1d9`. High contrast holds both to 7:1.
 
 ## License
 
