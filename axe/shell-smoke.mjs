@@ -70,22 +70,24 @@ async function oneRegion(page, note, control, said) {
   return null;
 }
 
+// The button itself: its name is also in the #status mirror, so text= would find two.
+const details = 'button[hx-get="/demo/fragment/missing"]';
 await check("a refusal is shown as text after the control that asked", async (page) => {
   await page.goto(home);
-  await page.click("text=Load details");
+  await page.click(details);
   const note = page.locator("button + p.ui-note");
   await note.waitFor();
   const text = await note.textContent();
   if (text !== "not found") return `the note says ${JSON.stringify(text)}`;
-  if (await page.locator("text=Load details").isDisabled()) return "a 404 disabled the control";
-  const first = await oneRegion(page, "button + p.ui-note", "button[hx-get]", "Load details: not found");
+  if (await page.locator(details).isDisabled()) return "a 404 disabled the control";
+  const first = await oneRegion(page, "button + p.ui-note", details, "Load details: not found");
   if (first) return first;
   const oldId = await note.getAttribute("id");
-  await page.click("text=Load details");
+  await page.click(details);
   await page.waitForTimeout(200);
   if ((await page.locator("p.ui-note").count()) !== 1) return "a second refusal stacked a note";
   // The replaced note's link went with it; the control points at the new one only.
-  const again = await oneRegion(page, "button + p.ui-note", "button[hx-get]", "Load details: not found");
+  const again = await oneRegion(page, "button + p.ui-note", details, "Load details: not found");
   if (again) return `after a second refusal: ${again}`;
   const newId = await note.getAttribute("id");
   if (newId !== oldId && (await page.locator(`[aria-describedby~="${oldId}"]`).count()) !== 0)
