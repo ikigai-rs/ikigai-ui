@@ -18,7 +18,10 @@ fn the_shell_script_makes_no_live_region_of_its_own() {
         !code.contains("\"role\", \"status\""),
         "the shell script sets role=status on something: an in-place note is plain text (D13)"
     );
-    assert!(!code.contains("aria-live"), "no aria-live outside the shell's #status");
+    assert!(
+        !code.contains("aria-live"),
+        "no aria-live outside the shell's #status"
+    );
     // The note is linked to its control instead, and the sentence goes to #status.
     assert!(code.contains("aria-describedby"));
 }
