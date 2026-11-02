@@ -11,12 +11,16 @@
 // 2. Refusals and failures (D14). htmx does not swap a 4xx/5xx answer, so the answer's text is
 //    shown, always with textContent and never parsed as markup. A control inside #main gets the
 //    note where it is: in place of its own placeholder when it swaps into itself, otherwise right
-//    after itself, replacing an earlier note rather than stacking. Anything else goes to #status
-//    as an alert. A 403 marks the control aria-disabled (and disables a button): an authority
-//    refusal is permanent for this grant. Every other status leaves the control usable.
-// 3. The one status region (D13). A request clears #status, except one made by an element
-//    inside [data-ui-quiet]: badges, watchers and polls retry on their own, so their requests
-//    and their failures are never messages.
+//    after itself, replacing an earlier note rather than stacking. The note is plain text with no
+//    role and an id; the control points at it with aria-describedby, a link removed when the
+//    note is replaced or swapped away. Anything else goes to #status as an alert. A 403 marks
+//    the control aria-disabled (and disables a button): an authority refusal is permanent for
+//    this grant. Every other status leaves the control usable.
+// 3. The one status region (D13). #status is the page's only live region: an in-place note's
+//    sentence is said there too (politely, visually hidden, since the note is on screen),
+//    prefixed with the control's accessible name. A request clears #status, except one made by
+//    an element inside [data-ui-quiet]: badges, watchers and polls retry on their own, so their
+//    requests and their failures are never messages.
 // 4. Focus after a swap (D13). A swap into #main moves focus to its first heading (or #main); a
 //    swap that took the focused element gives focus to the element with the same id in the new
 //    content, else to the swapped region. Focus is never left on <body>.
@@ -93,23 +97,65 @@
     // A live view's own request is a refetch, never a message (5).
     return !!(elt.closest("[data-ui-quiet]") || (elt.hasAttribute && elt.hasAttribute("data-ui-push")));
   }
-  function status(text, alert) {
+  function status(text, alert, unseen) {
     var area = document.getElementById("status");
     if (!area) return;
     area.textContent = "";
     if (!text) return;
     var p = document.createElement("p");
-    p.className = "ui-note";
+    p.className = unseen ? "ui-sr-only" : "ui-note";
     if (alert) p.setAttribute("role", "alert");
     p.textContent = text;
     area.appendChild(p);
   }
+  // A note is plain text, never a live region (D13): a region created already holding its text
+  // is often not announced, and a second region would say one failure twice. The control
+  // points at its note with aria-describedby, so the note is read when focus returns to it, and
+  // #status says the sentence once, naming the control.
+  var noteSeq = 0;
+  var described = [];
+  function unlink(control, id) {
+    var ids = (control.getAttribute("aria-describedby") || "").split(/\s+/).filter(function (t) {
+      return t && t !== id;
+    });
+    if (ids.length) control.setAttribute("aria-describedby", ids.join(" "));
+    else control.removeAttribute("aria-describedby");
+  }
+  // Every link whose note has left the document (replaced, or swapped away) goes with it.
+  function sweep() {
+    described = described.filter(function (d) {
+      if (document.contains(d.note)) return true;
+      unlink(d.control, d.note.id);
+      return false;
+    });
+  }
+  function squash(text) {
+    return (text || "").replace(/\s+/g, " ").trim();
+  }
+  // The control's accessible name: aria-labelledby, aria-label, its <label>, or, for a control
+  // named by its content, its text. A region with none of these is not named.
+  function nameOf(elt) {
+    var by = (elt.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean);
+    var named = by.map(function (id) {
+      var el = document.getElementById(id);
+      return el ? squash(el.textContent) : "";
+    }).join(" ");
+    if (squash(named)) return squash(named);
+    if (squash(elt.getAttribute("aria-label"))) return squash(elt.getAttribute("aria-label"));
+    if (elt.labels && elt.labels.length) return squash(elt.labels[0].textContent);
+    if (elt.matches("button, a[href], summary, [role=button], [role=link], [role=tab], [role=menuitem]")) {
+      return squash(elt.textContent);
+    }
+    return "";
+  }
   function noteAt(elt, target, text, code) {
     var main = document.getElementById("main");
     if (!elt || !main || elt === main || !main.contains(elt)) return false;
+    var name = nameOf(elt).slice(0, 120);
     var p = document.createElement("p");
     p.className = "ui-note";
-    p.setAttribute("role", "status");
+    noteSeq += 1;
+    p.id = "ui-note-" + noteSeq;
     p.textContent = text;
     if (!target || target === elt) {
       elt.textContent = "";
@@ -119,10 +165,17 @@
       if (next && next.classList && next.classList.contains("ui-note")) next.replaceWith(p);
       else elt.insertAdjacentElement("afterend", p);
     }
+    sweep();
+    var ids = (elt.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+    ids.push(p.id);
+    elt.setAttribute("aria-describedby", ids.join(" "));
+    described.push({ control: elt, note: p });
     if (code === 403) {
       elt.setAttribute("aria-disabled", "true");
       if (elt.tagName === "BUTTON") elt.disabled = true;
     }
+    // The visible note is beside the control, so the mirror is for assistive technology only.
+    status(name ? name + ": " + text : text, false, true);
     return true;
   }
   function fail(detail, text, code) {
@@ -326,6 +379,7 @@
     }, 0);
   });
   document.addEventListener("htmx:afterSettle", function (e) {
+    sweep();
     flush((e.detail && e.detail.target) || null);
     subscribe();
   });

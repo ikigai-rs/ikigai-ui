@@ -46,36 +46,82 @@ async function add(page, html, parent = "#main") {
 
 const home = site.base + "/home-auto.html";
 
+// One status region (D13): a note in #main is plain text with no role, the control it belongs
+// to points at it with aria-describedby, and #status says the same sentence, naming the control.
+const linked = (page, control) =>
+  page.evaluate((control) => {
+    const c = document.querySelector(control);
+    const ids = (c.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+    const notes = ids.map((id) => document.getElementById(id)).filter((n) => n && n.matches("p.ui-note"));
+    return { ids, notes: notes.map((n) => n.id) };
+  }, control);
+async function oneRegion(page, note, control, said) {
+  const role = await page.locator(note).getAttribute("role");
+  if (role !== null) return `the note has role=${role}`;
+  if ((await page.locator('#main [role="status"], #main [role="alert"], #main [aria-live]').count()) !== 0)
+    return "a live region inside #main";
+  const id = await page.locator(note).getAttribute("id");
+  if (!id) return "the note has no id";
+  const link = await linked(page, control);
+  if (JSON.stringify(link.ids) !== JSON.stringify([id])) return `${control} aria-describedby is ${JSON.stringify(link.ids)}, not [${id}]`;
+  const mirror = await page.textContent("#status");
+  if (mirror !== said) return `#status says ${JSON.stringify(mirror)}, not ${JSON.stringify(said)}`;
+  if ((await page.locator('#status [role="alert"]').count()) !== 0) return "the #status mirror is an alert";
+  return null;
+}
+
+// The button itself: its name is also in the #status mirror, so text= would find two.
+const details = 'button[hx-get="/demo/fragment/missing"]';
 await check("a refusal is shown as text after the control that asked", async (page) => {
   await page.goto(home);
-  await page.click("text=Load details");
+  await page.click(details);
   const note = page.locator("button + p.ui-note");
   await note.waitFor();
   const text = await note.textContent();
   if (text !== "not found") return `the note says ${JSON.stringify(text)}`;
-  if (await page.locator("text=Load details").isDisabled()) return "a 404 disabled the control";
-  await page.click("text=Load details");
+  if (await page.locator(details).isDisabled()) return "a 404 disabled the control";
+  const first = await oneRegion(page, "button + p.ui-note", details, "Load details: not found");
+  if (first) return first;
+  const oldId = await note.getAttribute("id");
+  await page.click(details);
   await page.waitForTimeout(200);
   if ((await page.locator("p.ui-note").count()) !== 1) return "a second refusal stacked a note";
+  // The replaced note's link went with it; the control points at the new one only.
+  const again = await oneRegion(page, "button + p.ui-note", details, "Load details: not found");
+  if (again) return `after a second refusal: ${again}`;
+  const newId = await note.getAttribute("id");
+  if (newId !== oldId && (await page.locator(`[aria-describedby~="${oldId}"]`).count()) !== 0)
+    return "a link to the replaced note is left";
 });
 
 await check("a 403 disables the control, and markup in a refusal is text", async (page) => {
   await page.goto(home);
-  await add(page, '<button id="deny" hx-get="/_status/403" hx-target="#detail">Deny</button>');
+  await add(page, '<button id="deny" hx-get="/_status/403" hx-target="#detail">Deny <b>it</b></button>');
   await page.click("#deny");
   await page.locator("#deny + p.ui-note").waitFor();
   if (!(await page.locator("#deny").isDisabled())) return "the button is still enabled";
   if ((await page.getAttribute("#deny", "aria-disabled")) !== "true") return "no aria-disabled";
   const note = await page.textContent("#deny + p.ui-note");
   if (!note.includes("urn:cap:example:403")) return `the note says ${JSON.stringify(note)}`;
+  return oneRegion(page, "#deny + p.ui-note", "#deny", "Deny it: refused: needs urn:cap:example:403");
 });
 
-await check("a control that swaps into itself gets the note in place", async (page) => {
+await check("a control that swaps into itself gets the note in place, and loses the link when it goes", async (page) => {
   await page.goto(home);
-  await add(page, '<div id="lazy" hx-get="/_status/500" hx-trigger="load">loading…</div>');
+  await add(page, '<section id="lazy" aria-label="Details" hx-get="/_status/500" hx-trigger="load">loading…</section>');
   await page.locator("#lazy > p.ui-note").waitFor();
   const text = await page.textContent("#lazy");
   if (text.includes("loading")) return "the placeholder is still there";
+  const linkedNow = await oneRegion(page, "#lazy > p.ui-note", "#lazy", "Details: refused: needs urn:cap:example:500");
+  if (linkedNow) return linkedNow;
+  // A later answer that swaps the note away takes the link with it.
+  await add(page, '<button id="fill" hx-get="/about-auto.html" hx-select="main h1" hx-target="#lazy">Fill</button>');
+  await page.click("#fill");
+  await page.locator("#lazy h1").waitFor();
+  await page.waitForTimeout(100);
+  if ((await page.locator("#lazy p.ui-note").count()) !== 0) return "the note is still there";
+  const left = await page.getAttribute("#lazy", "aria-describedby");
+  if (left !== null) return `#lazy still has aria-describedby=${JSON.stringify(left)}`;
 });
 
 await check("a failure outside #main is an alert in #status; a quiet one says nothing", async (page) => {

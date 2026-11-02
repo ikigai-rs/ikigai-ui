@@ -6,9 +6,10 @@ test, not a review.
 
 | what | how it is checked |
 |---|---|
-| Text contrast 4.5:1, borders and focus ring 3:1, in light and dark; 7:1 for every pair in high contrast | `tests/palettes.rs`, through ikigai-a11y, over the palette tables |
+| Text contrast 4.5:1, component borders (`--line`) and focus ring 3:1, in light and dark; decorative rules (`--rule`, exempt from SC 1.4.11) at least 1.3:1; 7:1 for every pair in high contrast | `tests/palettes.rs`, through ikigai-a11y, over the palette tables |
 | No color outside the palette tables; every `var(--x)` defined | `tests/palettes.rs`, the test kit's lints |
 | Landmarks: a skip link, one `<header>`, one `<main id="main" tabindex="-1">`, one status region | `tests/pages.rs` |
+| One live region: an in-place note has no role; its control points at it with `aria-describedby` (removed when the note goes), and `#status` says the sentence, naming the control | `tests/shell.rs`, `axe/shell-smoke.mjs` |
 | Focus after a swap: a swap into `#main` focuses its first heading; focus is never left on `<body>` | `axe/shell-smoke.mjs`, in Chromium |
 | Refusals as text, in place, and a 403 disables its control; quiet elements never announce | `axe/shell-smoke.mjs` |
 | A live view's refetch (D9) never announces, leaves no note, and keeps focus where it was, inside the view or not | `axe/shell-smoke.mjs` |
