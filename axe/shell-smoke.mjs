@@ -147,7 +147,7 @@ await check("a swap into #main moves focus to its heading", async (page) => {
 
 // htmx 2 itself restores focus to an element with the same id after a swap (measured: this
 // check passes with the script's afterSettle handler removed, and the #main one does not). It
-// is kept as the contract: the script's part is the case htmx cannot cover, never <body>.
+// is kept as the contract: the script's part is the case htmx cannot cover (the next check).
 await check("focus survives a swap that replaced the focused element", async (page) => {
   await page.goto(home);
   // The shell's own theme select, made to replace itself with the server's copy.
@@ -172,6 +172,83 @@ await check("focus survives a swap that replaced the focused element", async (pa
   // The server's copy says auto; the chooser that replaced it shows the theme in force.
   const shown = await page.inputValue("#ui-theme");
   if (shown !== "dark") return `the swapped-in chooser shows ${shown}`;
+});
+
+// The case htmx cannot cover: the focused control had no id, so nothing in the new content is
+// "the same element". The script gives focus to the region that took it.
+await check("a swap that removed a focused control with no id gives focus to its region", async (page) => {
+  await page.goto(home);
+  await add(page, '<section id="holder" aria-label="Holder"><button hx-get="/about-auto.html" hx-select="main h1" hx-target="#holder">Replace me</button></section>');
+  await page.focus("#holder button");
+  await page.keyboard.press("Enter");
+  await page.locator("#holder h1").waitFor();
+  await page.waitForTimeout(200);
+  const where = await page.evaluate(() => {
+    const a = document.activeElement;
+    return a ? `${a.tagName}#${a.id}` : "nothing";
+  });
+  if (where !== "SECTION#holder") return `focus is on ${where}`;
+});
+
+// A page nobody has focused (ledger #2899): a poll or a lazily loaded region swaps in the
+// background, and that is not focus lost. Focus stays on <body> and the page does not scroll
+// to whatever swapped. The page is made tall and scrolled first, and the swapping element is
+// handed to htmx only then, so the first swap cannot come before the scroll. The swapping
+// element keeps a fixed size: it sits above the viewport, and content that grows there moves
+// scrollY by scroll anchoring (measured, 40-60px), which keeps the view still and is not a jump.
+const idle = (page, where, html, swapping) =>
+  page.evaluate(
+    ([where, html, swapping]) => {
+      const spacer = document.createElement("div");
+      spacer.style.height = "4000px";
+      document.getElementById("main").appendChild(spacer);
+      window.__settled = 0;
+      document.addEventListener("htmx:afterSettle", () => (window.__settled += 1));
+      const host = document.querySelector(where);
+      host.insertAdjacentHTML("afterbegin", html);
+      const el = document.querySelector(swapping);
+      el.style.display = "block";
+      el.style.height = "3em";
+      el.style.overflow = "hidden";
+      window.scrollTo(0, 2000);
+      window.htmx.process(host);
+      return window.scrollY;
+    },
+    [where, html, swapping],
+  );
+async function untouched(page, scrolled, swaps) {
+  if (scrolled < 1000) return `the page did not scroll for the test (scrollY ${scrolled})`;
+  await page.waitForFunction((n) => window.__settled >= n, swaps);
+  await page.waitForTimeout(200);
+  const after = await page.evaluate(() => {
+    const a = document.activeElement;
+    return { on: a ? (a === document.body ? "BODY" : `${a.tagName}#${a.id}`) : "nothing", y: window.scrollY };
+  });
+  if (after.on !== "BODY") return `focus moved to ${after.on}`;
+  if (after.y !== scrolled) return `the page scrolled from ${scrolled} to ${after.y}`;
+  return null;
+}
+
+await check("an idle page's poll leaves focus on <body> and the scroll where it was", async (page) => {
+  await page.goto(home);
+  const scrolled = await idle(
+    page,
+    "header",
+    '<span data-ui-quiet><span id="badge-poll" hx-get="/about-auto.html" hx-select="main h1" hx-trigger="load, every 150ms">0</span></span>',
+    "#badge-poll",
+  );
+  return untouched(page, scrolled, 3);
+});
+
+await check("an idle page's lazily loaded region leaves focus on <body> and the scroll where it was", async (page) => {
+  await page.goto(home);
+  const scrolled = await idle(
+    page,
+    "#main",
+    '<section id="lazy-region" aria-label="Lazy" hx-get="/about-auto.html" hx-select="main h1" hx-trigger="load">loading…</section>',
+    "#lazy-region",
+  );
+  return untouched(page, scrolled, 1);
 });
 
 await check("theme= is applied and remembered, and the chooser changes it", async (page) => {

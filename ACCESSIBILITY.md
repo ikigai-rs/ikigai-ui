@@ -10,7 +10,7 @@ test, not a review.
 | No color outside the palette tables; every `var(--x)` defined | `tests/palettes.rs`, the test kit's lints |
 | Landmarks: a skip link, one `<header>`, one `<main id="main" tabindex="-1">`, one status region | `tests/pages.rs` |
 | One live region: an in-place note has no role; its control points at it with `aria-describedby` (removed when the note goes), and `#status` says the sentence, naming the control | `tests/shell.rs`, `axe/shell-smoke.mjs` |
-| Focus after a swap: a swap into `#main` focuses its first heading; focus is never left on `<body>` | `axe/shell-smoke.mjs`, in Chromium |
+| Focus after a swap: a swap into `#main` focuses its first heading; a swap that took the focused element never leaves focus on `<body>`; on a page nobody has focused, a poll or a lazily loaded region leaves focus on `<body>` and the scroll where it was | `axe/shell-smoke.mjs`, in Chromium |
 | Refusals as text, in place, and a 403 disables its control; quiet elements never announce | `axe/shell-smoke.mjs` |
 | A live view's refetch (D9) never announces, leaves no note, and keeps focus where it was, inside the view or not | `axe/shell-smoke.mjs` |
 | A refused live stream is said once in the status region, and an accepted one says nothing | `axe/shell-smoke.mjs` |
