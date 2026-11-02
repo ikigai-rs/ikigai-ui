@@ -11,6 +11,7 @@ behavior, and the same tests.
 | `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint, and live views refetched from the door's push stream |
 | `urn:iki:ui:template:shell` | the page shell: landmarks, a skip link, the status region, the theme chooser in the header, no inline script or style |
 | `urn:iki:ui:theme-chooser:{theme}` | the theme chooser, `{theme}` selected: a GET form with a "Theme" label, a native select of Auto (system), Light, Dark and High contrast, and an Apply button for a page with no script |
+| `urn:iki:ui:chooser:{family}:{theme}` | what the shell puts in a family's header, for ANY family: the family's `urn:iki:ui:chooser-override:{family}:{theme}` if one is bound, else the theme chooser |
 | `pages(family, base)` | your `{base}page:{name}` pages: the shell over your `{base}header` (then the theme chooser), `{base}title:{name}` and `{base}fragment:{name}`; a name with `:` in it (`item:5`) reaches them whole |
 | `Pages::new(family, base)` | the same, with your own stylesheets and scripts in `<head>`, the door's push stream named for live views, and the chooser turned off with `.theme_chooser(false)` |
 | `artifacts(&[Artifact], dir)` | your own artifacts, with the same two deliveries: compiled in, or a file under your directory prefix |
@@ -47,6 +48,23 @@ script, a change applies at once and the Apply button is hidden; with no script,
 the page with `theme=`, which the page renders. To put it somewhere else, turn the shell's off
 (`Pages::new(…).theme_chooser(false)`) and splice `urn:iki:ui:theme-chooser:{theme}` where you
 want it; to have none, just turn it off. One chooser per page (its select is `#ui-theme`).
+
+**A page composed over the shell directly** (`urn:iki:fn:compose src=<urn:iki:ui:template:shell>
+family=… name=… theme=…`, say from a names file) gets the chooser too, with nothing to bind: the
+shell reads `urn:iki:ui:chooser:{family}:{theme}`, and this crate's space answers it for every
+family. To turn it off, bind the family's override to nothing, with the theme the composition
+fixes:
+
+```text
+urn:iki:ui:chooser-override:quakes:auto = source urn:file:empty.html
+```
+
+Bind the override to your own markup to replace the chooser there instead. Bind the override,
+not `urn:iki:ui:chooser:{family}:{theme}` itself: a host resolves a name in the first space that
+binds it, and this crate's space usually comes first (a names layer comes last), so a binding of
+the shell's own name after it is never reached. `Pages::theme_chooser(false)` binds the same override, so it holds
+wherever the host puts the family. (On such a page the no-script Apply asks for `theme=`, which a
+composition that fixes `theme` refuses; with script the choice applies at once.)
 
 A viewer's choice is kept in this browser only: `localStorage` under `ikigai-ui:theme` (choosing
 auto clears it), applied before first paint over the server's `auto`. It is never sent to the
