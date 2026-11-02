@@ -17,7 +17,9 @@
 //! | `urn:iki:ui:tokens.css` | composition | the template filled with the palettes: `auto`, light, dark, high contrast |
 //! | a host's `{base}page:{name}` | composition | the shell over the host's fragment, from [`pages`] or [`Pages`] |
 //! | `urn:iki:ui:head:{family}` | data | a family's `<head>` additions, fixed by the host ([`Pages`]) |
-//! | `urn:iki:ui:theme-chooser:{theme}` | data | the theme chooser ([`theme_chooser`]), `{theme}` selected; the shell puts it in every page's `<header>` |
+//! | `urn:iki:ui:theme-chooser:{theme}` | data | the theme chooser ([`theme_chooser`]), `{theme}` selected |
+//! | `urn:iki:ui:chooser:{family}:{theme}` | composition | what the shell puts in a family's `<header>`, for ANY family: its override if bound, else the theme chooser ([`CHOOSER`]) |
+//! | `urn:iki:ui:chooser-override:{family}:{theme}` | a host's | a family's own chooser; bound to nothing, it turns the chooser off ([`CHOOSER_OVERRIDE`]) |
 //!
 //! ## Two deliveries, one set of names (D17)
 //!
@@ -112,6 +114,16 @@ pub const THEMES: [&str; 4] = ["auto", "light", "dark", "high-contrast"];
 /// The theme chooser's names: `urn:iki:ui:theme-chooser:{theme}`, one per [`THEMES`] value, each
 /// [`theme_chooser`]'s markup with that theme selected.
 pub const THEME_CHOOSER: &str = "urn:iki:ui:theme-chooser:";
+
+/// The shell's header chooser: `urn:iki:ui:chooser:{family}:{theme}`, which the shell splices
+/// after the family's header. Bound by [`space`] for ANY family: the family's override at
+/// [`CHOOSER_OVERRIDE`] when it binds one, else [`theme_chooser`] with `{theme}` selected.
+pub const CHOOSER: &str = "urn:iki:ui:chooser:";
+
+/// A family's own header chooser: `urn:iki:ui:chooser-override:{family}:{theme}`. When it is
+/// bound, the shell's chooser for that family is what it answers (an empty answer turns the
+/// chooser off, which is what [`Pages::theme_chooser(false)`](Pages::theme_chooser) binds).
+pub const CHOOSER_OVERRIDE: &str = "urn:iki:ui:chooser-override:";
 
 /// What the theme chooser calls each of [`THEMES`]: words, never an icon alone.
 pub const THEME_LABELS: [&str; 4] = ["Auto (system)", "Light", "Dark", "High contrast"];
@@ -417,8 +429,83 @@ fn theme_chooser_endpoint() -> FnEndpoint {
     )
 }
 
-/// `urn:iki:ui:chooser:{family}:{theme}` for a family that opted out of the shell's chooser:
-/// nothing.
+/// Whether `family` is a family name: one or more of `a-z 0-9 -`, the rule [`Pages`] checks.
+fn family_ok(family: &str) -> bool {
+    !family.is_empty()
+        && family
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// `urn:iki:ui:chooser:{family}:{theme}`, for ANY family: the family's override at
+/// `urn:iki:ui:chooser-override:{family}:{theme}` when one is bound, else [`theme_chooser`].
+///
+/// Bound in [`space`], so a page composed over the shell straight from a names file (no
+/// [`Pages`]) resolves its header without naming the chooser (ledger #2885). The override is a
+/// SEPARATE name because resolution takes the first space that binds a name and hosts put this
+/// crate's space first, and a names layer last: a family binding the shell's own name would be
+/// shadowed. Reading the override instead lets a family turn the chooser off (or replace it)
+/// wherever it sits in the host.
+///
+/// The fallback is taken only on the override read's own `NotFound` or `Unresolved`, as an
+/// artifact's is, so the answer hangs from that atom's thread and binding an override later
+/// recomputes it; any other failure, a denial included, passes through.
+fn chooser_endpoint() -> AsyncFnEndpoint {
+    let description = Description::new("ui-chooser")
+        .title("A page family's header chooser")
+        .summary(
+            "The theme chooser the shell puts in a page family's header, after the family's \
+             own header: the family's override at urn:iki:ui:chooser-override:{family}:{theme} \
+             when it binds one (an empty one turns the chooser off), else \
+             urn:iki:ui:theme-chooser:{theme}.",
+        )
+        .verb(Verb::Source)
+        .verb(Verb::Meta)
+        .input(
+            ArgSpec::new("family")
+                .summary("the page family, one or more of a-z, 0-9 and -")
+                .class(XSD_STRING)
+                .binding(),
+        )
+        .input(
+            ArgSpec::new("theme")
+                .summary("the theme shown as selected")
+                .class(XSD_STRING)
+                .binding()
+                .one_of(THEMES),
+        )
+        .output(HTML);
+    AsyncFnEndpoint::new("ui-chooser", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+        Box::pin(async move {
+            let asked = inv.request.target.as_str();
+            let family = inv.bindings.get("family").unwrap_or_default();
+            let theme = inv.bindings.get("theme").unwrap_or_default();
+            if !family_ok(family) {
+                return Err(Error::NotFound(format!(
+                    "{asked}: not a family (a family is one or more of a-z, 0-9 and -)"
+                )));
+            }
+            let Some(default) = theme_chooser(theme) else {
+                return Err(Error::NotFound(format!(
+                    "{asked}: not a theme (the themes are: {})",
+                    THEMES.join(", ")
+                )));
+            };
+            let own = Iri::parse(format!("{CHOOSER_OVERRIDE}{family}:{theme}"))
+                .expect("a checked family and theme make an IRI");
+            let bytes = match inv.issue(Request::new(Verb::Source, own)).await {
+                Ok(rep) => rep.bytes,
+                Err(Error::NotFound(_)) | Err(Error::Unresolved(_)) => default.into_bytes(),
+                Err(other) => return Err(other),
+            };
+            Ok(Representation::new(ReprType::new(HTML), bytes).cacheable())
+        })
+    })
+    .with_description(description)
+}
+
+/// `urn:iki:ui:chooser-override:{family}:{theme}` for a family that opted out of the shell's
+/// chooser: nothing.
 fn no_chooser_endpoint(family: &str) -> FnEndpoint {
     let id = format!("ui-chooser-{family}");
     FnEndpoint::new(id.clone(), |_: &Invocation<'_>| {
@@ -486,6 +573,10 @@ pub fn space() -> EndpointSpace {
             template(&format!("{THEME_CHOOSER}{{theme}}")),
             theme_chooser_endpoint(),
         )
+        .bind(
+            template(&format!("{CHOOSER}{{family}}:{{theme}}")),
+            chooser_endpoint(),
+        )
         .named(space_iri("ui"))
 }
 
@@ -542,10 +633,13 @@ pub fn pages(family: &str, base: &str) -> Result<Alias, PagesError> {
 ///   with htmx loaded and the shell script's handlers in place.
 ///
 /// **The theme chooser.** Every page's `<header>` holds the family's `{base}header` and then
-/// [`theme_chooser`] with the page's theme selected (`urn:iki:ui:chooser:{family}:{theme}`, an
-/// alias of `urn:iki:ui:theme-chooser:{theme}`). A family that wants it somewhere else turns
-/// it off with [`theme_chooser(false)`](Self::theme_chooser) and splices
+/// [`theme_chooser`] with the page's theme selected (`urn:iki:ui:chooser:{family}:{theme}`,
+/// which [`space`] binds for every family). A family that wants it somewhere else turns it off
+/// with [`theme_chooser(false)`](Self::theme_chooser) and splices
 /// `urn:iki:ui:theme-chooser:{theme}` where it wants it; a family that wants none turns it off.
+/// Turning it off binds the family's override, `urn:iki:ui:chooser-override:{family}:{theme}`
+/// ([`CHOOSER_OVERRIDE`]), to nothing; a page composed over the shell without [`Pages`] does
+/// the same by binding that name itself.
 ///
 /// **Push (D9 inside D14).** With a push URL (a cli door's is `/_ikigai/push`), the shell
 /// script opens ONE `EventSource` on it for every element on the page that declares what it
@@ -639,6 +733,8 @@ impl Pages {
     }
 
     /// Whether the shell puts the theme chooser in the family's headers: on unless turned off.
+    /// Off binds `urn:iki:ui:chooser-override:{family}:{theme}` to nothing, so it holds wherever
+    /// the host puts this family beside [`space`].
     pub fn theme_chooser(mut self, on: bool) -> Self {
         self.chooser = on;
         self
@@ -656,11 +752,7 @@ impl Pages {
             push,
             chooser,
         } = self;
-        if family.is_empty()
-            || !family
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-        {
+        if !family_ok(&family) {
             return Err(ConfigError(format!(
                 "`{family}`: a family is one or more of a-z, 0-9 and -"
             )));
@@ -706,17 +798,15 @@ impl Pages {
                 Exact::new(format!("urn:iki:ui:head:{family}")),
                 head_endpoint(&family, head),
             );
-        let mut aliases = AliasTable::new();
-        if chooser {
-            aliases =
-                aliases.prefix_at_root(format!("urn:iki:ui:chooser:{family}:"), THEME_CHOOSER);
-        } else {
+        // The chooser itself is [`space`]'s, for every family; turning it off binds the
+        // family's override, which [`space`]'s chooser reads wherever this family sits.
+        if !chooser {
             doors = doors.bind(
-                template(&format!("urn:iki:ui:chooser:{family}:{{theme}}")),
+                template(&format!("{CHOOSER_OVERRIDE}{family}:{{theme}}")),
                 no_chooser_endpoint(&family),
             );
         }
-        let aliases = aliases
+        let aliases = AliasTable::new()
             .exact_at_root(
                 format!("urn:iki:ui:header:{family}"),
                 format!("{base}header"),
