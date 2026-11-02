@@ -15,14 +15,9 @@ use ikigai_core::{
 pub const HTML: &str = "text/html; charset=utf-8";
 const XSD_STRING: &str = "http://www.w3.org/2001/XMLSchema#string";
 
-/// The demo family's header: a named nav and a theme chooser that works with no script.
+/// The demo family's header: a named nav. The theme chooser after it is the shell's.
 pub const HEADER: &str = "<nav aria-label=\"Site\"><a href=\"/demo/page/home\">Demo</a> \
-<a href=\"/demo/page/about\">About</a></nav>\n\
-<form class=\"chooser\" method=\"get\"><label for=\"theme\">Theme</label> \
-<select id=\"theme\" name=\"theme\" data-ui-theme><option value=\"auto\">Match system</option>\
-<option value=\"light\">Light</option><option value=\"dark\">Dark</option>\
-<option value=\"high-contrast\">High contrast</option></select> \
-<button type=\"submit\">Apply</button></form>";
+<a href=\"/demo/page/about\">About</a></nav>";
 
 /// The demo family's own stylesheet, at [`DEMO_CSS_PATH`]: only tokens, no colors.
 pub const DEMO_CSS: &str = ".demo-live { border: 1px solid var(--line); padding: 0.5rem; }\n";

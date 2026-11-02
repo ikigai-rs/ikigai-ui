@@ -22,6 +22,17 @@ fn the_pages_match_their_snapshots() {
             )
         })
         .collect();
+    // The theme chooser, as the shell splices it, in each theme.
+    for theme in ikigai_ui::THEMES {
+        rendered.push((
+            format!("theme-chooser-{theme}.html"),
+            text(
+                &kernel,
+                &format!("{}{theme}", ikigai_ui::THEME_CHOOSER),
+                &[],
+            ),
+        ));
+    }
     for name in ["about", "live"] {
         rendered.push((
             format!("{name}.html"),
@@ -255,4 +266,78 @@ fn a_family_and_a_base_are_checked() {
     assert!(ikigai_ui::pages("a:b", "urn:demo:").is_err());
     assert!(ikigai_ui::pages("demo", "urn:demo").is_err());
     assert!(ikigai_ui::pages("demo-2", "urn:demo:").is_ok());
+}
+
+#[test]
+fn every_page_has_the_theme_chooser_in_its_header() {
+    // The shell renders it, so a family gets it without writing it (ledger #2835).
+    let kernel = host(None);
+    for theme in ikigai_ui::THEMES {
+        let page = text(&kernel, "urn:demo:page:home", &[("theme", theme)]);
+        let header = &page[page.find("<header>").unwrap()..page.find("</header>").unwrap()];
+        assert!(
+            header.contains("<select id=\"ui-theme\" name=\"theme\" data-ui-theme"),
+            "{header}"
+        );
+        assert!(
+            header.contains(&format!("<option value=\"{theme}\" selected>")),
+            "{header}"
+        );
+        assert_eq!(page.matches("data-ui-theme").count(), 1, "{page}");
+    }
+}
+
+#[test]
+fn the_chooser_names_its_choices_in_words_and_refuses_an_unknown_theme() {
+    let kernel = host(None);
+    let html = text(&kernel, "urn:iki:ui:theme-chooser:light", &[]);
+    assert!(
+        html.starts_with("<form class=\"ui-theme\" method=\"get\">"),
+        "{html}"
+    );
+    assert!(
+        !html.contains("action="),
+        "it submits to the page it is on: {html}"
+    );
+    assert!(
+        html.contains("<label for=\"ui-theme\">Theme</label>"),
+        "{html}"
+    );
+    for (value, label) in ikigai_ui::THEMES.iter().zip(ikigai_ui::THEME_LABELS) {
+        assert!(
+            html.contains(&format!("<option value=\"{value}\"")),
+            "{html}"
+        );
+        assert!(html.contains(&format!(">{label}</option>")), "{html}");
+    }
+    assert_eq!(html.matches(" selected>").count(), 1, "{html}");
+    assert!(html.contains("<button type=\"submit\" class=\"ui-theme-apply\">Apply</button>"));
+    match source(&kernel, "urn:iki:ui:theme-chooser:sepia") {
+        Err(Error::NotFound(why)) => assert!(why.contains("high-contrast"), "{why}"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_family_can_turn_the_chooser_off_and_splice_it_itself() {
+    let off = ikigai_ui::Pages::new("off", "urn:demo:")
+        .theme_chooser(false)
+        .build()
+        .unwrap();
+    let kernel = ikigai_core::Kernel::new(Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(ikigai_ui::space()) as Arc<dyn ikigai_core::Space>,
+        Arc::new(off),
+        Arc::new(demo_app()),
+    ])));
+    let page = text(&kernel, "urn:demo:page:about", &[("theme", "dark")]);
+    assert!(!page.contains("data-ui-theme"), "{page}");
+    assert!(
+        page.contains(&format!("<header>\n{HEADER}\n\n</header>")),
+        "{page}"
+    );
+    // The resource is still there for the family to put where it wants.
+    assert_eq!(
+        text(&kernel, "urn:iki:ui:theme-chooser:dark", &[]),
+        ikigai_ui::theme_chooser("dark").unwrap()
+    );
 }

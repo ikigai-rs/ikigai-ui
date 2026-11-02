@@ -150,25 +150,28 @@ await check("a swap into #main moves focus to its heading", async (page) => {
 // is kept as the contract: the script's part is the case htmx cannot cover, never <body>.
 await check("focus survives a swap that replaced the focused element", async (page) => {
   await page.goto(home);
-  // The served page's own #theme select, made to replace itself with the server's copy.
+  // The shell's own theme select, made to replace itself with the server's copy.
   await page.evaluate(() => {
-    const select = document.getElementById("theme");
+    const select = document.getElementById("ui-theme");
     select.setAttribute("hx-get", "/home-auto.html");
-    select.setAttribute("hx-select", "#theme");
+    select.setAttribute("hx-select", "#ui-theme");
     select.setAttribute("hx-swap", "outerHTML");
     select.setAttribute("hx-trigger", "change");
     window.htmx.process(select);
     window.__old = select;
   });
-  await page.focus("#theme");
-  await page.selectOption("#theme", "dark");
-  await page.waitForFunction(() => document.getElementById("theme") !== window.__old);
+  await page.focus("#ui-theme");
+  await page.selectOption("#ui-theme", "dark");
+  await page.waitForFunction(() => document.getElementById("ui-theme") !== window.__old);
   await page.waitForTimeout(200);
   const where = await page.evaluate(() => {
     const a = document.activeElement;
     return a ? `${a.tagName}#${a.id}` : "nothing";
   });
-  if (where !== "SELECT#theme") return `focus is on ${where}`;
+  if (where !== "SELECT#ui-theme") return `focus is on ${where}`;
+  // The server's copy says auto; the chooser that replaced it shows the theme in force.
+  const shown = await page.inputValue("#ui-theme");
+  if (shown !== "dark") return `the swapped-in chooser shows ${shown}`;
 });
 
 await check("theme= is applied and remembered, and the chooser changes it", async (page) => {
@@ -176,12 +179,61 @@ await check("theme= is applied and remembered, and the chooser changes it", asyn
   if ((await page.getAttribute("html", "data-theme")) !== "dark") return "theme=dark not applied";
   await page.goto(home);
   if ((await page.getAttribute("html", "data-theme")) !== "dark") return "the choice was not remembered";
-  await page.selectOption("#theme", "high-contrast");
+  // The server rendered auto selected; the chooser shows the remembered theme instead.
+  if ((await page.inputValue("#ui-theme")) !== "dark") return "the chooser does not show the remembered theme";
+  await page.selectOption("#ui-theme", "high-contrast");
   if ((await page.getAttribute("html", "data-theme")) !== "high-contrast") return "the chooser did not apply";
-  await page.selectOption("#theme", "auto");
+  await page.selectOption("#ui-theme", "auto");
   await page.goto(home);
   if ((await page.getAttribute("html", "data-theme")) !== "auto") return "auto did not forget the choice";
 });
+
+// The shell's chooser (ledger #2835): every header has it, a choice applies at once, is kept in
+// this browser's localStorage (auto keeps nothing), and holds across a reload.
+const KEY = "ikigai-ui:theme";
+const stored = (page) => page.evaluate((key) => window.localStorage.getItem(key), KEY);
+await check("the header's chooser applies each theme at once and keeps it across a reload", async (page) => {
+  await page.goto(home);
+  if ((await page.locator("header select#ui-theme[data-ui-theme]").count()) !== 1) return "no chooser in the header";
+  if (await page.locator("header .ui-theme-apply").isVisible()) return "the Apply button shows with the script running";
+  for (const theme of ["light", "dark", "high-contrast", "auto"]) {
+    await page.selectOption("#ui-theme", theme);
+    if ((await page.getAttribute("html", "data-theme")) !== theme) return `${theme}: data-theme not applied`;
+    const kept = await stored(page);
+    if (kept !== (theme === "auto" ? null : theme)) return `${theme}: localStorage holds ${JSON.stringify(kept)}`;
+    if (!page.url().endsWith("/home-auto.html")) return `${theme}: the page navigated to ${page.url()}`;
+    await page.reload();
+    if ((await page.getAttribute("html", "data-theme")) !== theme) return `${theme}: not kept across a reload`;
+    if ((await page.inputValue("#ui-theme")) !== theme) return `${theme}: the chooser shows ${await page.inputValue("#ui-theme")} after a reload`;
+    if ((await stored(page)) !== kept) return `${theme}: the reload changed the remembered value`;
+  }
+});
+
+await check("the chooser is reached and changed from the keyboard", async (page) => {
+  await page.goto(home);
+  let reached = false;
+  for (let i = 0; i < 10 && !reached; i += 1) {
+    await page.keyboard.press("Tab");
+    reached = await page.evaluate(() => document.activeElement && document.activeElement.id === "ui-theme");
+  }
+  if (!reached) return "Tab never reached the chooser";
+  const name = await page.evaluate(() => document.activeElement.labels[0].textContent);
+  if (name !== "Theme") return `the chooser is labelled ${JSON.stringify(name)}`;
+  await page.keyboard.press("ArrowDown");
+  if ((await page.getAttribute("html", "data-theme")) !== "light") return "ArrowDown did not choose light";
+});
+
+// With no script, the form is the chooser: Apply shows, and submitting it asks for the page
+// with theme= (serve.mjs answers as a door does, with the page in that theme).
+const noScript = { newContext: () => browser.newContext({ javaScriptEnabled: false }) };
+await check("with no script, the chooser submits theme= and the page comes back in it", async (page) => {
+  await page.goto(home);
+  if (!(await page.locator("header .ui-theme-apply").isVisible())) return "no Apply button with no script";
+  await page.selectOption("#ui-theme", "dark");
+  await Promise.all([page.waitForURL(/\?theme=dark$/), page.click("header .ui-theme-apply")]);
+  if ((await page.getAttribute("html", "data-theme")) !== "dark") return "the page did not come back dark";
+  if ((await page.inputValue("#ui-theme")) !== "dark") return "the chooser does not show dark";
+}, noScript);
 
 // ---- live views (D9): the push stream stand-in in serve.mjs -----------------------------------
 const live = site.base + "/live-auto.html";

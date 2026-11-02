@@ -11,12 +11,13 @@
 //! |---|---|---|
 //! | `urn:iki:ui:htmx` | artifact | the vendored htmx ([`HTMX_VERSION`], [`HTMX_SHA256`]) |
 //! | `urn:iki:ui:shell.js` | artifact | the shell script: refusals, the status region, focus after a swap, the theme (D14) |
-//! | `urn:iki:ui:template:shell` | artifact | the page shell, a compose template (D1, D8, D13) |
+//! | `urn:iki:ui:template:shell` | artifact | the page shell, a compose template (D1, D8, D13), the theme chooser in its header |
 //! | `urn:iki:ui:template:tokens` | artifact | the token stylesheet's template |
 //! | `urn:iki:ui:palette:{name}` | data | a palette table ([`palette`]): CSS declarations, or Turtle with `as=text/turtle` |
 //! | `urn:iki:ui:tokens.css` | composition | the template filled with the palettes: `auto`, light, dark, high contrast |
 //! | a host's `{base}page:{name}` | composition | the shell over the host's fragment, from [`pages`] or [`Pages`] |
 //! | `urn:iki:ui:head:{family}` | data | a family's `<head>` additions, fixed by the host ([`Pages`]) |
+//! | `urn:iki:ui:theme-chooser:{theme}` | data | the theme chooser ([`theme_chooser`]), `{theme}` selected; the shell puts it in every page's `<header>` |
 //!
 //! ## Two deliveries, one set of names (D17)
 //!
@@ -107,6 +108,13 @@ pub const HTMX_INTEGRITY: &str =
 
 /// The values `theme=` takes (D12). `auto` follows the viewer's system.
 pub const THEMES: [&str; 4] = ["auto", "light", "dark", "high-contrast"];
+
+/// The theme chooser's names: `urn:iki:ui:theme-chooser:{theme}`, one per [`THEMES`] value, each
+/// [`theme_chooser`]'s markup with that theme selected.
+pub const THEME_CHOOSER: &str = "urn:iki:ui:theme-chooser:";
+
+/// What the theme chooser calls each of [`THEMES`]: words, never an icon alone.
+pub const THEME_LABELS: [&str; 4] = ["Auto (system)", "Light", "Dark", "High contrast"];
 
 /// The shell template: `urn:iki:ui:template:shell`.
 pub const SHELL: &str = "urn:iki:ui:template:shell";
@@ -336,6 +344,105 @@ fn palette_endpoint() -> FnEndpoint {
     )
 }
 
+// --- the theme chooser --------------------------------------------------------------------
+
+/// The theme chooser (D12) with `theme` selected, or `None` for a value [`THEMES`] does not hold.
+///
+/// A GET form with no `action`, so it submits to the page it is on: a visible "Theme" label, a
+/// native `<select name="theme" data-ui-theme>` with the four [`THEMES`] in words
+/// ([`THEME_LABELS`]), and an Apply button. With no script, Apply reloads the page with
+/// `theme=`, which the page renders (the form's `theme=` replaces the page's query, as a GET
+/// form's does). With the shell script, a change applies at once and is remembered in this
+/// browser's `localStorage` only, the button is hidden, and the select is kept showing the
+/// theme in force. The control's id is `ui-theme`, so a page holds one.
+///
+/// ```
+/// let html = ikigai_ui::theme_chooser("dark").unwrap();
+/// assert!(html.contains("<option value=\"dark\" selected>Dark</option>"));
+/// assert!(ikigai_ui::theme_chooser("sepia").is_none());
+/// ```
+pub fn theme_chooser(theme: &str) -> Option<String> {
+    if !THEMES.contains(&theme) {
+        return None;
+    }
+    let mut html = String::from(
+        "<form class=\"ui-theme\" method=\"get\"><label for=\"ui-theme\">Theme</label> \
+         <select id=\"ui-theme\" name=\"theme\" data-ui-theme autocomplete=\"off\">",
+    );
+    for (value, label) in THEMES.iter().zip(THEME_LABELS) {
+        let selected = if *value == theme { " selected" } else { "" };
+        html.push_str(&format!(
+            "<option value=\"{value}\"{selected}>{label}</option>"
+        ));
+    }
+    html.push_str(
+        "</select> <button type=\"submit\" class=\"ui-theme-apply\">Apply</button></form>",
+    );
+    Some(html)
+}
+
+/// `urn:iki:ui:theme-chooser:{theme}`: [`theme_chooser`]'s markup, for the shell and for a
+/// family that splices it somewhere else.
+fn theme_chooser_endpoint() -> FnEndpoint {
+    FnEndpoint::new("ui-theme-chooser", |inv: &Invocation<'_>| {
+        let theme = inv.bindings.get("theme").unwrap_or_default();
+        let Some(html) = theme_chooser(theme) else {
+            return Err(Error::NotFound(format!(
+                "{}: not a theme (the themes are: {})",
+                inv.request.target.as_str(),
+                THEMES.join(", ")
+            )));
+        };
+        Ok(Representation::new(ReprType::new(HTML), html.into_bytes()).cacheable())
+    })
+    .with_description(
+        Description::new("ui-theme-chooser")
+            .title("The theme chooser")
+            .summary(
+                "A GET form that chooses the page's theme (UI conventions D12): a labelled \
+                 native select of auto, light, dark and high contrast, with this theme \
+                 selected, and a submit button for a page with no script. The shell puts it \
+                 in every page's header.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(
+                ArgSpec::new("theme")
+                    .summary("the theme shown as selected")
+                    .class(XSD_STRING)
+                    .binding()
+                    .one_of(THEMES),
+            )
+            .output(HTML),
+    )
+}
+
+/// `urn:iki:ui:chooser:{family}:{theme}` for a family that opted out of the shell's chooser:
+/// nothing.
+fn no_chooser_endpoint(family: &str) -> FnEndpoint {
+    let id = format!("ui-chooser-{family}");
+    FnEndpoint::new(id.clone(), |_: &Invocation<'_>| {
+        Ok(Representation::new(ReprType::new(HTML), Vec::new()).cacheable())
+    })
+    .with_description(
+        Description::new(id.as_str())
+            .title("A page family's header chooser, turned off")
+            .summary(format!(
+                "The `{family}` family turned the shell's theme chooser off, so its pages' \
+                 headers hold only the family's own header."
+            ))
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(
+                ArgSpec::new("theme")
+                    .summary("the page's theme, unused")
+                    .class(XSD_STRING)
+                    .binding(),
+            )
+            .output(HTML),
+    )
+}
+
 // --- the token stylesheet -------------------------------------------------------------------
 
 /// `urn:iki:ui:tokens.css`: the token template filled with the palettes. No view code: a
@@ -375,6 +482,10 @@ pub fn space() -> EndpointSpace {
         .expect("the compiled-in artifacts are a valid set")
         .bind(Exact::new(TOKENS_CSS), tokens_endpoint())
         .bind(template("urn:iki:ui:palette:{name}"), palette_endpoint())
+        .bind(
+            template(&format!("{THEME_CHOOSER}{{theme}}")),
+            theme_chooser_endpoint(),
+        )
         .named(space_iri("ui"))
 }
 
@@ -429,6 +540,12 @@ pub fn pages(family: &str, base: &str) -> Result<Alias, PagesError> {
 ///   (D9), which the shell script reads (below);
 /// - each [`script`](Self::script): `<script src="…" defer></script>`, after htmx, so it runs
 ///   with htmx loaded and the shell script's handlers in place.
+///
+/// **The theme chooser.** Every page's `<header>` holds the family's `{base}header` and then
+/// [`theme_chooser`] with the page's theme selected (`urn:iki:ui:chooser:{family}:{theme}`, an
+/// alias of `urn:iki:ui:theme-chooser:{theme}`). A family that wants it somewhere else turns
+/// it off with [`theme_chooser(false)`](Self::theme_chooser) and splices
+/// `urn:iki:ui:theme-chooser:{theme}` where it wants it; a family that wants none turns it off.
 ///
 /// **Push (D9 inside D14).** With a push URL (a cli door's is `/_ikigai/push`), the shell
 /// script opens ONE `EventSource` on it for every element on the page that declares what it
@@ -486,6 +603,7 @@ pub struct Pages {
     stylesheets: Vec<String>,
     scripts: Vec<String>,
     push: Option<String>,
+    chooser: bool,
 }
 
 impl Pages {
@@ -497,6 +615,7 @@ impl Pages {
             stylesheets: Vec::new(),
             scripts: Vec::new(),
             push: None,
+            chooser: true,
         }
     }
 
@@ -519,6 +638,12 @@ impl Pages {
         self
     }
 
+    /// Whether the shell puts the theme chooser in the family's headers: on unless turned off.
+    pub fn theme_chooser(mut self, on: bool) -> Self {
+        self.chooser = on;
+        self
+    }
+
     /// The family's names, or why the configuration is refused: a family that is not
     /// `[a-z0-9-]+`, a base that does not end in `:` or is not an IRI prefix, or a URL that
     /// [`safe_href`](ikigai_fn::html::safe_href) refuses.
@@ -529,6 +654,7 @@ impl Pages {
             stylesheets,
             scripts,
             push,
+            chooser,
         } = self;
         if family.is_empty()
             || !family
@@ -571,7 +697,7 @@ impl Pages {
                 url("script", script)?
             ));
         }
-        let doors = EndpointSpace::new()
+        let mut doors = EndpointSpace::new()
             .bind(
                 template(&format!("{base}page:{{name}}")),
                 page_endpoint(family.clone()),
@@ -580,7 +706,17 @@ impl Pages {
                 Exact::new(format!("urn:iki:ui:head:{family}")),
                 head_endpoint(&family, head),
             );
-        let aliases = AliasTable::new()
+        let mut aliases = AliasTable::new();
+        if chooser {
+            aliases =
+                aliases.prefix_at_root(format!("urn:iki:ui:chooser:{family}:"), THEME_CHOOSER);
+        } else {
+            doors = doors.bind(
+                template(&format!("urn:iki:ui:chooser:{family}:{{theme}}")),
+                no_chooser_endpoint(&family),
+            );
+        }
+        let aliases = aliases
             .exact_at_root(
                 format!("urn:iki:ui:header:{family}"),
                 format!("{base}header"),

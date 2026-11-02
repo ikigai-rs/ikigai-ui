@@ -8,7 +8,9 @@
 // `ready`, as the cli's does, and sends `cut` and `resync` when the test says so
 // (`site.push.cut(paths)`, `site.push.resync()`; `site.push.streams()` lists each open stream's
 // `path=` subscriptions). `/_live/count` is the live demo view's answer: the view, with a count
-// that rises on each read, or a 500 while `site.live.fail` is set.
+// that rises on each read, or a 500 while `site.live.fail` is set. A page asked for with
+// `theme=` is answered in that theme (`/home-auto.html?theme=dark` is `/home-dark.html`), as a
+// door renders it, for the no-script chooser check.
 //
 // For the timing checks it can also hold things at exact moments: `site.push.refuse = text`
 // answers the stream with a 400 and that text, as an edge does past `max_subscriptions`;
@@ -99,7 +101,7 @@ export async function serve(dir) {
   };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
-    const path = decodeURIComponent(url.pathname);
+    let path = decodeURIComponent(url.pathname);
     if (path === "/_push") {
       if (push.refuse !== null) {
         res.writeHead(400, { "content-type": "text/plain", "content-security-policy": CSP }).end(push.refuse);
@@ -164,6 +166,11 @@ export async function serve(dir) {
         .end(`refused: needs urn:cap:example:${status[1]}`);
       return;
     }
+    // A door renders `theme=`; this static site holds each page in each theme, so a page asked
+    // for with a theme it was not written in is answered with the page in that theme.
+    const themed = /^(\/[a-z0-9-]+)-(auto|light|dark|high-contrast)\.html$/.exec(path);
+    const asked = url.searchParams.get("theme");
+    if (themed && ["auto", "light", "dark", "high-contrast"].includes(asked)) path = `${themed[1]}-${asked}.html`;
     const file = resolve(join(root, path));
     if (file !== root && !file.startsWith(root + sep)) {
       res.writeHead(403).end();

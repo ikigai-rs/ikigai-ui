@@ -9,9 +9,10 @@ behavior, and the same tests.
 | `urn:iki:ui:htmx` | htmx 2.0.4, vendored and SHA-256 pinned; the shell loads it with `integrity=` and configures it once (`allowEval:false`, `allowScriptTags:false`) |
 | `urn:iki:ui:tokens.css` | one token set (gonk's names, with `--line` for component borders and `--rule` for decorative lines) in light, dark and high contrast; `auto` follows the system, `prefers-contrast: more` picks high contrast, `data-theme` overrides; every pair contrast-tested (WCAG 2.2 AA, AAA for high contrast) |
 | `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint, and live views refetched from the door's push stream |
-| `urn:iki:ui:template:shell` | the page shell: landmarks, a skip link, the status region, no inline script or style |
-| `pages(family, base)` | your `{base}page:{name}` pages: the shell over your `{base}header`, `{base}title:{name}` and `{base}fragment:{name}`; a name with `:` in it (`item:5`) reaches them whole |
-| `Pages::new(family, base)` | the same, with your own stylesheets and scripts in `<head>` and the door's push stream named for live views |
+| `urn:iki:ui:template:shell` | the page shell: landmarks, a skip link, the status region, the theme chooser in the header, no inline script or style |
+| `urn:iki:ui:theme-chooser:{theme}` | the theme chooser, `{theme}` selected: a GET form with a "Theme" label, a native select of Auto (system), Light, Dark and High contrast, and an Apply button for a page with no script |
+| `pages(family, base)` | your `{base}page:{name}` pages: the shell over your `{base}header` (then the theme chooser), `{base}title:{name}` and `{base}fragment:{name}`; a name with `:` in it (`item:5`) reaches them whole |
+| `Pages::new(family, base)` | the same, with your own stylesheets and scripts in `<head>`, the door's push stream named for live views, and the chooser turned off with `.theme_chooser(false)` |
 | `artifacts(&[Artifact], dir)` | your own artifacts, with the same two deliveries: compiled in, or a file under your directory prefix |
 
 ```rust
@@ -38,6 +39,20 @@ directory cannot add a name and nothing here serves a header or a CSP: those bel
 fixed by its own name and family, so a request argument cannot point the shell at another
 resource. The page name is bounded before anything is read (RFC 3986's unreserved characters
 and `:`; no `/ ? # %`), so it picks among your own `{base}fragment:…` names and nothing else.
+
+**A theme chooser on every page.** The shell puts the chooser in every page's `<header>`, after
+your `{base}header`, with the page's theme selected, so a family gets it without writing it (the
+same chooser the tutorial books have: auto, light, dark, high contrast, in words). With the shell
+script, a change applies at once and the Apply button is hidden; with no script, Apply reloads
+the page with `theme=`, which the page renders. To put it somewhere else, turn the shell's off
+(`Pages::new(…).theme_chooser(false)`) and splice `urn:iki:ui:theme-chooser:{theme}` where you
+want it; to have none, just turn it off. One chooser per page (its select is `#ui-theme`).
+
+A viewer's choice is kept in this browser only: `localStorage` under `ikigai-ui:theme` (choosing
+auto clears it), applied before first paint over the server's `auto`. It is never sent to the
+server, except as `theme=` in the URL when the form is submitted with no script. A GET form's
+`theme=` replaces the page's own query string, so a page whose query matters wants the script,
+or its own chooser.
 
 **Live views.** Name the push stream on the family (`Pages::new(…).push("/_ikigai/push")`, the
 cli door's path), and a view that says what it shows refetches itself on a cut:

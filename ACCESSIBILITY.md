@@ -14,7 +14,10 @@ test, not a review.
 | Refusals as text, in place, and a 403 disables its control; quiet elements never announce | `axe/shell-smoke.mjs` |
 | A live view's refetch (D9) never announces, leaves no note, and keeps focus where it was, inside the view or not | `axe/shell-smoke.mjs` |
 | A refused live stream is said once in the status region, and an accepted one says nothing | `axe/shell-smoke.mjs` |
-| A theme chooser that works with no script; `prefers-color-scheme`, `prefers-contrast: more` and `prefers-reduced-motion` honored | `tests/palettes.rs`, `axe/shell-smoke.mjs` |
+| A theme chooser in every page's header (the shell's, `urn:iki:ui:theme-chooser:{theme}`): a visible "Theme" label on a native select, its four choices in words (Auto (system), Light, Dark, High contrast), reached and changed from the keyboard; a change applies at once, and with no script its Apply button reloads the page with `theme=` | `tests/pages.rs` (snapshots in each theme), `axe/shell-smoke.mjs` |
+| A viewer's theme is kept in this browser only (`localStorage`, `ikigai-ui:theme`; auto keeps nothing), shown by the chooser, and held across a reload; it reaches the server only as `theme=` when the form is submitted with no script | `axe/shell-smoke.mjs` |
+| The chooser passes axe and the contrast floor in all four palettes: it is drawn with `--fg` on `--bg` and a `--line` border, pairs the floor already holds | `tests/palettes.rs`, `axe/check.mjs` over every page in every theme |
+| `prefers-color-scheme`, `prefers-contrast: more` and `prefers-reduced-motion` honored | `tests/palettes.rs`, `axe/shell-smoke.mjs` |
 | Touch targets of 24 px for navigation links (SC 2.5.8) | axe |
 | WCAG 2.0/2.1/2.2 A and AA rules on every demo page, in light, dark and more-contrast media, under the door default CSP | `axe/check.mjs` in CI |
 
