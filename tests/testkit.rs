@@ -78,3 +78,30 @@ fn the_lints_find_hex_colors_and_undefined_vars() {
     );
     assert!(lint::undefined_vars(&[css, ":root{--nope: 1px}"]).is_empty());
 }
+
+#[test]
+fn the_hex_lint_skips_comments_and_still_finds_colors() {
+    // A ledger cite in a comment is not a color (ledger #2901): JS line and block comments,
+    // a CSS comment, an HTML comment.
+    assert!(lint::hex_colors("// ledger #2899\nel.focus();\n").is_empty());
+    assert!(lint::hex_colors("  x = 1; // see ledger #2899; then\nif (a) { b(); }").is_empty());
+    assert!(lint::hex_colors("/* ledger #2899; */ el.focus();").is_empty());
+    assert!(lint::hex_colors("a { color: red; } /* was #abc; */").is_empty());
+    assert!(lint::hex_colors("<!-- ledger #2899; --><p>x</p>").is_empty());
+    // A color outside a comment is still a color, in CSS and in a JS string.
+    assert_eq!(lint::hex_colors("a{color: #289}"), ["#289"]);
+    assert_eq!(lint::hex_colors("/* #abc; */ a{color:#fff}"), ["#fff"]);
+    assert_eq!(
+        lint::hex_colors("// ok\nel.style.cssText = \"color: #fff;\";"),
+        ["#fff"]
+    );
+    // `//` in a URL is not a comment, so what follows it on the line is still read.
+    assert_eq!(
+        lint::hex_colors("a{background:url(https://x.test/a.png);color:#fff}"),
+        ["#fff"]
+    );
+    assert_eq!(
+        lint::hex_colors("a{background:url(//x.test/a.png);color:#fff}"),
+        ["#fff"]
+    );
+}

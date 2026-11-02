@@ -29,7 +29,7 @@
 //    content, else to the swapped region, so a swap never leaves focus on <body> after taking it.
 //    Focus already on <body> is a page nobody has focused, not focus lost: any other swap there
 //    (a poll, a lazily loaded region, a live view) leaves it on <body> and the scroll where it
-//    was (ledger item 2899).
+//    was (ledger #2899).
 // 5. Live views (D9). With the door's push stream named in <head>
 //    (<meta name="ikigai-ui-push" content="/_ikigai/push">, which ikigai_ui::Pages::push
 //    writes), every element that declares what it shows with data-ui-push (whitespace-separated
@@ -232,7 +232,7 @@
   // What had focus as each swap began, by its request (swaps can overlap: a poll's swap must not
   // overwrite what a person's swap found). null when nothing had: focus on <body> is a page
   // nobody has focused yet, never focus lost, so a background poll or a lazily loaded region
-  // does not take focus and scroll the page to itself (ledger item 2899).
+  // does not take focus and scroll the page to itself (ledger #2899).
   var hadFocus = new WeakMap();
   var lastHad = null;
   function focusable(el) {
