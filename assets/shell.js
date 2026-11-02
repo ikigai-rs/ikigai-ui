@@ -7,7 +7,10 @@
 // It does five things htmx does not:
 // 1. The theme (D12). `theme=` in the URL wins and is remembered; with none, a remembered choice
 //    replaces the server's `auto`. A chooser is a real <select name="theme" data-ui-theme> in a
-//    GET form, so it works with no script; with one, a change applies at once.
+//    GET form (the shell renders one in every header), so it works with no script; with one, a
+//    change applies at once, <html data-ui-script> hides the form's Apply button, and every
+//    chooser on the page is kept showing the theme in force, a remembered one included. The
+//    choice is kept in this browser's localStorage only: nothing here sends it anywhere.
 // 2. Refusals and failures (D14). htmx does not swap a 4xx/5xx answer, so the answer's text is
 //    shown, always with textContent and never parsed as markup. A control inside #main gets the
 //    note where it is: in place of its own placeholder when it swaps into itself, otherwise right
@@ -48,6 +51,8 @@
   var KEY = "ikigai-ui:theme";
   var THEMES = ["auto", "light", "dark", "high-contrast"];
   var root = document.documentElement;
+  // Before first paint: the token stylesheet hides a chooser's Apply button under it.
+  root.setAttribute("data-ui-script", "");
 
   // ---- 1. the theme -------------------------------------------------------------------------
   function known(theme) {
@@ -84,11 +89,30 @@
       root.setAttribute("data-theme", kept);
     }
   }
+  // Every chooser shows the theme in force: the server selected the one it rendered, which a
+  // remembered choice may have replaced.
+  function showTheme(scope) {
+    if (!scope || !scope.querySelectorAll) return;
+    var theme = root.getAttribute("data-theme");
+    if (!known(theme)) return;
+    var list = scope.querySelectorAll("select[data-ui-theme]");
+    for (var i = 0; i < list.length; i += 1) {
+      if (list[i].value !== theme) list[i].value = theme;
+    }
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    showTheme(document);
+  });
+  // A swap can bring a chooser in.
+  document.addEventListener("htmx:load", function (e) {
+    showTheme(e.target && e.target.parentNode);
+  });
   document.addEventListener("change", function (e) {
     var t = e.target;
     if (!t || !t.matches || !t.matches("select[data-ui-theme]") || !known(t.value)) return;
     root.setAttribute("data-theme", t.value);
     remember(t.value);
+    showTheme(document);
   });
 
   // ---- 2 and 3. refusals, failures and the status region -------------------------------------

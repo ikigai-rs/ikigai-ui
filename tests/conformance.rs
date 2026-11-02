@@ -2,7 +2,7 @@
 //! (ikigai-ui's, a page family, and the demo app's fixtures) and reports every violation at
 //! once.
 //!
-//! - The artifacts, the palettes and the token stylesheet are cacheable: the artifacts mark
+//! - The artifacts, the palettes, the theme chooser and the token stylesheet are cacheable: the artifacts mark
 //!   their answers cacheable and take the directory read's threads, and the stylesheet and the
 //!   pages are compositions, cacheable while every part is.
 //! - `space()` is self-named `urn:iki:space:ui`; `pages(family, base)` is anonymous, because
@@ -27,6 +27,7 @@ fn conforms() {
     let pages = Arc::new(common::demo_pages());
     let report = Suite::new()
         .fixture(Fixture::new("ui-palette", Verb::Source).binding("name", "light"))
+        .fixture(Fixture::new("ui-theme-chooser", Verb::Source).binding("theme", "dark"))
         .fixture(Fixture::new("ui-page-demo", Verb::Source).binding("name", "home"))
         .fixture(Fixture::new("demo-title", Verb::Source).binding("name", "home"))
         .fixture(Fixture::new("demo-fragment", Verb::Source).binding("name", "home"))
@@ -37,6 +38,8 @@ fn conforms() {
         .cacheable("ui-tokens-css")
         .pure("ui-palette")
         .cacheable("ui-palette")
+        .pure("ui-theme-chooser")
+        .cacheable("ui-theme-chooser")
         .cacheable("ui-page-demo")
         .pure("ui-head-demo")
         .cacheable("ui-head-demo")
@@ -68,6 +71,7 @@ fn conforms() {
         "ui-template-tokens",
         "ui-tokens-css",
         "ui-palette",
+        "ui-theme-chooser",
         "ui-page-demo",
         "ui-head-demo",
     ] {

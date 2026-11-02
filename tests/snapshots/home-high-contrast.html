@@ -15,7 +15,7 @@
 <a class="ui-skip" href="#main">Skip to content</a>
 <header>
 <nav aria-label="Site"><a href="/demo/page/home">Demo</a> <a href="/demo/page/about">About</a></nav>
-<form class="chooser" method="get"><label for="theme">Theme</label> <select id="theme" name="theme" data-ui-theme><option value="auto">Match system</option><option value="light">Light</option><option value="dark">Dark</option><option value="high-contrast">High contrast</option></select> <button type="submit">Apply</button></form>
+<form class="ui-theme" method="get"><label for="ui-theme">Theme</label> <select id="ui-theme" name="theme" data-ui-theme autocomplete="off"><option value="auto">Auto (system)</option><option value="light">Light</option><option value="dark">Dark</option><option value="high-contrast" selected>High contrast</option></select> <button type="submit" class="ui-theme-apply">Apply</button></form>
 </header>
 <div id="status" role="status" aria-live="polite"></div>
 <main id="main" tabindex="-1">
