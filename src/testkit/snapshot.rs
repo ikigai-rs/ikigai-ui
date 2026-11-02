@@ -25,6 +25,9 @@ pub enum Outcome {
 }
 
 /// Compare `actual` with `dir/name`, writing the file if it is missing.
+// ambient: fs: test kit, never linked by a host: the calling repo's own snapshot file
+// (read, and written when missing; the `testkit` feature is for a dev-dependency).
+#[allow(clippy::disallowed_methods)]
 pub fn check(dir: &Path, name: &str, actual: &str) -> std::io::Result<Outcome> {
     let file = dir.join(name);
     let want = match std::fs::read_to_string(&file) {

@@ -9,6 +9,9 @@ use std::path::Path;
 /// Write each `(url path, media type, bytes)` under `dir`, and `dir/_types.json`.
 ///
 /// A path is relative to the site root, `/`-separated, and may not climb out of it.
+// ambient: fs: test kit, never linked by a host: writes the axe site where the test says
+// (the `testkit` feature is for a dev-dependency).
+#[allow(clippy::disallowed_methods)]
 pub fn write(dir: &Path, files: &[(&str, &str, &[u8])]) -> std::io::Result<()> {
     let mut types = BTreeMap::new();
     for (path, media_type, bytes) in files {
