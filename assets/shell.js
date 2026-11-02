@@ -26,7 +26,10 @@
 //    requests and their failures are never messages.
 // 4. Focus after a swap (D13). A swap into #main moves focus to its first heading (or #main); a
 //    swap that took the focused element gives focus to the element with the same id in the new
-//    content, else to the swapped region. Focus is never left on <body>.
+//    content, else to the swapped region, so a swap never leaves focus on <body> after taking it.
+//    Focus already on <body> is a page nobody has focused, not focus lost: any other swap there
+//    (a poll, a lazily loaded region, a live view) leaves it on <body> and the scroll where it
+//    was (ledger item 2899).
 // 5. Live views (D9). With the door's push stream named in <head>
 //    (<meta name="ikigai-ui-push" content="/_ikigai/push">, which ikigai_ui::Pages::push
 //    writes), every element that declares what it shows with data-ui-push (whitespace-separated
@@ -226,7 +229,12 @@
   });
 
   // ---- 4. focus after a swap ------------------------------------------------------------------
-  var hadFocus = null;
+  // What had focus as each swap began, by its request (swaps can overlap: a poll's swap must not
+  // overwrite what a person's swap found). null when nothing had: focus on <body> is a page
+  // nobody has focused yet, never focus lost, so a background poll or a lazily loaded region
+  // does not take focus and scroll the page to itself (ledger item 2899).
+  var hadFocus = new WeakMap();
+  var lastHad = null;
   function focusable(el) {
     return el.matches("a[href], button, input, select, textarea, [tabindex]");
   }
@@ -239,9 +247,11 @@
     var a = document.activeElement;
     return !a || a === document.body || !document.contains(a);
   }
-  document.addEventListener("htmx:beforeSwap", function () {
+  document.addEventListener("htmx:beforeSwap", function (e) {
+    var d = e.detail || {};
     var a = document.activeElement;
-    hadFocus = a && a !== document.body && a.id ? a.id : null;
+    lastHad = a && a !== document.body && document.contains(a) ? a : null;
+    if (d.xhr) hadFocus.set(d.xhr, lastHad);
   });
   document.addEventListener("htmx:afterSettle", function (e) {
     var d = e.detail || {};
@@ -252,8 +262,10 @@
       focusOn(target.querySelector("h1, h2") || target);
       return;
     }
-    if (!lost()) return;
-    var again = hadFocus && document.getElementById(hadFocus);
+    var had = d.xhr && hadFocus.has(d.xhr) ? hadFocus.get(d.xhr) : lastHad;
+    // Only a swap that took the element that HAD focus re-homes it.
+    if (!had || !lost()) return;
+    var again = had.id && document.getElementById(had.id);
     var region = document.contains(target) ? target : target.id && document.getElementById(target.id);
     focusOn(again || region || document.getElementById("main"));
   });
