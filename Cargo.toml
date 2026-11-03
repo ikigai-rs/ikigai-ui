@@ -1,6 +1,6 @@
 [package]
 name = "ikigai-ui"
-version = "0.4.2"
+version = "0.5.0"
 edition = "2021"
 # ikigai-core needs 1.87 (`usize::is_multiple_of`); the shared CI's msrv job holds it there.
 rust-version = "1.87"
@@ -25,22 +25,23 @@ default = []
 testkit = ["dep:ikigai-a11y", "dep:serde_json", "dep:futures-executor"]
 
 [dependencies]
-# 0.2.0 is the streams release (ledger #2261). The old "0.1.110" pin meant <0.2.0 under 0.x
-# rules; it was the floor for `AliasTable::{exact,prefix}_at_root`, which `pages` uses so a
-# family's header, titles and fragments resolve from the root (ledger #2061). A caret on
-# 0.2.0 is <0.3.0.
-ikigai-core = "0.2.0"
+# 0.3.0 is the scoped content store (ledger #2965): held content is scoped to whoever delivered
+# it, and `ContentStore::put`/`put_replay` are root-only. This crate calls neither. The
+# `AliasTable::{exact,prefix}_at_root` that `pages` uses so a family's header, titles and
+# fragments resolve from the root (ledger #2061) came in 0.1.110. A caret on 0.3.0 is <0.4.0.
+ikigai-core = "0.3.0"
 # The shell and the token stylesheet are ikigai-fn compose templates (`composeOver`, named
 # instances). 0.5.1 is the floor: `{+name}`, RFC 6570 reserved expansion in a marker IRI, which
 # the shell's title and main markers use so a page name with `:` reaches its fragment whole
 # (ledger #2140, ikigai-rs/ikigai-fn#20); plus 0.5.0's escaping (`$h` per FND-H's rule set, ledger #1813)
-# and `ikigai_fn::html`, which the head slot and the test kit use. 0.9.0 is the shared
-# host floor (ledger #2840), including 0.8 reference arguments; a caret on it is <0.10.0.
-ikigai-fn = "0.9.0"
+# and `ikigai_fn::html`, which the head slot and the test kit use. 0.8 brought reference
+# arguments and 0.9 was the shared host floor (ledger #2840); 0.10.0 is the release on
+# ikigai-core 0.3.0. A caret on it is <0.11.0.
+ikigai-fn = "0.10.0"
 # The test kit only. ikigai-a11y's `ratio` and `Rgba` are the contrast math every other UI
-# test uses (default features off: no syntect). 0.4.0 is the release on ikigai-core 0.2.0;
-# <0.5.0.
-ikigai-a11y = { version = "0.4.0", optional = true }
+# test uses (default features off: no syntect). 0.6.0 is the release on ikigai-core 0.3.0;
+# <0.7.0.
+ikigai-a11y = { version = "0.6.0", optional = true }
 # The test kit's vectors reader. 1.0 is every serde_json there is.
 serde_json = { version = "1.0", optional = true }
 # The test kit's `render`, which drives a kernel from a synchronous test.
@@ -50,13 +51,13 @@ futures-executor = { version = "0.3", optional = true }
 # This crate's own tests use the test kit, as a UI repo does.
 ikigai-ui = { path = ".", features = ["testkit"] }
 futures = "0.3"
-# The module recipe as one test (tests/conformance.rs), at the current minor. 0.12.0 turns on
-# the BODIES and BODY-INPUTS checks by default (ledger #2559); its floor pulls ikigai-core
-# 0.2.4+ into the test build only. A caret on it is <0.13.0.
-ikigai-conformance = "0.12.0"
+# The module recipe as one test (tests/conformance.rs), at the current minor. 0.12.0 turned on
+# the BODIES and BODY-INPUTS checks by default (ledger #2559). 0.14.0 is the release on
+# ikigai-core 0.3.0, so the test build links one core. A caret on it is <0.15.0.
+ikigai-conformance = "0.14.0"
 # The directory delivery (D17), for real: ikigai-fs's FileEndpoint at urn:iki:ui:dir:{path}.
-# 0.2.0 is the release on ikigai-core 0.2.0.
-ikigai-fs = "0.2.0"
+# 0.4.0 is the release on ikigai-core 0.3.0.
+ikigai-fs = "0.4.0"
 # tests/htmx.rs holds the vendored bytes to the published digests.
 sha2 = "0.10"
 base64 = "0.22"
