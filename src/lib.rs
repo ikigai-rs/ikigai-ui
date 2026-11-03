@@ -411,7 +411,7 @@ fn theme_chooser_endpoint() -> FnEndpoint {
         Description::new("ui-theme-chooser")
             .title("The theme chooser")
             .summary(
-                "A GET form that chooses the page's theme (UI conventions D12): a labelled \
+                "A GET form that chooses the page's theme (UI conventions D12): a labeled \
                  native select of auto, light, dark and high contrast, with this theme \
                  selected, and a submit button for a page with no script. The shell puts it \
                  in every page's header.",

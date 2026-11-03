@@ -295,7 +295,7 @@ await check("the chooser is reached and changed from the keyboard", async (page)
   }
   if (!reached) return "Tab never reached the chooser";
   const name = await page.evaluate(() => document.activeElement.labels[0].textContent);
-  if (name !== "Theme") return `the chooser is labelled ${JSON.stringify(name)}`;
+  if (name !== "Theme") return `the chooser is labeled ${JSON.stringify(name)}`;
   await page.keyboard.press("ArrowDown");
   if ((await page.getAttribute("html", "data-theme")) !== "light") return "ArrowDown did not choose light";
 });
