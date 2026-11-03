@@ -50,21 +50,33 @@ the page with `theme=`, which the page renders. To put it somewhere else, turn t
 want it; to have none, just turn it off. One chooser per page (its select is `#ui-theme`).
 
 **A page composed over the shell directly** (`urn:iki:fn:compose src=<urn:iki:ui:template:shell>
-family=… name=… theme=…`, say from a names file) gets the chooser too, with nothing to bind: the
-shell reads `urn:iki:ui:chooser:{family}:{theme}`, and this crate's space answers it for every
-family. To turn it off, bind the family's override to nothing, with the theme the composition
-fixes:
+family=… name=…`, say from a names file) gets the chooser too, with nothing to bind: the shell
+reads `urn:iki:ui:chooser:{family}:{theme}`, and this crate's space answers it for every family.
+Declare `theme` as an input of the name, with a default, so the chooser's no-script Apply works:
 
 ```text
-urn:iki:ui:chooser-override:quakes:auto = source urn:file:empty.html
+urn:quakes:page = source urn:iki:fn:compose src=<urn:iki:ui:template:shell> family=quakes name=home
+  input theme default=auto one-of="auto" one-of="light" one-of="dark" one-of="high-contrast"
 ```
 
-Bind the override to your own markup to replace the chooser there instead. Bind the override,
-not `urn:iki:ui:chooser:{family}:{theme}` itself: a host resolves a name in the first space that
-binds it, and this crate's space usually comes first (a names layer comes last), so a binding of
-the shell's own name after it is never reached. `Pages::theme_chooser(false)` binds the same override, so it holds
-wherever the host puts the family. (On such a page the no-script Apply asks for `theme=`, which a
-composition that fixes `theme` refuses; with script the choice applies at once.)
+A bare request renders `auto`, Apply's `?theme=dark` renders dark, and a value that is not a theme
+is refused. Do not write `theme=auto` on the binding's own line: that fixes the argument, and a
+caller who gives a fixed argument is refused, so Apply is too (with script, the choice still
+applies at once, since it never reaches the server).
+
+To turn the chooser off, bind the family's override to nothing, for every theme:
+
+```text
+urn:iki:ui:chooser-override:quakes:{theme} = source urn:file:empty.html
+```
+
+Bind the override to your own markup to replace the chooser there instead. A page that fixes its
+theme only needs that theme's override, but with a `theme` input, an override for `auto` alone
+brings the chooser back at `?theme=dark`. Bind the override, not
+`urn:iki:ui:chooser:{family}:{theme}` itself: a host resolves a name in the first space that binds
+it, and this crate's space usually comes first (a names layer comes last), so a binding of the
+shell's own name after it is never reached. `Pages::theme_chooser(false)` binds the same override,
+so it holds wherever the host puts the family.
 
 A viewer's choice is kept in this browser only: `localStorage` under `ikigai-ui:theme` (choosing
 auto clears it), applied before first paint over the server's `auto`. It is never sent to the

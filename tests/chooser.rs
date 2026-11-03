@@ -1,7 +1,7 @@
 //! The shell's header chooser, `urn:iki:ui:chooser:{family}:{theme}`, for a page composed over
 //! the shell directly, with no [`ikigai_ui::Pages`] wiring (ledger #2885): the shape a no-Rust
 //! host's names file gives a page (`urn:iki:fn:compose src=<urn:iki:ui:template:shell>
-//! family=… name=… theme=…`). Such a page names its header, head, title and main, and nothing
+//! family=… name=…`, with `theme` fixed or an input). Such a page names its header, head, title and main, and nothing
 //! else; the chooser is ikigai-ui's, and a family turns it off by binding its override.
 
 mod common;
@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use common::*;
 use ikigai_core::{
-    Description, EndpointSpace, Exact, FnEndpoint, Invocation, Kernel, ReprType, Representation,
-    Space, Verb,
+    Alias, AliasTable, ArgSpec, Description, EndpointSpace, Exact, FixedArgument, FnEndpoint,
+    Invocation, Iri, Kernel, ReprType, Representation, Space, TopologyRule, Verb,
 };
 
 fn fixed(id: &str, body: &'static str) -> FnEndpoint {
@@ -53,7 +53,7 @@ fn quakes_names() -> EndpointSpace {
 
 /// A host the way the cli's door builds one: ikigai-ui's space FIRST, then the function
 /// library, then the names (a names layer is placed last: it adds names, never changes one).
-fn host_of(names: EndpointSpace) -> Kernel {
+fn host_of(names: impl Space + 'static) -> Kernel {
     Kernel::new(Arc::new(ikigai_core::Fallback::new(vec![
         Arc::new(ikigai_ui::space()) as Arc<dyn Space>,
         Arc::new(ikigai_fn::space()),
@@ -188,5 +188,138 @@ fn a_pages_family_turned_off_stays_off_wherever_the_host_puts_it() {
             ikigai_ui::theme_chooser("dark").unwrap(),
             "{name}"
         );
+    }
+}
+
+// --- the no-script Apply on a names-file page (ledger #2885, part 2) --------------------------
+
+/// The named request the README's recipe writes, without its `theme`:
+/// `urn:quakes:page = source urn:iki:fn:compose src=<urn:iki:ui:template:shell> family=quakes
+/// name=home`.
+///
+/// These rules are built with core's builder, not read from names text: ikigai-engine, which
+/// reads names text into exactly these rules, needs a newer Rust than this crate's floor.
+fn shell_page() -> TopologyRule {
+    TopologyRule::named_request("urn:quakes:page", "urn:iki:fn:compose")
+        .verb(Verb::Source)
+        .fixing(FixedArgument::reference(
+            "src",
+            Iri::parse(ikigai_ui::SHELL).unwrap(),
+        ))
+        .fixing(FixedArgument::value("family", "quakes"))
+        .fixing(FixedArgument::value("name", "home"))
+}
+
+/// The README's recipe: `input theme default=auto one-of="auto" one-of="light" one-of="dark"
+/// one-of="high-contrast"`, an input the caller may give.
+fn page_with_theme_input() -> TopologyRule {
+    shell_page().input(
+        ArgSpec::new("theme")
+            .optional()
+            .default_value("auto")
+            .one_of(ikigai_ui::THEMES),
+    )
+}
+
+/// A names layer holding `rules` over the family's names, as a host's last space.
+fn host_with(rules: Vec<TopologyRule>) -> Kernel {
+    let table = rules.into_iter().fold(AliasTable::new(), |table, rule| {
+        table.with_rule(rule).unwrap()
+    });
+    let names = quakes_names().bind(Exact::new("urn:file:empty.html"), fixed("empty", ""));
+    host_of(Alias::new(Arc::new(table), Arc::new(names)))
+}
+
+fn page(kernel: &Kernel, args: &[(&str, &str)]) -> ikigai_core::Result<String> {
+    ikigai_ui::testkit::render::source(kernel, "urn:quakes:page", args)
+}
+
+#[test]
+fn a_page_that_fixes_the_theme_refuses_the_apply_and_says_why() {
+    // The shape the recipe warns against: a fixed argument is the binding's.
+    let kernel = host_with(vec![
+        shell_page().fixing(FixedArgument::value("theme", "auto"))
+    ]);
+    assert!(page(&kernel, &[]).unwrap().contains("data-theme=\"auto\""));
+    match page(&kernel, &[("theme", "dark")]) {
+        Err(ikigai_core::Error::InvalidArgument { name, detail }) => {
+            assert_eq!(name, "theme");
+            assert!(detail.contains("fixed by <urn:quakes:page>"), "{detail}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_page_with_a_theme_input_answers_the_no_script_apply() {
+    let kernel = host_with(vec![page_with_theme_input()]);
+
+    // A bare request is the default, and its chooser's Apply is a GET of this same page: a
+    // form with no action, its select named `theme`.
+    let bare = page(&kernel, &[]).unwrap();
+    assert!(
+        bare.contains("<html lang=\"en\" data-theme=\"auto\">"),
+        "{bare}"
+    );
+    assert!(
+        header(&bare).contains(&ikigai_ui::theme_chooser("auto").unwrap()),
+        "{bare}"
+    );
+    assert!(header(&bare).contains("<form class=\"ui-theme\" method=\"get\">"));
+    assert!(header(&bare).contains("name=\"theme\""));
+
+    // What Apply then asks for, for every theme.
+    for theme in ikigai_ui::THEMES {
+        let applied = page(&kernel, &[("theme", theme)])
+            .unwrap_or_else(|e| panic!("Apply with theme {theme}: {e}"));
+        assert!(
+            applied.contains(&format!("<html lang=\"en\" data-theme=\"{theme}\">")),
+            "{applied}"
+        );
+        assert!(
+            header(&applied).contains(&ikigai_ui::theme_chooser(theme).unwrap()),
+            "{applied}"
+        );
+    }
+}
+
+#[test]
+fn a_theme_input_refuses_a_value_that_is_not_a_theme() {
+    // The value is the caller's now, so what it may be matters: nothing renders for it.
+    let kernel = host_with(vec![page_with_theme_input()]);
+    for theme in ["sepia", "../x", "a\"b", ""] {
+        assert!(page(&kernel, &[("theme", theme)]).is_err(), "{theme:?}");
+    }
+}
+
+#[test]
+fn a_theme_input_needs_the_override_for_every_theme() {
+    // Bound for `auto` alone, the chooser comes back with the first `?theme=dark`.
+    let auto_only = host_with(vec![
+        page_with_theme_input(),
+        TopologyRule::named_request(
+            format!("{}quakes:auto", ikigai_ui::CHOOSER_OVERRIDE),
+            "urn:file:empty.html",
+        )
+        .verb(Verb::Source),
+    ]);
+    assert!(!page(&auto_only, &[]).unwrap().contains("data-ui-theme"));
+    assert!(page(&auto_only, &[("theme", "dark")])
+        .unwrap()
+        .contains("data-ui-theme"));
+
+    // The README's one line: the override's own template, any theme.
+    let every = host_with(vec![
+        page_with_theme_input(),
+        TopologyRule::named_template(
+            format!("{}quakes:{{theme}}", ikigai_ui::CHOOSER_OVERRIDE),
+            "urn:file:empty.html",
+        )
+        .verb(Verb::Source),
+    ]);
+    for theme in ikigai_ui::THEMES {
+        let page = page(&every, &[("theme", theme)]).unwrap();
+        assert!(!page.contains("data-ui-theme"), "{page}");
+        assert!(page.contains(&format!("data-theme=\"{theme}\"")), "{page}");
     }
 }
