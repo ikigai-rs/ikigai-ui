@@ -530,3 +530,26 @@ fn host_injected_scope_is_inherited_and_its_cache_is_separate() {
     assert!(kernel.is_cached_in(&request, &Capability::root(), &scope));
     assert_eq!(common::source(&kernel, &iri).unwrap().bytes, root.bytes);
 }
+
+#[test]
+fn fallback_chains_terminate_and_directly_edited_contracts_are_checked() {
+    let kernel = common::host(None);
+    let mut contract = descriptor(&kernel, "gpui");
+    // Neither table nor nav is rendered, but their chain ends in rendered list.
+    contract.fallback.insert("table".into(), "nav".into());
+    let contract = Descriptor::parse(&serde_json::to_vec(&contract).unwrap(), "gpui").unwrap();
+    let table: Node = serde_json::from_str(model::kind("table").unwrap().example).unwrap();
+    let result = contract.apply(&table).unwrap();
+    assert_eq!(result.kind, "list");
+    assert_eq!(result.properties["label"], table.properties["caption"]);
+    assert_eq!(result.children, table.children);
+
+    // Callers can also edit/deserialize the public type without going through parse.
+    // apply must refuse those invalid contracts rather than loop or panic.
+    let mut invalid = contract;
+    invalid.fallback.insert("nav".into(), "table".into());
+    assert!(matches!(
+        invalid.apply(&table),
+        Err(Error::InvalidArgument { .. })
+    ));
+}
