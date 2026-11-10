@@ -11,9 +11,9 @@
   <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:label> ;
   sh:targetClass <urn:iki:ui:kind:name:button> ;
   sh:closed true ;
-  sh:property <urn:iki:ui:kind:name:button:property:type>, <urn:iki:ui:kind:name:button:property:label>, <urn:iki:ui:kind:name:button:property:name>, <urn:iki:ui:kind:name:button:property:value> .
+  sh:property <urn:iki:ui:kind:name:button:property:name:type>, <urn:iki:ui:kind:name:button:property:name:label>, <urn:iki:ui:kind:name:button:property:name:name>, <urn:iki:ui:kind:name:button:property:name:value> .
 
-<urn:iki:ui:kind:name:button:property:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:button> ; sh:maxCount 1 .
-<urn:iki:ui:kind:name:button:property:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
-<urn:iki:ui:kind:name:button:property:name> sh:path <urn:iki:ui:property:name:name> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
-<urn:iki:ui:kind:name:button:property:value> sh:path <urn:iki:ui:property:name:value> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:button:property:name:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:button> ; sh:maxCount 1 .
+<urn:iki:ui:kind:name:button:property:name:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:button:property:name:name> sh:path <urn:iki:ui:property:name:name> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:button:property:name:value> sh:path <urn:iki:ui:property:name:value> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .

@@ -19,6 +19,8 @@
 //! | `urn:iki:ui:head:{family}` | data | a family's `<head>` additions, fixed by the host ([`Pages`]) |
 //! | `urn:iki:ui:theme-chooser:{theme}` | data | the theme chooser ([`theme_chooser`]), `{theme}` selected |
 //! | `urn:iki:ui:chooser:{family}:{theme}` | composition | what the shell puts in a family's `<header>`, for ANY family: its override if bound, else the theme chooser ([`CHOOSER`]) |
+//! | `urn:iki:ui:form:resource:{iri}` | data | a `form` node generated from `{iri}`'s contract, its Sink's inputs ([`form`]) |
+//! | `urn:iki:ui:form:openapi:{doc}:operation:{op}` | data | the same from an OpenAPI 3.1 document's operation ([`form`]) |
 //! | `urn:iki:ui:chooser-override:{family}:{theme}` | a host's | a family's own chooser; bound to nothing, it turns the chooser off ([`CHOOSER_OVERRIDE`]) |
 //!
 //! ## Two deliveries, one set of names (D17)
@@ -88,6 +90,7 @@ use ikigai_core::{
     Representation, Request, UriTemplate, Verb,
 };
 
+pub mod form;
 pub mod model;
 pub mod palette;
 #[cfg(feature = "testkit")]
@@ -580,12 +583,21 @@ pub fn space() -> EndpointSpace {
         )
         .bind(Exact::new(KIND), kind_list_endpoint())
         .bind(template(&format!("{KIND}:name:{{kind}}")), kind_endpoint())
+        .bind(template(&format!("{KIND}:{{rest}}")), kind_seal_endpoint())
         .bind(
             template("urn:iki:ui:example:kind:{kind}"),
             example_endpoint(),
         )
         .bind(Exact::new(model::CONTEXT_IRI), context_endpoint())
         .bind(Exact::new(GALLERY), gallery_endpoint())
+        .bind(
+            template(&format!("{FORM_RESOURCE}{{iri}}")),
+            form_resource_endpoint(),
+        )
+        .bind(
+            template(&format!("{FORM_OPENAPI}{{doc}}:operation:{{op}}")),
+            form_openapi_endpoint(),
+        )
         .named(space_iri("ui"))
 }
 
@@ -597,11 +609,18 @@ fn template(pattern: &str) -> UriTemplate {
 
 /// The list of node kinds, `urn:iki:ui:kind`, and the prefix of every kind's name,
 /// `urn:iki:ui:kind:name:{kind}`. **Sealed**: [`space`] binds `urn:iki:ui:kind:name:{kind}` for
-/// EVERY `{kind}` and answers `NotFound` for a name [`model::KINDS`] does not hold, so a host that
-/// puts this space before another module never reaches that module under this prefix (a
+/// EVERY `{kind}` and answers `NotFound` for a name [`model::KINDS`] does not hold, and binds
+/// every other name under `urn:iki:ui:kind:` to `NotFound` too (`urn:iki:ui:kind:{rest}`,
+/// after the kinds' own), so a host that puts this space before another module never reaches
+/// that module anywhere under this prefix (a
 /// [`Fallback`](ikigai_core::Fallback) takes the first space that binds a name, and a refusal
 /// from it is the answer).
 pub const KIND: &str = "urn:iki:ui:kind";
+/// The form generated from a resource's contract: `urn:iki:ui:form:resource:{iri}` ([`form`]).
+pub const FORM_RESOURCE: &str = "urn:iki:ui:form:resource:";
+/// The form generated from an OpenAPI 3.1 document's operation:
+/// `urn:iki:ui:form:openapi:{doc}:operation:{op}` ([`form`]).
+pub const FORM_OPENAPI: &str = "urn:iki:ui:form:openapi:";
 /// The gallery: `urn:iki:ui:screen:name:gallery`.
 pub const GALLERY: &str = "urn:iki:ui:screen:name:gallery";
 
@@ -621,6 +640,34 @@ fn kind_list_endpoint() -> FnEndpoint {
             )
             .verb(Verb::Source)
             .verb(Verb::Meta)
+            .output(TURTLE),
+    )
+}
+
+/// Every name under `urn:iki:ui:kind:` that is not a kind's: `NotFound`, here, so no later
+/// module answers it. The only Rust is the refusal; an alias cannot answer a refusal.
+fn kind_seal_endpoint() -> FnEndpoint {
+    FnEndpoint::new("ui-kind-seal", |inv: &Invocation<'_>| {
+        Err(Error::NotFound(format!(
+            "{}: nothing is named here (the kinds are {KIND}:name:{{kind}})",
+            inv.request.target.as_str()
+        )))
+    })
+    .with_description(
+        Description::new("ui-kind-seal")
+            .title("The rest of the UI kinds' prefix")
+            .summary(
+                "Every name under urn:iki:ui:kind: that is not a kind's, refused NotFound so \
+                 that no other module answers under the prefix.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(
+                ArgSpec::new("rest")
+                    .summary("the rest of the name")
+                    .class(XSD_STRING)
+                    .binding(),
+            )
             .output(TURTLE),
     )
 }
@@ -790,6 +837,105 @@ fn gallery_endpoint() -> AsyncFnEndpoint {
                 }
                 model::validate(&root)?;
                 model_face(inv, &root)
+            })
+        },
+    )
+    .with_description(description)
+}
+
+// --- forms from models (ledger #3354) ---------------------------------------------------------
+
+const XSD_ANY_URI: &str = "http://www.w3.org/2001/XMLSchema#anyURI";
+
+fn bound_iri(inv: &Invocation<'_>, var: &str) -> Result<Iri, Error> {
+    let value = inv.bindings.get(var).unwrap_or_default();
+    Iri::parse(value).map_err(|e| Error::InvalidArgument {
+        name: var.to_string(),
+        detail: format!("`{value}` is not an IRI: {e}"),
+    })
+}
+
+fn form_description(id: &str, title: &str, summary: &str) -> Description {
+    Description::new(id)
+        .title(title)
+        .summary(summary)
+        .verb(Verb::Source)
+        .verb(Verb::Meta)
+        .output(model::MEDIA_TYPE)
+        .output(model::JSON_LD)
+}
+
+/// `urn:iki:ui:form:resource:{iri}`: [`form::from_contract`] over `{iri}`'s Meta, read as
+/// `application/json` through the kernel, so the form hangs from the contract and a changed
+/// contract recomputes it. Rust because the mapping from inputs to fields is a function over a
+/// parsed contract, which no alias or compose template can express; the read itself is one
+/// `issue`.
+fn form_resource_endpoint() -> AsyncFnEndpoint {
+    let description = form_description(
+        "ui-form-resource",
+        "A form from a resource's contract",
+        "A form node generated from the resource's own contract (its Meta): one field per \
+         input its Sink reads, required or optional, typed by its datatype, a choice for a \
+         closed set, its default as the initial value. The contract is the model; OpenAPI is \
+         one projection of it (urn:iki:ui:form:openapi:{doc}:operation:{op}).",
+    )
+    .input(
+        ArgSpec::new("iri")
+            .summary("the resource whose Sink the form fills in")
+            .class(XSD_ANY_URI)
+            .binding()
+            .example("urn:iki:ui:kind"),
+    );
+    AsyncFnEndpoint::new(
+        "ui-form-resource",
+        |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let iri = bound_iri(inv, "iri")?;
+                let request = Request::new(Verb::Meta, iri.clone())
+                    .with_arg("as", ArgRef::Inline(b"application/json".to_vec()));
+                let contract = inv.issue(request).await?;
+                let node = form::from_contract(iri.as_str(), &contract.bytes)?;
+                model_face(inv, &node)
+            })
+        },
+    )
+    .with_description(description)
+}
+
+/// `urn:iki:ui:form:openapi:{doc}:operation:{op}`: [`form::from_openapi`] over the document
+/// `{doc}`, read through the kernel (so the form hangs from it). Rust for the same reason as
+/// [`form_resource_endpoint`], and because no vetted crate reads OpenAPI 3.1 ([`form`]).
+fn form_openapi_endpoint() -> AsyncFnEndpoint {
+    let description = form_description(
+        "ui-form-openapi",
+        "A form from an OpenAPI operation",
+        "A form node generated from an OpenAPI 3.1 document's operation (by operationId): \
+         one field per property of its request body's schema, the same function as \
+         urn:iki:ui:form:resource:{iri}, so the same model gives the same form.",
+    )
+    .input(
+        ArgSpec::new("doc")
+            .summary("the OpenAPI 3.1 document, JSON, by its IRI")
+            .class(XSD_ANY_URI)
+            .binding()
+            .example("urn:example:openapi"),
+    )
+    .input(
+        ArgSpec::new("op")
+            .summary("the operation's operationId")
+            .class(XSD_STRING)
+            .binding()
+            .example("contact"),
+    );
+    AsyncFnEndpoint::new(
+        "ui-form-openapi",
+        |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let doc = bound_iri(inv, "doc")?;
+                let op = inv.bindings.get("op").unwrap_or_default().to_string();
+                let bytes = inv.issue(Request::new(Verb::Source, doc.clone())).await?;
+                let node = form::from_openapi(doc.as_str(), &bytes.bytes, &op)?;
+                model_face(inv, &node)
             })
         },
     )

@@ -2,19 +2,24 @@
   "kind": "choice",
   "properties": {
     "label": "Size",
-    "name": "size"
+    "name": "size",
+    "value": "l",
+    "required": true,
+    "description": "The size to ship."
   },
   "children": [
     {
-      "kind": "text",
+      "kind": "option",
       "properties": {
-        "content": "Small"
+        "label": "Small",
+        "value": "s"
       }
     },
     {
-      "kind": "text",
+      "kind": "option",
       "properties": {
-        "content": "Large"
+        "label": "Large",
+        "value": "l"
       }
     }
   ]

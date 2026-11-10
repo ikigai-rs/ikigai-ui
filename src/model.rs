@@ -58,6 +58,12 @@ pub enum Type {
     Level,
     /// `get` or `post`.
     Method,
+    /// A boolean, or the text `true` or `false`.
+    Flag,
+    /// An absolute IRI: a resource's name, which a target maps to its own door.
+    Iri,
+    /// A verb a form issues: `source`, `sink`, `new` or `delete`.
+    Verb,
 }
 
 /// What children a kind takes.
@@ -121,16 +127,41 @@ macro_rules! kind {
 }
 
 /// The closed node vocabulary. Sealed: nothing else is a kind.
-pub const KINDS: [Kind; 14] = [
+pub const KINDS: [Kind; 15] = [
     kind!("heading", "content", ["level": Level], [], Children::Leaf),
     kind!("text", "content", [], [], Children::Leaf),
-    kind!("field", "label", ["name": Text], ["input": Text, "value": Text], Children::Leaf),
-    kind!("choice", "label", ["name": Text], [], Children::Only("text")),
+    kind!(
+        "field",
+        "label",
+        ["name": Text],
+        ["input": Text, "value": Text, "required": Flag, "description": Text, "error": Text],
+        Children::Leaf
+    ),
+    kind!(
+        "choice",
+        "label",
+        ["name": Text],
+        ["value": Text, "required": Flag, "description": Text, "error": Text],
+        Children::Only("option")
+    ),
+    kind!("option", "label", ["value": Text], [], Children::Leaf),
     kind!("button", "label", [], ["name": Text, "value": Text], Children::Leaf),
     kind!("link", "label", ["href": Url], [], Children::Leaf),
     kind!("list", "label", [], [], Children::Any),
     kind!("table", "caption", [], [], Children::Only("group")),
-    kind!("form", "label", [], ["action": Url, "method": Method], Children::Any),
+    kind!(
+        "form",
+        "label",
+        [],
+        [
+            "action": Url,
+            "method": Method,
+            "description": Text,
+            "resource": Iri,
+            "verb": Verb
+        ],
+        Children::Any
+    ),
     kind!("nav", "label", [], [], Children::Only("link")),
     kind!("status", "content", [], [], Children::Leaf),
     kind!("image", "alt", ["src": Url], [], Children::Leaf),
@@ -144,17 +175,22 @@ pub const KIND_LIST: &str = include_str!("../assets/kind.ttl");
 /// The gallery's sections, data: `urn:iki:ui:screen:name:gallery` assembles it.
 pub const GALLERY: &str = include_str!("../assets/gallery.json");
 
+/// The verbs a form's `verb` names.
+pub const VERBS: [&str; 4] = ["source", "sink", "new", "delete"];
+
 /// The kind named `name`, or `None`.
 pub fn kind(name: &str) -> Option<&'static Kind> {
     KINDS.iter().find(|k| k.name == name)
 }
 
-/// A property value: text or a number. Never markup.
+/// A property value: text, a number or a boolean. Never markup.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Value {
     /// A number (a heading's level).
     Number(i64),
+    /// A boolean (a field's `required`).
+    Bool(bool),
     /// Text.
     Text(String),
 }
@@ -199,6 +235,10 @@ pub fn validate(root: &Node) -> Result<(), Error> {
                     ikigai_fn::html::safe_href(s).is_some_and(|h| h == s.as_str())
                 }
                 (Type::Method, Value::Text(s)) => s == "get" || s == "post",
+                (Type::Flag, Value::Bool(_)) => true,
+                (Type::Flag, Value::Text(s)) => s == "true" || s == "false",
+                (Type::Iri, Value::Text(s)) => ikigai_core::Iri::parse(s.as_str()).is_ok(),
+                (Type::Verb, Value::Text(s)) => VERBS.contains(&s.as_str()),
                 _ => false,
             };
             if !ok {

@@ -132,7 +132,13 @@ pub fn host(dir: Option<&Path>) -> Kernel {
 
 /// [`host`], with extra spaces ahead of the demo app.
 pub fn host_with(dir: Option<&Path>, extra: Vec<Arc<dyn Space>>) -> Kernel {
-    Kernel::new(root(dir, extra))
+    kernel(root(dir, extra))
+}
+
+/// A kernel over `root` with the Meta renderer a host configures, so a contract reads as
+/// `application/json` (the forms, ledger #3354).
+pub fn kernel(root: Arc<dyn Space>) -> Kernel {
+    Kernel::with_meta_renderer(root, Arc::new(ikigai_vocab::TurtleRenderer))
 }
 
 /// The root space [`host_with`] builds its kernel from, for a test that needs the same `Arc`
@@ -191,4 +197,133 @@ pub fn mirror(tag: &str) -> PathBuf {
 
 pub fn snapshots() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots")
+}
+
+// --- models a form is generated from (ledger #3354) --------------------------------------------
+
+pub const CONTACT: &str = "http://example.org/contact";
+pub const CONTACT_FLAT: &str = "http://example.org/contact-flat";
+pub const OPENAPI: &str = "urn:demo:openapi";
+const XSD: &str = "http://www.w3.org/2001/XMLSchema#";
+/// What writing to the contact resources requires.
+pub const CONTACT_WRITE: &str = "urn:cap:demo:contact:write";
+
+/// The contact resource's Sink inputs: required, optional, enumerated and defaulted.
+fn contact_inputs() -> Vec<ArgSpec> {
+    vec![
+        ArgSpec::new("name")
+            .summary("Who is writing.")
+            .class(XSD_STRING),
+        ArgSpec::new("email").class(format!("{XSD}anyURI")),
+        ArgSpec::new("message")
+            .summary("What you want to say.")
+            .class("https://schema.org/Text"),
+        ArgSpec::new("topic")
+            .class(XSD_STRING)
+            .one_of(["sales", "support"])
+            .default_value("support"),
+        ArgSpec::new("copies")
+            .class(format!("{XSD}integer"))
+            .default_value(1),
+        ArgSpec::new("subscribe")
+            .class(format!("{XSD}boolean"))
+            .optional(),
+        ArgSpec::new("on").class(format!("{XSD}date")).optional(),
+    ]
+}
+
+fn accepted(_: &Invocation<'_>) -> Result<Representation> {
+    Ok(Representation::new(ReprType::new("text/plain"), b"sent".to_vec()).cacheable())
+}
+
+/// The OpenAPI 3.1 document with the same shape as the contact resource's Sink.
+pub const OPENAPI_DOC: &str = r##"{
+  "openapi": "3.1.0",
+  "info": {"title": "Contact", "version": "1"},
+  "servers": [{"url": "http://example.org"}],
+  "paths": {
+    "/contact": {
+      "get": {"operationId": "look", "parameters": [{"name": "q", "in": "query"}]},
+      "post": {
+        "operationId": "contact",
+        "summary": "Contact",
+        "description": "Send us a message.",
+        "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contact"}}}}
+      }
+    }
+  },
+  "components": {"schemas": {"Contact": {
+    "type": "object",
+    "required": ["name", "email", "message"],
+    "properties": {
+      "name": {"type": "string", "description": "Who is writing."},
+      "email": {"type": "string", "format": "uri"},
+      "message": {"type": "string", "format": "long-text", "description": "What you want to say."},
+      "topic": {"type": "string", "enum": ["sales", "support"], "default": "support"},
+      "copies": {"type": "integer", "default": 1},
+      "subscribe": {"type": ["boolean", "null"]},
+      "on": {"type": "string", "format": "date"}
+    }
+  }}}
+}"##;
+
+/// The models: the contact resource, its per-verb form (its Source reads `q`, its Sink the
+/// contact inputs), the same Sink authored flat, and the OpenAPI document.
+pub fn form_models() -> EndpointSpace {
+    let contact = Description::new("demo-contact")
+        .title("Contact")
+        .summary("The contact resource.")
+        .verb(Verb::Source)
+        .verb(Verb::Sink)
+        .verb(Verb::Meta)
+        .action(
+            ikigai_core::ActionSpec::new(Verb::Source)
+                .input(ArgSpec::new("q").class(XSD_STRING).optional())
+                .output("text/plain"),
+        );
+    let sink = contact_inputs().into_iter().fold(
+        ikigai_core::ActionSpec::new(Verb::Sink)
+            .summary("Send us a message.")
+            .requires(CONTACT_WRITE)
+            .output("text/plain"),
+        |a, i| a.input(i),
+    );
+    let contact = contact.action(sink);
+    let flat = contact_inputs().into_iter().fold(
+        Description::new("demo-contact-flat")
+            .title("Contact")
+            .summary("Send us a message.")
+            .verb(Verb::Sink)
+            .verb(Verb::Meta)
+            .requires(CONTACT_WRITE)
+            .output("text/plain"),
+        |d, i| d.input(i),
+    );
+    EndpointSpace::new()
+        .bind(
+            Exact::new(CONTACT),
+            FnEndpoint::new("demo-contact", accepted).with_description(contact),
+        )
+        .bind(
+            Exact::new(CONTACT_FLAT),
+            FnEndpoint::new("demo-contact-flat", accepted).with_description(flat),
+        )
+        .bind(
+            Exact::new(OPENAPI),
+            FnEndpoint::new("demo-openapi", |_: &Invocation<'_>| {
+                Ok(Representation::new(
+                    ReprType::new("application/json"),
+                    OPENAPI_DOC.as_bytes().to_vec(),
+                )
+                .cacheable())
+            })
+            .with_description(
+                Description::new("demo-openapi")
+                    .title("demo-openapi")
+                    .summary("An OpenAPI 3.1 document.")
+                    .verb(Verb::Source)
+                    .verb(Verb::Meta)
+                    .output("application/json"),
+            ),
+        )
 }

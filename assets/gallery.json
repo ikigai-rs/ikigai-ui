@@ -15,6 +15,7 @@
         "form",
         "field",
         "choice",
+        "option",
         "button"
       ]
     },

@@ -11,6 +11,7 @@
     "text": "urn:iki:ui:kind:name:text",
     "field": "urn:iki:ui:kind:name:field",
     "choice": "urn:iki:ui:kind:name:choice",
+    "option": "urn:iki:ui:kind:name:option",
     "button": "urn:iki:ui:kind:name:button",
     "link": "urn:iki:ui:kind:name:link",
     "list": "urn:iki:ui:kind:name:list",
@@ -36,6 +37,12 @@
     "method": "urn:iki:ui:property:name:method",
     "name": "urn:iki:ui:property:name:name",
     "src": "urn:iki:ui:property:name:src",
-    "value": "urn:iki:ui:property:name:value"
+    "value": "urn:iki:ui:property:name:value",
+    "error": "urn:iki:ui:property:name:error",
+    "required": {
+      "@id": "urn:iki:ui:property:name:required"
+    },
+    "resource": "urn:iki:ui:property:name:resource",
+    "verb": "urn:iki:ui:property:name:verb"
   }
 }
