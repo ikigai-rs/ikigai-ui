@@ -1,12 +1,17 @@
+# The library at the root, and its demo host beside it (ledger #3356). ikigai-ui-gpui lands
+# here next. The library is still the published crate; every other member is `publish = false`.
+[workspace]
+members = [".", "demo"]
+# MSRV-aware resolution: each dependency's newest version that still builds on
+# `rust-version`, since CI commits no lockfile.
+resolver = "3"
+
 [package]
 name = "ikigai-ui"
 version = "0.5.0"
 edition = "2021"
 # ikigai-core needs 1.87 (`usize::is_multiple_of`); the shared CI's msrv job holds it there.
 rust-version = "1.87"
-# MSRV-aware resolution: each dependency's newest version that still builds on
-# `rust-version`, since CI commits no lockfile.
-resolver = "3"
 license = "MIT OR Apache-2.0"
 description = "The shared UI path for ikigai hosts, as resources: vendored htmx, the token stylesheet, the shell script and the page shell, compiled in or overridden from a directory, plus the UI test kit."
 authors = ["Brian Sletten <brian.sletten@gmail.com>"]
@@ -17,7 +22,7 @@ keywords = ["ikigai", "roc", "htmx", "ui", "module"]
 categories = ["web-programming", "wasm"]
 # The crate is the library, its compiled-in artifacts and the test kit. The repo's tests,
 # examples and the axe checker are the repo's.
-exclude = ["/tests", "/examples", "/axe", "/.github"]
+exclude = ["/tests", "/examples", "/axe", "/.github", "/demo"]
 
 [features]
 default = []

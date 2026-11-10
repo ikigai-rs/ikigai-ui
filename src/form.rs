@@ -36,7 +36,7 @@
 
 use std::collections::BTreeMap;
 
-use ikigai_core::{ActionSpec, ArgSpec, Description, Error, InputSource, Verb};
+use ikigai_core::{ActionSpec, ArgSpec, Arguments, Description, Error, InputSource, Verb};
 use serde::Deserialize;
 
 use crate::model::{self, Node, Value};
@@ -238,7 +238,9 @@ fn contract_input(a: &ArgSpec) -> Input {
 
 /// The form for `resource` from its contract (its Meta, `as=application/json`): its
 /// Sink's inputs, through both authoring forms ([`Description::action_specs`]), each but a
-/// binding (that is in the name already). A contract with no Sink is `InvalidArgument`.
+/// binding (that is in the name already) and an argument envelope's carrier (its fields are
+/// the form; the carrier is the body they arrive in, which a browser's submission IS). A
+/// contract with no Sink is `InvalidArgument`.
 pub fn from_contract(resource: &str, contract: &[u8]) -> Result<Node, Error> {
     let d: Description = serde_json::from_slice(contract)
         .map_err(|e| invalid("iri", format!("{resource}: not a contract: {e}")))?;
@@ -247,10 +249,14 @@ pub fn from_contract(resource: &str, contract: &[u8]) -> Result<Node, Error> {
         .into_iter()
         .find(|a| a.verb == Verb::Sink)
         .ok_or_else(|| invalid("iri", format!("{resource}: its contract declares no Sink")))?;
+    let carrier = match &sink.arguments {
+        Arguments::Envelope(carrier) => Some(carrier.as_str()),
+        _ => None,
+    };
     let inputs: Vec<Input> = sink
         .inputs
         .iter()
-        .filter(|a| a.source != InputSource::Binding)
+        .filter(|a| a.source != InputSource::Binding && Some(a.name.as_str()) != carrier)
         .map(contract_input)
         .collect();
     let summary = if sink.summary.is_empty() {

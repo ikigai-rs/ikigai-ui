@@ -1,0 +1,30 @@
+[package]
+name = "ikigai-ui-demo"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+license = "MIT OR Apache-2.0"
+description = "ikigai-ui's demo host: the gallery, a contact form generated from the service's own contract, and the support page, over an ikigai-web door."
+repository = "https://github.com/ikigai-rs/ikigai-ui"
+# The demo is the repo's, never a crate of its own (ledger #3356).
+publish = false
+
+[dependencies]
+# The library this repo publishes, by path: the one copy in the build.
+ikigai-ui = { path = ".." }
+# The same floors the library holds.
+ikigai-core = "0.3.0"
+ikigai-fn = "0.10.0"
+serde_json = "1.0"
+# The Meta renderer, so a contract reads as `application/json` and the form is generated from it.
+ikigai-vocab = "0.3"
+# The inbound-HTTP door (ecosystem's, not a server written here). 0.4.3 depends on ikigai-core
+# and ikigai-fn only: no second ikigai-ui, nothing from the cli.
+ikigai-web = "0.4.3"
+tokio = { version = "1", features = ["rt", "net", "macros"] }
+
+[dev-dependencies]
+ikigai-ui = { path = "..", features = ["testkit"] }
+ikigai-conformance = "0.14.0"
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }

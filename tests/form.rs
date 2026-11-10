@@ -208,3 +208,24 @@ fn every_name_under_the_kind_prefix_is_sealed() {
         );
     }
 }
+
+/// An envelope's carrier is the body the fields arrive in, never a field of the form: a
+/// browser's submission is that body (ledger #3356, the demo's contact Sink).
+#[test]
+fn an_envelope_carrier_is_not_a_field() {
+    use ikigai_core::{ActionSpec, ArgSpec, Description};
+    let contract = Description::new("c").title("C").verb(Verb::Sink).action(
+        ActionSpec::new(Verb::Sink)
+            .input(ArgSpec::new("name"))
+            .input(ArgSpec::new("content"))
+            .envelope("content"),
+    );
+    let node =
+        ikigai_ui::form::from_contract("urn:x:c", &serde_json::to_vec(&contract).unwrap()).unwrap();
+    let names: Vec<_> = node
+        .children
+        .iter()
+        .filter_map(|c| prop(c, "name"))
+        .collect();
+    assert_eq!(names, [&text("name")], "{node:?}");
+}

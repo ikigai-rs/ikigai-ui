@@ -178,6 +178,35 @@ this phase does **not** install a target resolution corridor; it preserves the c
 scope without inventing a root bypass. `tests/target.rs` reproduces that kernel limitation.
 A host needing a structural corridor must arrange it at the kernel boundary.
 
+## The demo
+
+```sh
+cargo run -p ikigai-ui-demo            # http://127.0.0.1:8080/
+cargo run -p ikigai-ui-demo -- 127.0.0.1:9000
+```
+
+One binary (`demo/`, the workspace member `ikigai-ui-demo`, never published), one kernel and
+one ikigai-web door. It serves three pages in the shared shell:
+
+- `/` or `/page/gallery`: the gallery screen, every node kind rendered by the html target.
+- `/page/contact`: a contact form. **The form is a client generated from the service's
+  model, not written by hand.** The model is the contact service's own contract (the
+  one its OpenAPI description is projected from). `urn:iki:ui:screen:name:contact` is an alias
+  for `urn:iki:ui:form:resource:urn:iki:uidemo:contact`, and the html target renders the
+  generated node. The same generation works from an OpenAPI document
+  (`urn:iki:ui:form:openapi:{doc}:operation:{op}`) or other models. Submitting the form calls
+  the Sink that contract describes. That Sink takes `name`, `email`, `topic` (one of
+  `question`, `feedback`, `support`) and `message`. They arrive as an argument envelope in the
+  POST body. The Sink validates them, refuses a bad one with `InvalidArgument` naming the
+  field (the shell lands the refusal on it), and stores the message at
+  `urn:iki:uidemo:submission:id:{id}`. `urn:iki:uidemo:submission` lists the stored ones. Both
+  require `urn:cap:uidemo:submission:read`, which the door does not grant.
+- `/page/support`: the support matrix, what each target renders of each node kind.
+
+There is no sign-in yet: the door grants every request a write to the contact service and
+nothing else. Sign-in comes later (#2169). The submissions live in memory and are gone
+when the process stops. `demo/tests/door.rs` drives the door end to end.
+
 ## The test kit
 
 `ikigai-ui = { version = "0.5", features = ["testkit"] }` as a dev-dependency gives a UI repo:
