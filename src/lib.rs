@@ -23,6 +23,11 @@
 //! | `urn:iki:ui:form:openapi:{doc}:operation:{op}` | data | the same from an OpenAPI 3.1 document's operation ([`form`]) |
 //! | `urn:iki:ui:chooser-override:{family}:{theme}` | a host's | a family's own chooser; bound to nothing, it turns the chooser off ([`CHOOSER_OVERRIDE`]) |
 //!
+//! The model's target resources are [`target::PREFIX`] (`html` and `gpui` descriptors),
+//! [`target::SUPPORT`] (the JSON/HTML matrix), and
+//! `urn:iki:ui:face:target:{target}:screen:{screen}` (a projected model, in JSON or JSON-LD).
+//! See [`target`] for fallback semantics and the kernel's corridor limitation.
+//!
 //! ## Two deliveries, one set of names (D17)
 //!
 //! Each artifact is compiled in. A host that binds a directory at [`DIR`] (ikigai-fs's
@@ -34,8 +39,9 @@
 //! file through the kernel (or a watcher's cut) recomputes it. The palettes are not artifacts:
 //! they are the data the contrast floor is tested over, so a directory cannot change a color.
 //!
-//! **Sealed.** A directory can replace only the artifacts [`ARTIFACTS`] names; it cannot add a
-//! name, and nothing here serves a header or a CSP. Those are door configuration (D6).
+//! **Sealed.** A directory can replace the artifacts [`ARTIFACTS`] names and the two
+//! [`target`] descriptors (`target/html.json`, `target/gpui.json`); it cannot add a name.
+//! Nothing here serves a header or a CSP. Those are door configuration (D6).
 //!
 //! A host's OWN artifacts get the same two deliveries from [`artifacts`]: its list, its
 //! directory prefix, the same fallback rule.
@@ -93,6 +99,7 @@ use ikigai_core::{
 pub mod form;
 pub mod model;
 pub mod palette;
+pub mod target;
 #[cfg(feature = "testkit")]
 pub mod testkit;
 
@@ -163,7 +170,8 @@ pub struct Artifact {
     pub bytes: &'static [u8],
 }
 
-/// Every artifact, the whole set a directory can override.
+/// The bundled shell artifacts a directory can override. The [`target`] descriptors have
+/// their own validated file-backed resources.
 pub const ARTIFACTS: [Artifact; 4] = [
     Artifact {
         iri: "urn:iki:ui:htmx",
@@ -598,6 +606,15 @@ pub fn space() -> EndpointSpace {
             template(&format!("{FORM_OPENAPI}{{doc}}:operation:{{op}}")),
             form_openapi_endpoint(),
         )
+        .bind(
+            template("urn:iki:ui:target:name:{name}"),
+            target::descriptor_endpoint(),
+        )
+        .bind(Exact::new(target::SUPPORT), target::support_endpoint())
+        .bind(
+            template("urn:iki:ui:face:target:{target}:screen:{screen}"),
+            target::face_endpoint(),
+        )
         .named(space_iri("ui"))
 }
 
@@ -808,15 +825,18 @@ fn gallery_endpoint() -> AsyncFnEndpoint {
                 let text = |p: &str, v: &str| (p.to_string(), model::Value::Text(v.to_string()));
                 let mut root = model::Node {
                     kind: "group".into(),
+                    replacement: None,
                     properties: [text("label", &gallery.title)].into(),
                     children: Vec::new(),
                 };
                 for section in gallery.section {
                     let mut group = model::Node {
                         kind: "group".into(),
+                        replacement: None,
                         properties: [text("label", &section.label)].into(),
                         children: vec![model::Node {
                             kind: "heading".into(),
+                            replacement: None,
                             properties: [
                                 text("content", &section.label),
                                 ("level".to_string(), model::Value::Number(2)),

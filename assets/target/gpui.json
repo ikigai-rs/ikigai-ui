@@ -1,0 +1,33 @@
+{
+  "name": "gpui",
+  "capabilities": [
+    {
+      "name": "hover",
+      "version": "1.0"
+    },
+    {
+      "name": "multi-window",
+      "version": "1.0"
+    }
+  ],
+  "renders": [
+    "heading",
+    "text",
+    "button",
+    "link",
+    "list",
+    "status",
+    "group"
+  ],
+  "fallback": {
+    "option": "text",
+    "field": "text",
+    "choice": "text",
+    "table": "list",
+    "form": "text",
+    "nav": "list",
+    "image": "text",
+    "visual": "text"
+  },
+  "limits": {}
+}

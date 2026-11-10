@@ -43,6 +43,10 @@
       "@id": "urn:iki:ui:property:name:required"
     },
     "resource": "urn:iki:ui:property:name:resource",
-    "verb": "urn:iki:ui:property:name:verb"
+    "verb": "urn:iki:ui:property:name:verb",
+    "replacement": {
+      "@id": "urn:iki:ui:property:name:replacement",
+      "@type": "@id"
+    }
   }
 }

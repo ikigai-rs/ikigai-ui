@@ -16,6 +16,9 @@ behavior, and the same tests.
 | `urn:iki:ui:form:openapi:{doc}:operation:{op}` | the same form from an OpenAPI 3.1 document's operation, for a service that is not an ikigai resource; the same model gives the same form |
 | `pages(family, base)` | your `{base}page:{name}` pages: the shell over your `{base}header` (then the theme chooser), `{base}title:{name}` and `{base}fragment:{name}`; a name with `:` in it (`item:5`) reaches them whole |
 | `Pages::new(family, base)` | the same, with your own stylesheets and scripts in `<head>`, the door's push stream named for live views, and the chooser turned off with `.theme_chooser(false)` |
+| `urn:iki:ui:target:name:{target}` | the `html` or `gpui` descriptor: versioned capabilities, rendered kinds, fallbacks and target limits |
+| `urn:iki:ui:support` | every target against every kind, plus capabilities, composed from descriptors; JSON by default, `as=text/html` for the support page |
+| `urn:iki:ui:face:target:{target}:screen:{screen}` | `urn:iki:ui:screen:name:{screen}` with the descriptor's fallbacks applied; model JSON by default, `as=application/ld+json` for named JSON-LD nodes |
 | `artifacts(&[Artifact], dir)` | your own artifacts, with the same two deliveries: compiled in, or a file under your directory prefix |
 
 ```rust
@@ -102,6 +105,77 @@ view, so an `hx-indicator` elsewhere does not hide it); a view that swaps `outer
 is reopened, and every view is refetched once the new stream is ready, since a cut in the gap
 was heard by nobody. A stream the door refuses (a `400` past its subscription bound) is said
 once in `#status`. The door grants `urn:cap:kernel:listen` for the stream to answer.
+
+## Target contracts and screen faces
+
+The descriptors are data in `assets/target/html.json` and `assets/target/gpui.json`. A host
+can override them through `urn:iki:ui:dir:target/html.json` and `…:target/gpui.json`, with the
+same file dependency and refusal rules as other artifacts. Writes through the kernel cut the
+cached descriptor, support matrix and every face that read it. Files cannot add a target;
+an unknown target answers `NotFound`.
+
+Each descriptor has named `name`, `capabilities`, `renders`, `fallback` and `limits`
+fields. Unknown fields are refused with a message naming the field, including inside
+capabilities and limits. `capabilities` is a list of unique feature names with explicit,
+nonempty versions, for example `{"name":"hover","version":"1.0"}`. HTML advertises hover
+and motion; the future GPUI contract advertises hover and multi-window. Versions are
+identifiers here; elements and hints will declare their `requires` in a later phase, which
+will define requirement matching. Advertising a feature does not install its renderer.
+
+The face applies this fallback ladder to every node:
+
+1. Render natively when the descriptor's `renders` claims the kind and its limits and child
+   constraints permit it.
+2. Expand into core kinds. This stage is reserved in the face function; today's closed
+   vocabulary has no custom elements to expand.
+3. Use the node's optional `replacement` subtree, otherwise the descriptor's
+   `fallback` kind. A replacement subtree walks the same ladder. Descriptor chains try
+   native rendering at each destination, then its expansion, then its next replacement.
+4. Show the original kind's required fallback text (`alt` for image, `caption` for table,
+   and so on). Descriptor destination `text` requests that same text directly.
+
+Node `fallback` is refused. The shape-level `urn:iki:ui:property:name:fallback`
+annotation still identifies the property containing a kind's fallback text; a node's
+replacement subtree uses `urn:iki:ui:property:name:replacement`.
+
+Every nonnative kind needs a descriptor fallback decision; native kinds may also declare
+one for when a limit or projected child constraint prevents native rendering. `text` must
+be rendered and cannot have a descriptor replacement. All descriptor chains must terminate,
+even those beginning at native kinds. Projection copies destination-compatible properties,
+maps the source's fallback text to the destination's fallback property and projects children
+when the destination takes them. Faces remove replacement metadata after making their choice,
+so a client walks only renderable nodes. An unsupported kind is never a rendering error;
+a malformed screen or descriptor remains an input/configuration error.
+
+A node's replacement is another validated node, not raw markup. The model's size/depth bounds,
+closed kind/property validation, safe URL checks, Turtle shapes and named JSON-LD paths
+include replacement subtrees. For example:
+
+```json
+{
+  "kind": "image",
+  "properties": {"alt": "Revenue chart", "src": "/revenue.png"},
+  "replacement": {"kind": "text", "properties": {"content": "Revenue increased 10%."}}
+}
+```
+
+The HTML contract covers every current kind for the HTMX and Web Components target, with a
+table bound of 1000 rows and 100 columns. Rows are the table's group children; columns count
+each row's children. Larger tables use caption text. GPUI currently keeps heading, text,
+button, link, list, status and group; table and nav become lists, while field, choice, option, form,
+image and visual use fallback text. This is the contract for a future GPUI renderer; the
+renderer itself is not part of this phase. The gallery's HTML face is unchanged, and its
+GPUI face differs exactly at those descriptor decisions. The JSON and HTML support matrix
+includes versioned capabilities and limits as well as kinds.
+
+**Scope limitation:** the face is the target's entry point and no target argument is passed
+to a screen, example, or other downstream endpoint. It reads both the descriptor and screen
+in the caller's existing resolution scope. An endpoint can call `Invocation::confine`, but
+that removes root resolution and would hide host screens and descriptor directory overrides.
+Only the host's `Kernel::issue_in` can inject a corridor while keeping the root. Consequently
+this phase does **not** install a target resolution corridor; it preserves the caller's
+scope without inventing a root bypass. `tests/target.rs` reproduces that kernel limitation.
+A host needing a structural corridor must arrange it at the kernel boundary.
 
 ## The test kit
 

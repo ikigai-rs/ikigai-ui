@@ -11,8 +11,12 @@
   <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:label> ;
   sh:targetClass <urn:iki:ui:kind:name:link> ;
   sh:closed true ;
-  sh:property <urn:iki:ui:kind:name:link:property:name:type>, <urn:iki:ui:kind:name:link:property:name:label>, <urn:iki:ui:kind:name:link:property:name:href> .
+  sh:property <urn:iki:ui:kind:name:link:property:name:replacement>, <urn:iki:ui:kind:name:link:property:name:type>, <urn:iki:ui:kind:name:link:property:name:label>, <urn:iki:ui:kind:name:link:property:name:href> .
 
 <urn:iki:ui:kind:name:link:property:name:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:link> ; sh:maxCount 1 .
 <urn:iki:ui:kind:name:link:property:name:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
 <urn:iki:ui:kind:name:link:property:name:href> sh:path <urn:iki:ui:property:name:href> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+
+# Optional replacement subtree, validated by its own kind shape.
+<urn:iki:ui:kind:name:link:property:name:replacement> sh:path <urn:iki:ui:property:name:replacement> ;
+  sh:maxCount 1 ; sh:class <urn:iki:ui:node> .
