@@ -14,6 +14,9 @@ behavior, and the same tests.
 | `urn:iki:ui:chooser:{family}:{theme}` | what the shell puts in a family's header, for ANY family: the family's `urn:iki:ui:chooser-override:{family}:{theme}` if one is bound, else the theme chooser |
 | `pages(family, base)` | your `{base}page:{name}` pages: the shell over your `{base}header` (then the theme chooser), `{base}title:{name}` and `{base}fragment:{name}`; a name with `:` in it (`item:5`) reaches them whole |
 | `Pages::new(family, base)` | the same, with your own stylesheets and scripts in `<head>`, the door's push stream named for live views, and the chooser turned off with `.theme_chooser(false)` |
+| `urn:iki:ui:target:name:{target}` | the `html` or `gpui` descriptor: rendered kinds, fallbacks for every other kind and target limits |
+| `urn:iki:ui:support` | every target against every kind, composed from descriptors; JSON by default, `as=text/html` for the support page |
+| `urn:iki:ui:face:target:{target}:screen:{screen}` | `urn:iki:ui:screen:name:{screen}` with the descriptor's fallbacks applied; model JSON by default, `as=application/ld+json` for named JSON-LD nodes |
 | `artifacts(&[Artifact], dir)` | your own artifacts, with the same two deliveries: compiled in, or a file under your directory prefix |
 
 ```rust
@@ -100,6 +103,41 @@ view, so an `hx-indicator` elsewhere does not hide it); a view that swaps `outer
 is reopened, and every view is refetched once the new stream is ready, since a cut in the gap
 was heard by nobody. A stream the door refuses (a `400` past its subscription bound) is said
 once in `#status`. The door grants `urn:cap:kernel:listen` for the stream to answer.
+
+## Target contracts and screen faces
+
+The descriptors are data in `assets/target/html.json` and `assets/target/gpui.json`. A host
+can override them through `urn:iki:ui:dir:target/html.json` and `…:target/gpui.json`, with the
+same file dependency and refusal rules as other artifacts. Writes through the kernel cut the
+cached descriptor, support matrix and every face that read it. Files cannot add a target;
+an unknown target answers `NotFound`.
+
+Each descriptor partitions the closed vocabulary between `renders` and `fallback`, and
+`text` must be rendered. A fallback names another kind; `text` means the source kind's
+required fallback property (`alt` for image, `caption` for table, and so on). Chains must
+terminate. Projection copies destination-compatible properties, maps the source's fallback
+text to the destination's fallback property and projects children when the destination takes
+them. If required properties cannot be supplied or restricted children no longer fit, the
+whole node becomes its original fallback text. An unsupported kind is never a rendering
+error. A malformed descriptor is a configuration error rather than an unsupported kind.
+
+The HTML contract covers every current kind for the HTMX and Web Components target, with a
+table bound of 1000 rows and 100 columns. Rows are the table's group children; columns count
+each row's children. Larger tables use caption text. GPUI currently keeps heading, text,
+button, link, list, status and group; table and nav become lists, while field, choice, form,
+image and visual use fallback text. This is the contract for a future GPUI renderer; the
+renderer itself is not part of this phase. The gallery's HTML face is unchanged, and its
+GPUI face differs exactly at those descriptor decisions. The support page includes limits
+as well as the kind matrix.
+
+**Scope limitation:** the face is the target's entry point and no target argument is passed
+to a screen, example, or other downstream endpoint. It reads both the descriptor and screen
+in the caller's existing resolution scope. An endpoint can call `Invocation::confine`, but
+that removes root resolution and would hide host screens and descriptor directory overrides.
+Only the host's `Kernel::issue_in` can inject a corridor while keeping the root. Consequently
+this phase does **not** install a target resolution corridor; it preserves the caller's
+scope without inventing a root bypass. `tests/target.rs` reproduces that kernel limitation.
+A host needing a structural corridor must arrange it at the kernel boundary.
 
 ## The test kit
 

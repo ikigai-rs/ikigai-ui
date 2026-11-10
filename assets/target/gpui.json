@@ -1,0 +1,14 @@
+{
+  "name": "gpui",
+  "renders": ["heading", "text", "button", "link", "list", "status", "group"],
+  "fallback": {
+    "field": "text",
+    "choice": "text",
+    "table": "list",
+    "form": "text",
+    "nav": "list",
+    "image": "text",
+    "visual": "text"
+  },
+  "limits": {}
+}

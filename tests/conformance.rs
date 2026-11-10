@@ -38,6 +38,18 @@ fn conforms() {
         .fixture(Fixture::new("demo-fragment", Verb::Source).binding("name", "home"))
         .fixture(Fixture::new("ui-kind-name", Verb::Source).binding("kind", "heading"))
         .fixture(Fixture::new("ui-example-kind", Verb::Source).binding("kind", "nav"))
+        .fixture(Fixture::new("ui-target-name", Verb::Source).binding("name", "html"))
+        .fixture(
+            Fixture::new("ui-face-target-screen", Verb::Source)
+                .binding("target", "gpui")
+                .binding("screen", "gallery"),
+        )
+        // Descriptors are file-backed artifacts; support and faces are pure projections.
+        .pure("ui-support")
+        .pure("ui-face-target-screen")
+        .cacheable("ui-target-name")
+        .cacheable("ui-support")
+        .cacheable("ui-face-target-screen")
         .cacheable("ui-kind")
         .pure("ui-kind")
         .cacheable("ui-kind-name")
@@ -101,6 +113,9 @@ fn conforms() {
         "ui-example-kind",
         "ui-context",
         "ui-screen-gallery",
+        "ui-target-name",
+        "ui-support",
+        "ui-face-target-screen",
     ] {
         assert!(
             report.to_string().contains(id),
