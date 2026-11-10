@@ -97,6 +97,7 @@ use ikigai_core::{
 };
 
 pub mod form;
+pub mod html;
 pub mod model;
 pub mod palette;
 pub mod target;
@@ -611,6 +612,27 @@ pub fn space() -> EndpointSpace {
             target::descriptor_endpoint(),
         )
         .bind(Exact::new(target::SUPPORT), target::support_endpoint())
+        .bind(
+            template("urn:iki:ui:template:kind:{kind}"),
+            html::template_endpoint(),
+        )
+        .bind(Exact::new(html::EMPTY), html::empty_endpoint())
+        .bind(
+            template("urn:iki:ui:html:screen:{screen}:node:{node}:property:{property}"),
+            html::property_endpoint(),
+        )
+        .bind(
+            template("urn:iki:ui:html:screen:{screen}:node:{node}:child"),
+            html::child_endpoint(),
+        )
+        .bind(
+            template("urn:iki:ui:html:screen:{screen}:node:{node}"),
+            html::node_endpoint(),
+        )
+        .bind(
+            template("urn:iki:ui:html:screen:{screen}"),
+            html::screen_endpoint(),
+        )
         .bind(
             template("urn:iki:ui:face:target:{target}:screen:{screen}"),
             target::face_endpoint(),

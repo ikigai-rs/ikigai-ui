@@ -74,6 +74,33 @@ pub struct Descriptor {
     pub fallback: BTreeMap<String, String>,
     /// Target-specific bounds.
     pub limits: Limits,
+    /// Where a form submits when it names a `resource` and no `action`: a URI template over
+    /// the one variable `resource`, `{resource}` (RFC 6570 simple expansion, so the IRI is
+    /// one path segment) or `{+resource}` (reserved). The `html` descriptor's rule is the
+    /// ikigai-web door's [`SUBMIT`] route; a host whose door serves another path overrides
+    /// the descriptor from `target/html.json` in the UI directory. Absent, such a form has
+    /// no submit URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submit: Option<String>,
+}
+
+/// The `html` descriptor's submit rule: the path an ikigai-web door routes to the resource
+/// named in it, with the route `/resolution/iri/{+iri}` → `{+iri}` (the door decodes the
+/// segment, so a `/` in the IRI arrives whole).
+pub const SUBMIT: &str = "/resolution/iri/{resource}";
+
+impl Descriptor {
+    /// The submit URL for `resource` through [`Self::submit`], escaped by `ikigai_fn::html`'s
+    /// RFC 6570 rules. `None` without a rule.
+    pub fn submit_url(&self, resource: &str) -> Option<String> {
+        let rule = self.submit.as_deref()?;
+        Some(if let Some((head, tail)) = rule.split_once("{+resource}") {
+            format!("{head}{}{tail}", ikigai_fn::html::url_reserved(resource))
+        } else {
+            let (head, tail) = rule.split_once("{resource}")?;
+            format!("{head}{}{tail}", ikigai_fn::html::url_segment(resource))
+        })
+    }
 }
 
 fn invalid(detail: impl Into<String>) -> Error {
@@ -100,6 +127,15 @@ impl Descriptor {
     /// and terminating fallback chains, even when a chain starts at a native kind.
     /// Also checked by [`Self::apply`] for directly edited/deserialized contracts.
     pub fn validate(&self) -> Result<(), Error> {
+        if let Some(rule) = &self.submit {
+            let vars = rule.matches('{').count();
+            let one = rule.matches("{resource}").count() + rule.matches("{+resource}").count();
+            if vars != 1 || one != 1 || !(rule.starts_with('/') || rule.starts_with("http")) {
+                return Err(invalid(
+                    "submit is a path or URL template with exactly one {resource} or {+resource}",
+                ));
+            }
+        }
         let mut capabilities = BTreeSet::new();
         for capability in &self.capabilities {
             if capability.name.trim().is_empty() || capability.version.trim().is_empty() {
@@ -315,7 +351,7 @@ pub(crate) fn descriptor_endpoint() -> AsyncFnEndpoint {
     )
 }
 
-async fn read_descriptor(inv: &Invocation<'_>, name: &str) -> Result<Descriptor, Error> {
+pub(crate) async fn read_descriptor(inv: &Invocation<'_>, name: &str) -> Result<Descriptor, Error> {
     let artifact = known(name)?;
     let iri = Iri::parse(artifact.iri).expect("compiled-in descriptor IRI");
     let rep = inv.issue(Request::new(Verb::Source, iri)).await?;

@@ -56,6 +56,32 @@ fn conforms() {
                 .binding("target", "gpui")
                 .binding("screen", "gallery"),
         )
+        // The html target (ledger #3355): every view reads the screen through the kernel.
+        .fixture(Fixture::new("ui-html-screen", Verb::Source).binding("screen", "gallery"))
+        .fixture(
+            Fixture::new("ui-html-node", Verb::Source)
+                .binding("screen", "gallery")
+                .binding("node", "n.1"),
+        )
+        .fixture(
+            Fixture::new("ui-html-child", Verb::Source)
+                .binding("screen", "gallery")
+                .binding("node", "n.3"),
+        )
+        .fixture(
+            Fixture::new("ui-html-property", Verb::Source)
+                .binding("screen", "gallery")
+                .binding("node", "n.0")
+                .binding("property", "label"),
+        )
+        .fixture(Fixture::new("ui-template-kind", Verb::Source).binding("kind", "table"))
+        .pure("ui-html-empty")
+        .cacheable("ui-html-empty")
+        .cacheable("ui-template-kind")
+        .cacheable("ui-html-screen")
+        .cacheable("ui-html-node")
+        .cacheable("ui-html-child")
+        .cacheable("ui-html-property")
         // Descriptors are file-backed artifacts; support and faces are pure projections.
         .pure("ui-support")
         .pure("ui-face-target-screen")
@@ -136,6 +162,18 @@ fn conforms() {
         )
         .opt_out_check(
             "demo-contact-flat",
+            Check::Pipeline,
+            "a test model of a form's resource: a form posts its fields as named arguments, \
+             not one `content`; it is never a pipeline stage",
+        )
+        .opt_out_check(
+            "demo-contact-urn",
+            Check::Outputs,
+            "a test model: the form reads its contract (Meta); tests/door.rs fires its Sink \
+             through a door, which records the name it was sent",
+        )
+        .opt_out_check(
+            "demo-contact-urn",
             Check::Pipeline,
             "a test model of a form's resource: a form posts its fields as named arguments, \
              not one `content`; it is never a pipeline stage",
