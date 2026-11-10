@@ -29,5 +29,8 @@
     "image": "text",
     "visual": "text"
   },
-  "limits": {}
+  "limits": {},
+  "hints": [
+    "urn:iki:ui:hint:gpui:"
+  ]
 }

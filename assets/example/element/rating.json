@@ -1,0 +1,8 @@
+{
+  "kind": "urn:iki:ui:element:name:rating",
+  "properties": {
+    "fallback": "Rated 4 out of 5",
+    "label": "Service",
+    "score": 4
+  }
+}

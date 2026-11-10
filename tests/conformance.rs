@@ -97,6 +97,12 @@ fn conforms() {
         .cacheable("ui-context")
         .pure("ui-context")
         .cacheable("ui-screen-gallery")
+        // Custom elements (ledger #3358): the definitions are file-backed artifacts and the
+        // elements screen is compiled in; html and the face expand them through the kernel.
+        .fixture(Fixture::new("ui-element-name", Verb::Source).binding("name", "rating"))
+        .cacheable("ui-element-name")
+        .pure("ui-screen-elements")
+        .cacheable("ui-screen-elements")
         .cacheable("ui-htmx")
         .cacheable("ui-shell-js")
         .cacheable("ui-template-shell")
@@ -118,6 +124,8 @@ fn conforms() {
         // documented in `ikigai_ui::model` and shipped as the kinds' shapes (ledger #3352).
         .namespace("urn:iki:ui:kind:")
         .namespace("urn:iki:ui:property:")
+        // This crate's own custom elements (ledger #3358), urn:iki:ui:element:name:{name}.
+        .namespace("urn:iki:ui:element:")
         .self_named_space("ui", ikigai_ui::space)
         .host_named_space("ikigai_ui::pages(family, base)", pages)
         // Since core 0.2.5 a root exact alias is a view of its own (ledger #2513): listed, and
@@ -205,6 +213,8 @@ fn conforms() {
         "ui-target-name",
         "ui-support",
         "ui-face-target-screen",
+        "ui-element-name",
+        "ui-screen-elements",
     ] {
         assert!(
             report.to_string().contains(id),

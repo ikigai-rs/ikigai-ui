@@ -108,6 +108,7 @@ fn the_html_face_refuses_a_form_verb_it_has_no_method_for() {
         let node = ikigai_ui::model::Node {
             kind: "form".into(),
             replacement: None,
+            hint: Default::default(),
             properties: [
                 ("label".to_string(), Value::Text("Make".into())),
                 ("resource".to_string(), Value::Text("urn:demo:thing".into())),

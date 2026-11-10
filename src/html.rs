@@ -138,7 +138,11 @@ async fn screen(inv: &Invocation<'_>) -> Result<Node, Error> {
         }
     })?;
     let rep = inv.issue(Request::new(Verb::Source, iri)).await?;
-    model::parse(&rep.bytes)
+    let node = model::parse(&rep.bytes)?;
+    // Custom elements down the html descriptor's ladder (ledger #3358): the html face claims
+    // none natively, so each is expanded, falls back or shows its fallback text.
+    let descriptor = crate::target::read_descriptor(inv, "html").await?;
+    crate::element::expand(inv, &node, &descriptor).await
 }
 
 /// The node at `{node}` and its parent's kind.
@@ -190,6 +194,12 @@ async fn view(
 ) -> Result<Representation, Error> {
     let root = screen(inv).await?;
     let (node, parent) = locate(&root, at)?;
+    if !composers.contains_key(node.kind.as_str()) && node.kind != "option" {
+        return Err(Error::NotFound(format!(
+            "{at}: the html face has no template for {}",
+            node.kind
+        )));
+    }
     let kind = if node.kind == "option" && parent != Some("choice") {
         "text"
     } else {

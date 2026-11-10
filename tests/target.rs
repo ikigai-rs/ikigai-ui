@@ -57,12 +57,14 @@ fn expected(node: &Node, descriptor: &Descriptor) -> Node {
         "text" => Node {
             kind: "text".into(),
             replacement: None,
+            hint: Default::default(),
             properties: [("content".into(), text)].into(),
             children: vec![],
         },
         "list" => Node {
             kind: "list".into(),
             replacement: None,
+            hint: Default::default(),
             properties: [("label".into(), text)].into(),
             children: node
                 .children
@@ -381,6 +383,7 @@ fn host_screens_are_read_in_the_callers_scope_without_a_target_argument() {
     let screen = Node {
         kind: "visual".into(),
         replacement: None,
+        hint: Default::default(),
         properties: [("label".into(), Value::Text("Host visual".into()))].into(),
         children: vec![],
     };
@@ -485,6 +488,7 @@ fn a_screen_change_recomputes_both_faces() {
             let node = Node {
                 kind: "visual".into(),
                 replacement: None,
+                hint: Default::default(),
                 properties: [(
                     "label".into(),
                     Value::Text(value.lock().unwrap().to_string()),

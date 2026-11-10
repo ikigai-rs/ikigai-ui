@@ -206,12 +206,100 @@ pub enum Value {
     Text(String),
 }
 
-/// One node: a kind, its properties, ordered children and an optional replacement subtree.
+/// A hint's value: text or a number, or the same stating the capability it `requires`
+/// (ledger #3358). Never markup, never a boolean.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Hint {
+    /// A bare value.
+    Plain(Value),
+    /// A value a face uses only when its descriptor claims `capability` at `version`.
+    Requires {
+        /// The value.
+        is: Value,
+        /// The capability's name.
+        capability: String,
+        /// The least version, compared by [`version_meets`].
+        version: String,
+    },
+}
+
+impl Hint {
+    /// The hint's value.
+    pub fn value(&self) -> &Value {
+        match self {
+            Hint::Plain(v) | Hint::Requires { is: v, .. } => v,
+        }
+    }
+}
+
+/// The marker every hint namespace carries: `urn:{ns}:ui:hint:{face}:` (for example
+/// `urn:iki:ui:hint:gpui:`), and a hint's key is its namespace plus the hint's name.
+pub const HINT_MARK: &str = ":ui:hint:";
+/// The most hints one node carries.
+pub const MAX_HINTS: usize = 16;
+/// The longest hint key or text value, in bytes.
+pub const MAX_HINT_BYTES: usize = 256;
+/// The marker an element's IRI carries: `urn:{ns}:ui:element:name:{name}`.
+pub const ELEMENT_MARK: &str = ":ui:element:name:";
+/// The property every element node carries: its fallback text, the ladder's floor.
+pub const ELEMENT_FALLBACK: &str = "fallback";
+
+/// Whether `name` is a custom element's IRI, `urn:{ns}:ui:element:name:{name}`: `{ns}` one or
+/// more `:`-separated segments and `{name}` one, each of `[a-z0-9-]`. Never under
+/// `urn:iki:ui:kind:`, which is sealed to the core kinds.
+pub fn is_element(name: &str) -> bool {
+    let segment = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    };
+    let Some(rest) = name.strip_prefix("urn:") else {
+        return false;
+    };
+    let Some((ns, element)) = rest.split_once(ELEMENT_MARK) else {
+        return false;
+    };
+    !name.starts_with("urn:iki:ui:kind:") && ns.split(':').all(segment) && segment(element)
+}
+
+/// Whether `key` is a hint key: an absolute `urn:` IRI under a hint namespace (it carries
+/// [`HINT_MARK`]), with a nonempty name after the namespace, bounded by [`MAX_HINT_BYTES`].
+pub fn is_hint_key(key: &str) -> bool {
+    key.len() <= MAX_HINT_BYTES
+        && key.starts_with("urn:")
+        && key
+            .split_once(HINT_MARK)
+            .is_some_and(|(_, rest)| rest.contains(':') && !rest.ends_with(':'))
+        && ikigai_core::Iri::parse(key).is_ok()
+}
+
+/// Whether an offered capability `version` meets a `required` one: both dot-separated
+/// numbers, the same major and no less; otherwise only an identical identifier meets it.
+pub fn version_meets(offered: &str, required: &str) -> bool {
+    let numbers = |v: &str| {
+        v.split('.')
+            .map(|p| p.parse::<u64>())
+            .collect::<Result<Vec<_>, _>>()
+            .ok()
+    };
+    match (numbers(offered), numbers(required)) {
+        (Some(o), Some(r)) => o[0] == r[0] && o >= r,
+        _ => offered == required,
+    }
+}
+
+/// One node: a kind (or a custom element's IRI), its properties, ordered children, optional
+/// hints and an optional replacement subtree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Node {
-    /// The kind's name.
+    /// The kind's name, or a custom element's IRI ([`is_element`]).
     pub kind: String,
+    /// Hints, keyed by IRI under a face's namespace ([`is_hint_key`]). A face uses the ones it
+    /// knows and ignores the rest; nothing a screen means depends on one.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub hint: BTreeMap<String, Hint>,
     /// An explicit replacement, tried after native rendering and core expansion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replacement: Option<Box<Node>>,
@@ -235,6 +323,12 @@ fn refuse(path: &str, detail: String) -> Error {
 pub fn validate(root: &Node) -> Result<(), Error> {
     let mut stack: Vec<(String, &Node)> = vec![("/".to_string(), root)];
     while let Some((path, node)) = stack.pop() {
+        validate_hints(&path, node)?;
+        if is_element(&node.kind) {
+            validate_element(&path, node)?;
+            push_children(&path, node, &mut stack);
+            continue;
+        }
         let Some(k) = kind(&node.kind) else {
             return Err(refuse(&path, format!("`{}` is not a kind", node.kind)));
         };
@@ -292,6 +386,83 @@ pub fn validate(root: &Node) -> Result<(), Error> {
                 _ => {}
             }
             stack.push((at, child));
+        }
+    }
+    Ok(())
+}
+
+fn push_children<'a>(path: &str, node: &'a Node, stack: &mut Vec<(String, &'a Node)>) {
+    let at = |tail: String| {
+        if path == "/" {
+            format!("/{tail}")
+        } else {
+            format!("{path}/{tail}")
+        }
+    };
+    if let Some(replacement) = &node.replacement {
+        stack.push((at("replacement".into()), replacement));
+    }
+    for (i, child) in node.children.iter().enumerate() {
+        stack.push((at(format!("children/{i}")), child));
+    }
+}
+
+fn validate_hints(path: &str, node: &Node) -> Result<(), Error> {
+    if node.hint.len() > MAX_HINTS {
+        return Err(refuse(path, format!("more than {MAX_HINTS} hints")));
+    }
+    for (key, hint) in &node.hint {
+        if !is_hint_key(key) {
+            return Err(refuse(
+                path,
+                format!("`{key}` is not a hint IRI (urn:{{ns}}{HINT_MARK}{{face}}:{{name}})"),
+            ));
+        }
+        let ok = match hint.value() {
+            Value::Number(_) => true,
+            Value::Text(s) => {
+                !s.is_empty()
+                    && s.len() <= MAX_HINT_BYTES
+                    && !s.contains(['<', '>'])
+                    && !s.chars().any(char::is_control)
+            }
+            Value::Bool(_) => false,
+        };
+        if !ok {
+            return Err(refuse(
+                path,
+                format!("hint `{key}` is not text of at most {MAX_HINT_BYTES} bytes or a number"),
+            ));
+        }
+        if let Hint::Requires {
+            capability,
+            version,
+            ..
+        } = hint
+        {
+            if capability.trim().is_empty() || version.trim().is_empty() {
+                return Err(refuse(path, format!("hint `{key}` requires nothing")));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// An element node, before its definition is read: its fallback text is present, and every
+/// property is text, a number or a boolean (its definition's contract checks the rest).
+fn validate_element(path: &str, node: &Node) -> Result<(), Error> {
+    match node.properties.get(ELEMENT_FALLBACK) {
+        Some(Value::Text(s)) if !s.is_empty() => {}
+        _ => {
+            return Err(refuse(
+                path,
+                format!("an element needs `{ELEMENT_FALLBACK}`, its fallback text"),
+            ))
+        }
+    }
+    for (p, v) in &node.properties {
+        if matches!(v, Value::Text(s) if s.is_empty()) {
+            return Err(refuse(path, format!("`{p}` is empty")));
         }
     }
     Ok(())
@@ -360,7 +531,19 @@ pub fn json_ld(node: &Node, iri: &str) -> serde_json::Value {
         );
         // Borrow the two branches together so both enter the iterative walk.
         for (key, value) in map.iter_mut() {
-            if key == "replacement" {
+            if key == "hint" {
+                let serde_json::Value::Object(hints) = value else {
+                    continue;
+                };
+                for (name, hint) in hints.iter_mut() {
+                    if let serde_json::Value::Object(h) = hint {
+                        h.insert(
+                            "@id".to_string(),
+                            serde_json::Value::String(format!("{iri}:node:path:{at}:hint:{name}")),
+                        );
+                    }
+                }
+            } else if key == "replacement" {
                 stack.push((format!("{path}/replacement"), value));
             } else if key == "children" {
                 let serde_json::Value::Array(children) = value else {
