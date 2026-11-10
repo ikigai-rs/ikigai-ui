@@ -1,0 +1,7 @@
+# The contact form under a heading, in short names: the demo's prefix table (`demo:`) and
+# ikigai-ui's default one (`ui:`). It compiles only inside their corridor (ikigai_ui_demo::prefixes).
+@prefixes urn:iki:uidemo:prefixes
+group label="Write to us"
+  heading content="Write to us" level=1
+  ui:form:resource:urn:iki:uidemo:contact  description="We answer within a day"
+  demo:example:rating

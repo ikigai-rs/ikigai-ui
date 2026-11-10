@@ -1,0 +1,27 @@
+# The gallery: a group per section, each a heading and its kinds' examples.
+group label=Gallery
+  group label=Text
+    heading content=Text level=2
+    urn:iki:ui:example:kind:heading
+    urn:iki:ui:example:kind:text
+    urn:iki:ui:example:kind:status
+  group label=Input
+    heading content=Input level=2
+    urn:iki:ui:example:kind:form
+    urn:iki:ui:example:kind:field
+    urn:iki:ui:example:kind:choice
+    urn:iki:ui:example:kind:option
+    urn:iki:ui:example:kind:button
+  group label=Navigation
+    heading content=Navigation level=2
+    urn:iki:ui:example:kind:link
+    urn:iki:ui:example:kind:nav
+  group label=Structure
+    heading content=Structure level=2
+    urn:iki:ui:example:kind:list
+    urn:iki:ui:example:kind:table
+    urn:iki:ui:example:kind:group
+  group label=Media
+    heading content=Media level=2
+    urn:iki:ui:example:kind:image
+    urn:iki:ui:example:kind:visual

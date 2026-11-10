@@ -21,6 +21,9 @@
 //! | `urn:iki:ui:chooser:{family}:{theme}` | composition | what the shell puts in a family's `<header>`, for ANY family: its override if bound, else the theme chooser ([`CHOOSER`]) |
 //! | `urn:iki:ui:form:resource:{iri}` | data | a `form` node generated from `{iri}`'s contract, its Sink's inputs ([`form`]) |
 //! | `urn:iki:ui:form:openapi:{doc}:operation:{op}` | data | the same from an OpenAPI 3.1 document's operation ([`form`]) |
+//! | `urn:iki:ui:screen:name:{screen}` | composition | a screen compiled from its outline, `{screen}:source` ([`screen`]; [`screen::screens`], placed last) |
+//! | `urn:iki:ui:outline:compile` | transreptor | an outline to the model ([`screen::COMPILER`]) |
+//! | `urn:iki:ui:prefixes` | data | the default prefix table, `ui:` for `urn:iki:ui:` ([`screen::PREFIXES`]) |
 //! | `urn:iki:ui:chooser-override:{family}:{theme}` | a host's | a family's own chooser; bound to nothing, it turns the chooser off ([`CHOOSER_OVERRIDE`]) |
 //!
 //! The model's target resources are [`target::PREFIX`] (`html` and `gpui` descriptors),
@@ -101,6 +104,7 @@ pub mod form;
 pub mod html;
 pub mod model;
 pub mod palette;
+pub mod screen;
 pub mod target;
 #[cfg(feature = "testkit")]
 pub mod testkit;
@@ -579,8 +583,12 @@ fn tokens_endpoint() -> AsyncFnEndpoint {
 /// Configuration-free: the same doors on every call. A host binds this, a directory at
 /// [`DIR`] if it overrides anything, and [`pages`] for its own pages.
 pub fn space() -> EndpointSpace {
-    artifacts(&ARTIFACTS, DIR)
-        .expect("the compiled-in artifacts are a valid set")
+    let mut space = artifacts(&ARTIFACTS, DIR).expect("the compiled-in artifacts are a valid set");
+    for a in &screen::SOURCES {
+        let file = Iri::parse(format!("{DIR}{}", a.file)).expect("a file name");
+        space = space.bind(Exact::new(a.iri), artifact_endpoint(*a, file, DIR));
+    }
+    space
         .bind(Exact::new(TOKENS_CSS), tokens_endpoint())
         .bind(template("urn:iki:ui:palette:{name}"), palette_endpoint())
         .bind(
@@ -599,7 +607,12 @@ pub fn space() -> EndpointSpace {
             example_endpoint(),
         )
         .bind(Exact::new(model::CONTEXT_IRI), context_endpoint())
-        .bind(Exact::new(GALLERY), gallery_endpoint())
+        .bind(Exact::new(screen::PREFIXES), prefixes_endpoint())
+        .bind(Exact::new(screen::COMPILER), screen::compiler_endpoint())
+        .bind(
+            Exact::new(GALLERY),
+            screen::screen_endpoint("ui-screen-gallery", false),
+        )
         .bind(Exact::new(element::SCREEN), element::screen_endpoint())
         .bind(
             template(&format!("{}{{name}}", element::PREFIX)),
@@ -816,82 +829,20 @@ fn context_endpoint() -> FnEndpoint {
     )
 }
 
-/// The gallery's sections, as [`model::GALLERY`] lists them.
-#[derive(serde::Deserialize)]
-struct Gallery {
-    title: String,
-    section: Vec<Section>,
-}
-
-#[derive(serde::Deserialize)]
-struct Section {
-    label: String,
-    kind: Vec<String>,
-}
-
-/// `urn:iki:ui:screen:name:gallery`: a group per section of [`model::GALLERY`], each a heading
-/// and the section's examples, READ from `urn:iki:ui:example:kind:{kind}` so the screen hangs
-/// from them. The only Rust is the assembly: a compose template splices text, and this answer
-/// is a tree in two faces.
-fn gallery_endpoint() -> AsyncFnEndpoint {
-    let description = Description::new("ui-screen-gallery")
-        .title("The UI gallery")
-        .summary(
-            "Every node kind's example, grouped into sections, as one screen: \
-             application/vnd.ikigai.ui+json, or JSON-LD with as=application/ld+json.",
-        )
-        .verb(Verb::Source)
-        .verb(Verb::Meta)
-        .output(model::MEDIA_TYPE)
-        .output(model::JSON_LD);
-    AsyncFnEndpoint::new(
-        "ui-screen-gallery",
-        |inv: &Invocation<'_>| -> InvokeFuture<'_> {
-            Box::pin(async move {
-                let gallery: Gallery = serde_json::from_str(model::GALLERY)
-                    .map_err(|e| Error::Endpoint(format!("the gallery list: {e}")))?;
-                let text = |p: &str, v: &str| (p.to_string(), model::Value::Text(v.to_string()));
-                let mut root = model::Node {
-                    kind: "group".into(),
-                    replacement: None,
-                    hint: Default::default(),
-                    properties: [text("label", &gallery.title)].into(),
-                    children: Vec::new(),
-                };
-                for section in gallery.section {
-                    let mut group = model::Node {
-                        kind: "group".into(),
-                        replacement: None,
-                        hint: Default::default(),
-                        properties: [text("label", &section.label)].into(),
-                        children: vec![model::Node {
-                            kind: "heading".into(),
-                            replacement: None,
-                            hint: Default::default(),
-                            properties: [
-                                text("content", &section.label),
-                                ("level".to_string(), model::Value::Number(2)),
-                            ]
-                            .into(),
-                            children: Vec::new(),
-                        }],
-                    };
-                    for kind in &section.kind {
-                        let iri = Iri::parse(format!("urn:iki:ui:example:kind:{kind}"))
-                            .map_err(|e| Error::Endpoint(format!("{kind}: {e}")))?;
-                        let rep = inv.issue(Request::new(Verb::Source, iri)).await?;
-                        let node: model::Node = serde_json::from_slice(&rep.bytes)
-                            .map_err(|e| Error::Endpoint(format!("{kind}'s example: {e}")))?;
-                        group.children.push(node);
-                    }
-                    root.children.push(group);
-                }
-                model::validate(&root)?;
-                model_face(inv, &root)
-            })
-        },
+/// `urn:iki:ui:prefixes`: the default prefix table, Turtle ([`screen::PREFIX_TABLE`]).
+fn prefixes_endpoint() -> FnEndpoint {
+    fixed("ui-prefixes", TURTLE, screen::PREFIX_TABLE).with_description(
+        Description::new("ui-prefixes")
+            .title("The UI default prefix table")
+            .summary(
+                "The default prefix table, an ikigai-fn prefix table (ik:Alias of prefix rules \
+                 over an empty space): ui: for urn:iki:ui:. A host binds it with \
+                 ikigai_ui::screen::prefix_space and injects it as a corridor.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output(TURTLE),
     )
-    .with_description(description)
 }
 
 // --- forms from models (ledger #3354) ---------------------------------------------------------

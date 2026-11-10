@@ -35,20 +35,69 @@ fn conforms() {
         .pure("uidemo-title")
         // ikigai-ui's own endpoints, with the fixtures and markings its tests/conformance.rs
         // gives them.
-        .fixture(Fixture::new("ui-form-resource", Verb::Source).binding("iri", ikigai_ui_demo::CONTACT))
+        .fixture(
+            Fixture::new("ui-form-resource", Verb::Source).binding("iri", ikigai_ui_demo::CONTACT),
+        )
         .fixture(Fixture::new("ui-html-screen", Verb::Source).binding("screen", "gallery"))
-        .fixture(Fixture::new("ui-html-node", Verb::Source).binding("screen", "gallery").binding("node", "n.1"))
-        .fixture(Fixture::new("ui-html-child", Verb::Source).binding("screen", "gallery").binding("node", "n.3"))
-        .fixture(Fixture::new("ui-html-property", Verb::Source).binding("screen", "gallery").binding("node", "n.0").binding("property", "label"))
-        .fixture(Fixture::new("ui-face-target-screen", Verb::Source).binding("target", "gpui").binding("screen", "gallery"))
-        .opt_out_check("ui-form-openapi", Check::Resolves, "this host binds no OpenAPI document; the root crate's conformance test resolves it")
-        .opt_out_check("ui-kind-seal", Check::Resolves, "the seal resolves nothing by design: NotFound is its answer (ledger #3354)")
-        .opt_out_check("ui-kind-seal", Check::Outputs, "the seal serves nothing by design")
-        .opt_out_check("urn:iki:ui:header:uidemo", Check::Names, "a root view's id is its IRI, set by ikigai-core (ledger #2513)")
-        .opt_out_check("urn:iki:ui:screen:name:contact", Check::Names, "a root view's id is its IRI, set by ikigai-core (ledger #2513): the contact screen is an alias")
-        .pure("ui-palette").pure("ui-theme-chooser").pure("ui-kind").pure("ui-kind-name")
-        .pure("ui-example-kind").pure("ui-context").pure("ui-screen-elements").pure("ui-html-empty")
-        .pure("ui-head-uidemo").pure("ui-support").pure("ui-face-target-screen")
+        .fixture(Fixture::new("ui-screen-name", Verb::Source).binding("screen", "contact"))
+        .pure("uidemo-example-rating")
+        .fixture(Fixture::new("ui-outline-compile", Verb::Source).arg(
+            "content",
+            "group label=Probe\n  urn:iki:ui:example:kind:heading content=Probed",
+        ))
+        .fixture(
+            Fixture::new("ui-html-node", Verb::Source)
+                .binding("screen", "gallery")
+                .binding("node", "n.1"),
+        )
+        .fixture(
+            Fixture::new("ui-html-child", Verb::Source)
+                .binding("screen", "gallery")
+                .binding("node", "n.3"),
+        )
+        .fixture(
+            Fixture::new("ui-html-property", Verb::Source)
+                .binding("screen", "gallery")
+                .binding("node", "n.0")
+                .binding("property", "label"),
+        )
+        .fixture(
+            Fixture::new("ui-face-target-screen", Verb::Source)
+                .binding("target", "gpui")
+                .binding("screen", "gallery"),
+        )
+        .opt_out_check(
+            "ui-form-openapi",
+            Check::Resolves,
+            "this host binds no OpenAPI document; the root crate's conformance test resolves it",
+        )
+        .opt_out_check(
+            "ui-kind-seal",
+            Check::Resolves,
+            "the seal resolves nothing by design: NotFound is its answer (ledger #3354)",
+        )
+        .opt_out_check(
+            "ui-kind-seal",
+            Check::Outputs,
+            "the seal serves nothing by design",
+        )
+        .opt_out_check(
+            "urn:iki:ui:header:uidemo",
+            Check::Names,
+            "a root view's id is its IRI, set by ikigai-core (ledger #2513)",
+        )
+        .pure("ui-palette")
+        .pure("ui-theme-chooser")
+        .pure("ui-kind")
+        .pure("ui-kind-name")
+        .pure("ui-example-kind")
+        .pure("ui-context")
+        .pure("ui-prefixes")
+        .pure("ui-screen-elements")
+        .pure("ui-html-empty")
+        .pure("ui-head-uidemo")
+        .pure("ui-support")
+        .pure("ui-face-target-screen")
         // ikigai-ui's own vocabularies, as its tests/conformance.rs registers them.
         .namespace("urn:iki:ui:token:")
         .namespace("urn:iki:ui:kind:")

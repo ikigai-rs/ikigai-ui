@@ -25,6 +25,8 @@ ikigai-vocab = "0.3"
 # and ikigai-fn only: no second ikigai-ui, nothing from the cli.
 ikigai-web = "0.4.3"
 tokio = { version = "1", features = ["rt", "net", "macros"] }
+# `DynamicSpace::refresh`, which binds a prefix table read through the kernel (ledger #3365).
+ikigai-core = { version = "0.3.0", features = ["declare"] }
 
 [dev-dependencies]
 ikigai-ui = { path = "..", features = ["testkit"] }
