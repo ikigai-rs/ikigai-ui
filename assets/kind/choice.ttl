@@ -11,7 +11,7 @@
   <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:label> ;
   sh:targetClass <urn:iki:ui:kind:name:choice> ;
   sh:closed true ;
-  sh:property <urn:iki:ui:kind:name:choice:property:name:type>, <urn:iki:ui:kind:name:choice:property:name:label>, <urn:iki:ui:kind:name:choice:property:name:name>, <urn:iki:ui:kind:name:choice:property:name:child>, <urn:iki:ui:kind:name:choice:property:name:value>, <urn:iki:ui:kind:name:choice:property:name:required>, <urn:iki:ui:kind:name:choice:property:name:description>, <urn:iki:ui:kind:name:choice:property:name:error> .
+  sh:property <urn:iki:ui:kind:name:choice:property:name:fallback>, <urn:iki:ui:kind:name:choice:property:name:type>, <urn:iki:ui:kind:name:choice:property:name:label>, <urn:iki:ui:kind:name:choice:property:name:name>, <urn:iki:ui:kind:name:choice:property:name:child>, <urn:iki:ui:kind:name:choice:property:name:value>, <urn:iki:ui:kind:name:choice:property:name:required>, <urn:iki:ui:kind:name:choice:property:name:description>, <urn:iki:ui:kind:name:choice:property:name:error> .
 
 <urn:iki:ui:kind:name:choice:property:name:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:choice> ; sh:maxCount 1 .
 <urn:iki:ui:kind:name:choice:property:name:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
@@ -21,3 +21,7 @@
 <urn:iki:ui:kind:name:choice:property:name:required> sh:path <urn:iki:ui:property:name:required> ; sh:maxCount 1 ; sh:in ( true false "true" "false" ) .
 <urn:iki:ui:kind:name:choice:property:name:description> sh:path <urn:iki:ui:property:name:description> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
 <urn:iki:ui:kind:name:choice:property:name:error> sh:path <urn:iki:ui:property:name:error> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+
+# Optional replacement subtree, validated by its own kind shape.
+<urn:iki:ui:kind:name:choice:property:name:fallback> sh:path <urn:iki:ui:property:name:fallback> ;
+  sh:maxCount 1 ; sh:class <urn:iki:ui:node> .
