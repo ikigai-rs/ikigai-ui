@@ -1,6 +1,7 @@
 {
   "@context": {
     "@version": 1.1,
+    "@vocab": "urn:iki:ui:property:name:",
     "kind": "@type",
     "properties": "@nest",
     "children": {
@@ -45,6 +46,11 @@
     },
     "resource": "urn:iki:ui:property:name:resource",
     "verb": "urn:iki:ui:property:name:verb",
+    "hint": "@nest",
+    "is": "urn:iki:ui:property:name:is",
+    "capability": "urn:iki:ui:property:name:capability",
+    "version": "urn:iki:ui:property:name:version",
+    "fallback": "urn:iki:ui:property:name:fallback",
     "replacement": {
       "@id": "urn:iki:ui:property:name:replacement",
       "@type": "@id"

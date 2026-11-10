@@ -96,6 +96,7 @@ use ikigai_core::{
     Representation, Request, UriTemplate, Verb,
 };
 
+pub mod element;
 pub mod form;
 pub mod html;
 pub mod model;
@@ -599,6 +600,11 @@ pub fn space() -> EndpointSpace {
         )
         .bind(Exact::new(model::CONTEXT_IRI), context_endpoint())
         .bind(Exact::new(GALLERY), gallery_endpoint())
+        .bind(Exact::new(element::SCREEN), element::screen_endpoint())
+        .bind(
+            template(&format!("{}{{name}}", element::PREFIX)),
+            element::definition_endpoint(),
+        )
         .bind(
             template(&format!("{FORM_RESOURCE}{{iri}}")),
             form_resource_endpoint(),
@@ -848,6 +854,7 @@ fn gallery_endpoint() -> AsyncFnEndpoint {
                 let mut root = model::Node {
                     kind: "group".into(),
                     replacement: None,
+                    hint: Default::default(),
                     properties: [text("label", &gallery.title)].into(),
                     children: Vec::new(),
                 };
@@ -855,10 +862,12 @@ fn gallery_endpoint() -> AsyncFnEndpoint {
                     let mut group = model::Node {
                         kind: "group".into(),
                         replacement: None,
+                        hint: Default::default(),
                         properties: [text("label", &section.label)].into(),
                         children: vec![model::Node {
                             kind: "heading".into(),
                             replacement: None,
+                            hint: Default::default(),
                             properties: [
                                 text("content", &section.label),
                                 ("level".to_string(), model::Value::Number(2)),

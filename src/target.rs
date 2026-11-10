@@ -74,6 +74,14 @@ pub struct Descriptor {
     pub fallback: BTreeMap<String, String>,
     /// Target-specific bounds.
     pub limits: Limits,
+    /// Custom elements (`urn:{ns}:ui:element:name:{name}`) this face renders natively; every
+    /// other element is expanded from its definition (ledger #3358).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub elements: Vec<String>,
+    /// The hint namespaces this face reads (`urn:{ns}:ui:hint:{face}:`); it drops every other
+    /// hint, and one whose `requires` its capabilities do not meet.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hints: Vec<String>,
     /// Where a form submits when it names a `resource` and no `action`: a URI template over
     /// the one variable `resource`, `{resource}` (RFC 6570 simple expansion, so the IRI is
     /// one path segment) or `{+resource}` (reserved). The `html` descriptor's rule is the
@@ -147,6 +155,27 @@ impl Descriptor {
                 return Err(invalid(format!("duplicate capability {}", capability.name)));
             }
         }
+        for element in &self.elements {
+            if !model::is_element(element) {
+                return Err(invalid(format!("{element} is not a custom element's IRI")));
+            }
+        }
+        for namespace in &self.hints {
+            let ok = namespace.starts_with("urn:")
+                && namespace.ends_with(':')
+                && namespace.contains(model::HINT_MARK)
+                && namespace
+                    .split_once(model::HINT_MARK)
+                    .is_some_and(|(_, face)| {
+                        face.len() > 1 && !face[..face.len() - 1].contains(':')
+                    });
+            if !ok {
+                return Err(invalid(format!(
+                    "{namespace} is not a hint namespace (urn:{{ns}}{}{{face}}:)",
+                    model::HINT_MARK
+                )));
+            }
+        }
         let rendered: BTreeSet<_> = self.renders.iter().map(String::as_str).collect();
         if rendered.len() != self.renders.len() || !rendered.contains("text") {
             return Err(invalid("renders must be unique and include text"));
@@ -200,12 +229,65 @@ impl Descriptor {
         Ok(result)
     }
 
+    /// The hints of `source` this face reads: under one of its namespaces, `requires` met.
+    fn hints(&self, source: &Node) -> BTreeMap<String, model::Hint> {
+        source
+            .hint
+            .iter()
+            .filter(|(key, hint)| {
+                self.hints.iter().any(|ns| key.starts_with(ns.as_str()))
+                    && match hint {
+                        model::Hint::Plain(_) => true,
+                        model::Hint::Requires {
+                            capability,
+                            version,
+                            ..
+                        } => crate::element::meets(self, capability, version),
+                    }
+            })
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
     fn project(&self, source: &Node) -> Node {
+        let mut node = self.project_kind(source);
+        // Hints follow the node they were written on when it survives as itself.
+        if node.kind == source.kind {
+            node.hint = self.hints(source);
+        }
+        node
+    }
+
+    fn project_kind(&self, source: &Node) -> Node {
+        // 0. A custom element that reaches projection unexpanded ([`crate::element::expand`]
+        // runs first): kept when claimed, else its declared fallback, else its fallback text.
+        if model::is_element(&source.kind) {
+            if self.elements.contains(&source.kind) {
+                let mut node = source.clone();
+                node.children = source.children.iter().map(|c| self.project(c)).collect();
+                node.replacement = None;
+                return node;
+            }
+            if let Some(replacement) = &source.replacement {
+                return self.project(replacement);
+            }
+            return Node {
+                kind: "text".into(),
+                replacement: None,
+                hint: Default::default(),
+                properties: [(
+                    "content".into(),
+                    source.properties[model::ELEMENT_FALLBACK].clone(),
+                )]
+                .into(),
+                children: Vec::new(),
+            };
+        }
         // 1. Native rendering, including limits and projected child constraints.
         if let Some(native) = self.native(source, &source.kind) {
             return native;
         }
-        // 2. Expansion into core kinds. Custom elements arrive in a later item.
+        // 2. Expansion into core kinds (custom elements expand before projection).
         if let Some(expansion) = Self::expand(source, &source.kind) {
             return self.project(&expansion);
         }
@@ -231,6 +313,7 @@ impl Descriptor {
         Node {
             kind: "text".into(),
             replacement: None,
+            hint: Default::default(),
             properties: [(
                 "content".into(),
                 source.properties[source_kind.fallback].clone(),
@@ -285,6 +368,7 @@ impl Descriptor {
         let result = Node {
             kind: destination.into(),
             replacement: None,
+            hint: Default::default(),
             properties,
             children,
         };
@@ -367,6 +451,9 @@ struct Decision<'a> {
 #[derive(Serialize)]
 struct Support<'a> {
     kind: BTreeMap<&'static str, Decision<'a>>,
+    /// Each of this crate's elements: whether the face renders it natively (else it expands).
+    element: BTreeMap<&'static str, bool>,
+    hints: &'a [String],
     limits: &'a Limits,
     capabilities: &'a [Capability],
 }
@@ -383,7 +470,8 @@ pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
                     renders: descriptor.renders.iter().any(|name| name == kind.name),
                     fallback: descriptor.fallback.get(kind.name).map(String::as_str),
                 })).collect();
-                (descriptor.name.as_str(), Support { kind, limits: &descriptor.limits, capabilities: &descriptor.capabilities })
+                let element = crate::element::ELEMENTS.iter().map(|e| (e.iri, descriptor.elements.iter().any(|n| n == e.iri))).collect();
+                (descriptor.name.as_str(), Support { kind, element, hints: &descriptor.hints, limits: &descriptor.limits, capabilities: &descriptor.capabilities })
             }).collect();
             if inv.inline_str("as").ok().is_some_and(|as_type| {
                 as_type.split(';').next().unwrap_or_default().trim() == "text/html"
@@ -407,7 +495,31 @@ pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
                     }
                     html.push_str("</tr>");
                 }
-                html.push_str("</tbody></table><h2>Capabilities</h2>");
+                html.push_str("</tbody></table><h2>Custom elements</h2><table><caption>Every target against every example element</caption><thead><tr><th scope=\"col\">Element</th>");
+                for name in matrix.keys() {
+                    html.push_str(&format!("<th scope=\"col\">{}</th>", ikigai_fn::html::html_text(name)));
+                }
+                html.push_str("</tr></thead><tbody>");
+                for element in crate::element::ELEMENTS {
+                    html.push_str(&format!("<tr><th scope=\"row\">{}</th>", ikigai_fn::html::html_text(element.iri)));
+                    for support in matrix.values() {
+                        let label = if support.element[element.iri] { "Renders" } else { "Expanded from its definition" };
+                        html.push_str(&format!("<td>{label}</td>"));
+                    }
+                    html.push_str("</tr>");
+                }
+                html.push_str("</tbody></table><h2>Hint namespaces</h2>");
+                for (name, support) in &matrix {
+                    html.push_str(&format!("<h3>{}</h3><ul>", ikigai_fn::html::html_text(name)));
+                    for namespace in support.hints {
+                        html.push_str(&format!("<li>{}</li>", ikigai_fn::html::html_text(namespace)));
+                    }
+                    if support.hints.is_empty() {
+                        html.push_str("<li>No hints read.</li>");
+                    }
+                    html.push_str("</ul>");
+                }
+                html.push_str("<h2>Capabilities</h2>");
                 for (name, support) in &matrix {
                     html.push_str(&format!("<h3>{}</h3><ul>", ikigai_fn::html::html_text(name)));
                     for capability in support.capabilities {
@@ -450,12 +562,13 @@ pub(crate) fn face_endpoint() -> AsyncFnEndpoint {
                 .map_err(|e| Error::InvalidArgument { name: "screen".into(), detail: e.to_string() })?;
             let rep = inv.issue(Request::new(Verb::Source, iri)).await?;
             let node = model::parse(&rep.bytes)?;
+            let node = crate::element::expand(inv, &node, &descriptor).await?;
             crate::model_face(inv, &descriptor.apply(&node)?)
         })
     }).with_description(
         Description::new("ui-face-target-screen")
             .title("A screen through a UI target")
-            .summary("The target entry point: read the screen and descriptor, then apply native rendering, core expansion, declared fallback and finally fallback text. No target argument is passed downstream.")
+            .summary("The target entry point: read the screen and descriptor, take each custom element down its ladder (native when claimed, else its definition's expansion, else its declared fallback, else its fallback text), then apply native rendering, declared fallback and finally fallback text per kind, keeping only the hints the face reads. No target argument is passed downstream.")
             .verb(Verb::Source).verb(Verb::Meta)
             .input(argument("target", "the target name").one_of(NAMES))
             .input(argument("screen", "the screen name"))
