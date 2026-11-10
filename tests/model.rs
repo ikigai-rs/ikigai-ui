@@ -56,6 +56,14 @@ fn turtle(root: &Node) -> String {
                 model::PROPERTY_PREFIX
             ));
         }
+        if let Some(fallback) = &node.fallback {
+            let fid = format!("{id}.fallback");
+            out.push_str(&format!(
+                "<urn:test:node:{id}> <{}fallback> <urn:test:node:{fid}> .\n",
+                model::PROPERTY_PREFIX
+            ));
+            stack.push((fid, fallback));
+        }
         for (i, child) in node.children.iter().enumerate() {
             let cid = format!("{id}.{i}");
             out.push_str(&format!(
@@ -322,4 +330,50 @@ fn a_model_past_the_size_bound_is_refused() {
         model::parse(big.as_bytes()),
         Err(Error::InvalidArgument { .. })
     ));
+}
+
+#[test]
+fn fallback_subtrees_validate_in_rust_and_shapes_and_have_named_json_ld_nodes() {
+    let valid = node(
+        r#"{
+        "kind":"image", "properties":{"alt":"Image", "src":"/image.png"},
+        "fallback":{"kind":"group", "properties":{"label":"Replacement"},
+            "children":[{"kind":"text", "properties":{"content":"Description"}}],
+            "fallback":{"kind":"text", "properties":{"content":"Last replacement"}}
+        }
+    }"#,
+    );
+    model::validate(&valid).unwrap();
+    assert!(shacl_conforms(&valid));
+    let ld = model::json_ld(&valid, "urn:test:screen");
+    for (value, path) in [
+        (&ld, "/"),
+        (&ld["fallback"], "/fallback"),
+        (&ld["fallback"]["children"][0], "/fallback/children/0"),
+        (&ld["fallback"]["fallback"], "/fallback/fallback"),
+    ] {
+        assert_eq!(value["@id"], format!("urn:test:screen:node:path:{path}"));
+    }
+    for bad in [
+        r#"{"kind":"image","properties":{"alt":"Image","src":"/image.png"},"fallback":{"kind":"heading","properties":{"content":"Missing level"}}}"#,
+        r#"{"kind":"text","properties":{"content":"Text"},"fallback":{"kind":"text","properties":{"content":"Replacement","level":2}}}"#,
+    ] {
+        let invalid = node(bad);
+        assert!(!shacl_conforms(&invalid));
+        assert!(
+            matches!(model::parse(bad.as_bytes()), Err(Error::InvalidArgument { detail, .. }) if detail.starts_with("/fallback:"))
+        );
+    }
+}
+
+#[test]
+fn fallback_subtrees_obey_the_same_input_depth_bound() {
+    let doc = format!(
+        "{}{{\"kind\":\"text\",\"properties\":{{\"content\":\"End\"}}}}{}",
+        "{\"kind\":\"text\",\"properties\":{\"content\":\"Text\"},\"fallback\":".repeat(10_000),
+        "}".repeat(10_000)
+    );
+    assert!(
+        matches!(model::parse(doc.as_bytes()), Err(Error::InvalidArgument { detail, .. }) if detail.contains("nested past"))
+    );
 }

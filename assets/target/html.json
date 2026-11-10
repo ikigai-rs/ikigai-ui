@@ -1,6 +1,36 @@
 {
   "name": "html",
-  "renders": ["heading", "text", "field", "choice", "button", "link", "list", "table", "form", "nav", "status", "image", "group", "visual"],
+  "capabilities": [
+    {
+      "name": "hover",
+      "version": "1.0"
+    },
+    {
+      "name": "motion",
+      "version": "1.0"
+    }
+  ],
+  "renders": [
+    "heading",
+    "text",
+    "field",
+    "choice",
+    "button",
+    "link",
+    "list",
+    "table",
+    "form",
+    "nav",
+    "status",
+    "image",
+    "group",
+    "visual"
+  ],
   "fallback": {},
-  "limits": {"table": {"max_rows": 1000, "max_columns": 100}}
+  "limits": {
+    "table": {
+      "max_rows": 1000,
+      "max_columns": 100
+    }
+  }
 }

@@ -11,7 +11,7 @@
   <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:content> ;
   sh:targetClass <urn:iki:ui:kind:name:heading> ;
   sh:closed true ;
-  sh:property <urn:iki:ui:kind:name:heading:property:type>, <urn:iki:ui:kind:name:heading:property:content>, <urn:iki:ui:kind:name:heading:property:level> .
+  sh:property <urn:iki:ui:shape:name:node-fallback>, <urn:iki:ui:kind:name:heading:property:type>, <urn:iki:ui:kind:name:heading:property:content>, <urn:iki:ui:kind:name:heading:property:level> .
 
 <urn:iki:ui:kind:name:heading:property:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:heading> ; sh:maxCount 1 .
 <urn:iki:ui:kind:name:heading:property:content> sh:path <urn:iki:ui:property:name:content> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .

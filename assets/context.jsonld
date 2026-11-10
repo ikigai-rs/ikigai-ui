@@ -36,6 +36,10 @@
     "method": "urn:iki:ui:property:name:method",
     "name": "urn:iki:ui:property:name:name",
     "src": "urn:iki:ui:property:name:src",
-    "value": "urn:iki:ui:property:name:value"
+    "value": "urn:iki:ui:property:name:value",
+    "fallback": {
+      "@id": "urn:iki:ui:property:name:fallback",
+      "@type": "@id"
+    }
   }
 }

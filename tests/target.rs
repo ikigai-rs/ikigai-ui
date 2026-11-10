@@ -56,11 +56,13 @@ fn expected(node: &Node, descriptor: &Descriptor) -> Node {
     match destination.as_str() {
         "text" => Node {
             kind: "text".into(),
+            fallback: None,
             properties: [("content".into(), text)].into(),
             children: vec![],
         },
         "list" => Node {
             kind: "list".into(),
+            fallback: None,
             properties: [("label".into(), text)].into(),
             children: node
                 .children
@@ -112,6 +114,10 @@ fn support_has_every_decision_and_limit_in_json_and_html() {
             );
         }
         assert_eq!(
+            matrix[name]["capabilities"],
+            serde_json::to_value(&descriptor.capabilities).unwrap()
+        );
+        assert_eq!(
             matrix[name]["limits"],
             serde_json::to_value(&descriptor.limits).unwrap()
         );
@@ -130,6 +136,15 @@ fn support_has_every_decision_and_limit_in_json_and_html() {
     }
     for kind in model::KINDS {
         assert!(page.contains(&format!("<th scope=\"row\">{}</th>", kind.name)));
+    }
+    assert!(page.contains("<h2>Capabilities</h2>"));
+    for name in target::NAMES {
+        for capability in descriptor(&kernel, name).capabilities {
+            assert!(page.contains(&format!(
+                "<li>{}: {}</li>",
+                capability.name, capability.version
+            )));
+        }
     }
     assert!(page.contains("Fallback: list"));
     assert!(page.contains("1000 rows and 100 columns"));
@@ -213,6 +228,28 @@ fn faces_and_support_are_cached_and_descriptor_writes_recompute_dependents() {
     for iri in [&html_iri, &gpui_iri, target::SUPPORT] {
         assert_cached(&kernel, iri);
     }
+    // A capability-only edit still invalidates every reader of the descriptor,
+    // even when no node yet declares a capability requirement.
+    modified.capabilities[0].version = "2.0".into();
+    let bytes = serde_json::to_vec(&modified).unwrap();
+    common::issue(
+        &kernel,
+        Verb::Sink,
+        "urn:iki:ui:dir:target/gpui.json",
+        &[("content", &bytes)],
+    )
+    .unwrap();
+    for iri in [&gpui_iri, target::SUPPORT] {
+        let request = Request::new(Verb::Source, Iri::parse(iri).unwrap());
+        assert!(
+            !kernel.is_cached(&request, &Capability::root()),
+            "{iri} was invalidated"
+        );
+        assert_cached(&kernel, iri);
+    }
+    let matrix: serde_json::Value =
+        serde_json::from_slice(&common::source(&kernel, target::SUPPORT).unwrap().bytes).unwrap();
+    assert_eq!(matrix["gpui"]["capabilities"][0]["version"], "2.0");
     common::issue(
         &kernel,
         Verb::Delete,
@@ -343,6 +380,7 @@ fn limits_and_unconstructible_fallbacks_use_the_original_text() {
 fn host_screens_are_read_in_the_callers_scope_without_a_target_argument() {
     let screen = Node {
         kind: "visual".into(),
+        fallback: None,
         properties: [("label".into(), Value::Text("Host visual".into()))].into(),
         children: vec![],
     };
@@ -446,6 +484,7 @@ fn a_screen_change_recomputes_both_faces() {
             reads.fetch_add(1, Ordering::SeqCst);
             let node = Node {
                 kind: "visual".into(),
+                fallback: None,
                 properties: [(
                     "label".into(),
                     Value::Text(value.lock().unwrap().to_string()),
@@ -552,4 +591,183 @@ fn fallback_chains_terminate_and_directly_edited_contracts_are_checked() {
         invalid.apply(&table),
         Err(Error::InvalidArgument { .. })
     ));
+}
+
+#[test]
+fn versioned_capabilities_are_accepted_and_reported() {
+    let kernel = common::host(None);
+    let rep = common::source(&kernel, "urn:iki:ui:target:name:html").unwrap();
+    let mut json: serde_json::Value = serde_json::from_slice(&rep.bytes).unwrap();
+    json["capabilities"] = serde_json::json!([{"name": "hover", "version": "1.0"}]);
+    Descriptor::parse(&serde_json::to_vec(&json).unwrap(), "html").unwrap();
+    let matrix: serde_json::Value =
+        serde_json::from_slice(&common::source(&kernel, target::SUPPORT).unwrap().bytes).unwrap();
+    for name in target::NAMES {
+        assert!(
+            matrix[name]["capabilities"].is_array(),
+            "{name} capabilities missing"
+        );
+    }
+}
+
+#[test]
+fn native_rendering_precedes_declared_fallback_and_limits_try_it() {
+    let kernel = common::host(None);
+    let mut html = descriptor(&kernel, "html");
+    html.fallback.insert("table".into(), "list".into());
+    let table: Node = serde_json::from_str(model::kind("table").unwrap().example).unwrap();
+    assert_eq!(
+        html.apply(&table).unwrap(),
+        table,
+        "native wins before fallback"
+    );
+    html.limits.table.as_mut().unwrap().max_rows = 0;
+    let projected = html.apply(&table).unwrap();
+    assert_eq!(
+        projected.kind, "list",
+        "failed native rendering tries declared fallback"
+    );
+    assert_eq!(projected.properties["label"], table.properties["caption"]);
+}
+
+#[test]
+fn node_fallback_is_projected_before_the_descriptor_fallback() {
+    let kernel = common::host(None);
+    let gpui = descriptor(&kernel, "gpui");
+    let source = model::parse(
+        br#"{
+        "kind":"image", "properties":{"alt":"Original image", "src":"/image.png"},
+        "fallback":{"kind":"status", "properties":{"content":"Node replacement"}}
+    }"#,
+    )
+    .unwrap();
+    let result = gpui.apply(&source).unwrap();
+    assert_eq!(result.kind, "status");
+    assert_eq!(
+        result.properties["content"],
+        Value::Text("Node replacement".into())
+    );
+    assert_eq!(
+        descriptor(&kernel, "html").apply(&source).unwrap().kind,
+        "image"
+    );
+    let bytes = serde_json::to_vec(&source).unwrap();
+    let extra = EndpointSpace::new().bind(
+        Exact::new("urn:iki:ui:screen:name:replacement"),
+        FnEndpoint::new("replacement-screen", move |_| {
+            Ok(Representation::new(ReprType::new(model::MEDIA_TYPE), bytes.clone()).cacheable())
+        }),
+    );
+    let kernel = common::host_with(None, vec![Arc::new(extra)]);
+    assert_eq!(model_at(&kernel, &face("gpui", "replacement")), result);
+    let html = model_at(&kernel, &face("html", "replacement"));
+    assert_eq!(html.kind, "image");
+    assert!(
+        html.fallback.is_none(),
+        "resolved faces omit replacement metadata"
+    );
+}
+
+#[test]
+fn descriptor_unknown_fields_and_invalid_capabilities_have_clear_errors() {
+    let kernel = common::host(None);
+    let good = serde_json::to_value(descriptor(&kernel, "html")).unwrap();
+    for path in ["", "/capabilities/0", "/limits", "/limits/table"] {
+        let mut bad = good.clone();
+        bad.pointer_mut(path).unwrap()["future-field"] = true.into();
+        assert!(matches!(
+            Descriptor::parse(&serde_json::to_vec(&bad).unwrap(), "html"),
+            Err(Error::InvalidArgument { detail, .. }) if detail.contains("unknown field `future-field`")
+        ));
+    }
+    for capabilities in [
+        serde_json::json!([{"name":"hover"}]),
+        serde_json::json!([{"version":"1.0"}]),
+        serde_json::json!([{"name":"", "version":"1.0"}]),
+        serde_json::json!([{"name":"hover", "version":"  "}]),
+        serde_json::json!([{"name":"hover", "version":1}]),
+        serde_json::json!([{"name":"hover", "version":"1.0"}, {"name":"hover", "version":"2.0"}]),
+    ] {
+        let mut bad = good.clone();
+        bad["capabilities"] = capabilities;
+        assert!(matches!(
+            Descriptor::parse(&serde_json::to_vec(&bad).unwrap(), "html"),
+            Err(Error::InvalidArgument { .. })
+        ));
+    }
+    let mut empty = good;
+    empty["capabilities"] = serde_json::json!([]);
+    Descriptor::parse(&serde_json::to_vec(&empty).unwrap(), "html").unwrap();
+}
+
+#[test]
+fn capabilities_in_support_html_are_escaped_and_versions_preserved() {
+    let kernel = common::host(None);
+    let mut contract = descriptor(&kernel, "html");
+    contract.capabilities = vec![target::Capability {
+        name: "<feature>&".into(),
+        version: "<version>&".into(),
+    }];
+    contract.fallback.insert("table".into(), "list".into());
+    let bytes = serde_json::to_vec(&contract).unwrap();
+    let extra = EndpointSpace::new().bind(
+        Exact::new("urn:iki:ui:dir:target/html.json"),
+        FnEndpoint::new("html-contract", move |_| {
+            Ok(Representation::new(ReprType::new("application/json"), bytes.clone()).cacheable())
+        }),
+    );
+    let kernel = common::host_with(None, vec![Arc::new(extra)]);
+    let matrix: serde_json::Value =
+        serde_json::from_slice(&common::source(&kernel, target::SUPPORT).unwrap().bytes).unwrap();
+    assert_eq!(
+        matrix["html"]["capabilities"],
+        serde_json::to_value(&contract.capabilities).unwrap()
+    );
+    let page = common::issue(
+        &kernel,
+        Verb::Source,
+        target::SUPPORT,
+        &[("as", b"text/html")],
+    )
+    .unwrap();
+    let page = String::from_utf8(page.bytes).unwrap();
+    assert!(page.contains("&lt;feature&gt;&amp;: &lt;version&gt;&amp;"));
+    assert!(!page.contains("<feature>"));
+    assert!(page.contains("Renders; fallback: list"));
+    assert_eq!(matrix["html"]["kind"]["table"]["renders"], true);
+    assert_eq!(matrix["html"]["kind"]["table"]["fallback"], "list");
+}
+
+#[test]
+fn the_ladder_applies_recursively_and_always_reaches_renderable_text() {
+    let kernel = common::host(None);
+    let mut gpui = descriptor(&kernel, "gpui");
+    // A native fallback destination can fail construction and have its own replacement.
+    gpui.fallback.insert("image".into(), "link".into());
+    gpui.fallback.insert("link".into(), "status".into());
+    let source = model::parse(
+        br#"{"kind":"image","properties":{"alt":"Original image","src":"/image.png"}}"#,
+    )
+    .unwrap();
+    assert_eq!(gpui.apply(&source).unwrap().kind, "status");
+    let source = model::parse(
+        br#"{
+        "kind":"group", "properties":{"label":"Parent"}, "children":[{
+            "kind":"image", "properties":{"alt":"Image", "src":"/image.png"},
+            "fallback":{"kind":"visual", "properties":{"label":"Replacement description"}}
+        }]
+    }"#,
+    )
+    .unwrap();
+    let projected = gpui.apply(&source).unwrap();
+    assert_eq!(projected.kind, "group");
+    assert_eq!(projected.children[0].kind, "text");
+    assert_eq!(
+        projected.children[0].properties["content"],
+        Value::Text("Replacement description".into())
+    );
+    assert!(projected.children[0].fallback.is_none());
+    // Native claims must not hide a cycle that would be entered after a limit failure.
+    gpui.fallback.insert("status".into(), "image".into());
+    assert!(gpui.validate().is_err());
 }

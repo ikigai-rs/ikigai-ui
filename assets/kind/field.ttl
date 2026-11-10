@@ -11,7 +11,7 @@
   <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:label> ;
   sh:targetClass <urn:iki:ui:kind:name:field> ;
   sh:closed true ;
-  sh:property <urn:iki:ui:kind:name:field:property:type>, <urn:iki:ui:kind:name:field:property:label>, <urn:iki:ui:kind:name:field:property:name>, <urn:iki:ui:kind:name:field:property:input>, <urn:iki:ui:kind:name:field:property:value> .
+  sh:property <urn:iki:ui:shape:name:node-fallback>, <urn:iki:ui:kind:name:field:property:type>, <urn:iki:ui:kind:name:field:property:label>, <urn:iki:ui:kind:name:field:property:name>, <urn:iki:ui:kind:name:field:property:input>, <urn:iki:ui:kind:name:field:property:value> .
 
 <urn:iki:ui:kind:name:field:property:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:field> ; sh:maxCount 1 .
 <urn:iki:ui:kind:name:field:property:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
