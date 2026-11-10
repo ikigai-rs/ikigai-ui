@@ -64,6 +64,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         common::HTML.to_string(),
         page.into_bytes(),
     ));
+    // The image example's source: a 1x1 grey PNG, so the page loads with no 404.
+    const PNG: &[u8] = &[
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0,
+        0, 0, 0, 58, 126, 155, 85, 0, 0, 0, 10, 73, 68, 65, 84, 120, 156, 99, 104, 0, 0, 0, 130, 0,
+        129, 119, 205, 114, 182, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ];
+    files.push((
+        "/img/lighthouse.png".to_string(),
+        "image/png".to_string(),
+        PNG.to_vec(),
+    ));
     let borrowed: Vec<(&str, &str, &[u8])> = files
         .iter()
         .map(|(p, t, b)| (p.as_str(), t.as_str(), b.as_slice()))
