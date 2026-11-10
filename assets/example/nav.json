@@ -1,0 +1,22 @@
+{
+  "kind": "nav",
+  "properties": {
+    "label": "Site"
+  },
+  "children": [
+    {
+      "kind": "link",
+      "properties": {
+        "label": "Home",
+        "href": "/"
+      }
+    },
+    {
+      "kind": "link",
+      "properties": {
+        "label": "About",
+        "href": "/about"
+      }
+    }
+  ]
+}

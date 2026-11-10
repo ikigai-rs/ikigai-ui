@@ -1,0 +1,14 @@
+{
+  "kind": "group",
+  "properties": {
+    "label": "Contact"
+  },
+  "children": [
+    {
+      "kind": "text",
+      "properties": {
+        "content": "Call us."
+      }
+    }
+  ]
+}

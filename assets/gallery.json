@@ -1,0 +1,44 @@
+{
+  "title": "Gallery",
+  "section": [
+    {
+      "label": "Text",
+      "kind": [
+        "heading",
+        "text",
+        "status"
+      ]
+    },
+    {
+      "label": "Input",
+      "kind": [
+        "form",
+        "field",
+        "choice",
+        "button"
+      ]
+    },
+    {
+      "label": "Navigation",
+      "kind": [
+        "link",
+        "nav"
+      ]
+    },
+    {
+      "label": "Structure",
+      "kind": [
+        "list",
+        "table",
+        "group"
+      ]
+    },
+    {
+      "label": "Media",
+      "kind": [
+        "image",
+        "visual"
+      ]
+    }
+  ]
+}

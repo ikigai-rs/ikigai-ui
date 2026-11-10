@@ -1,0 +1,23 @@
+{
+  "kind": "form",
+  "properties": {
+    "label": "Sign up",
+    "action": "/signup",
+    "method": "post"
+  },
+  "children": [
+    {
+      "kind": "field",
+      "properties": {
+        "label": "Name",
+        "name": "name"
+      }
+    },
+    {
+      "kind": "button",
+      "properties": {
+        "label": "Sign up"
+      }
+    }
+  ]
+}

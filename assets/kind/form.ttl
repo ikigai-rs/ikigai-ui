@@ -1,0 +1,20 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# The `form` node kind. Closed: a property not named here is refused. Its fallback text, what a
+# target that cannot draw the kind shows instead, is `label`, which every `form` must carry.
+<urn:iki:ui:kind:name:form> a sh:NodeShape, rdfs:Class ;
+  rdfs:subClassOf <urn:iki:ui:node> ;
+  rdfs:label "form" ;
+  <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:label> ;
+  sh:targetClass <urn:iki:ui:kind:name:form> ;
+  sh:closed true ;
+  sh:property <urn:iki:ui:kind:name:form:property:type>, <urn:iki:ui:kind:name:form:property:label>, <urn:iki:ui:kind:name:form:property:action>, <urn:iki:ui:kind:name:form:property:method>, <urn:iki:ui:kind:name:form:property:child> .
+
+<urn:iki:ui:kind:name:form:property:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:form> ; sh:maxCount 1 .
+<urn:iki:ui:kind:name:form:property:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:form:property:action> sh:path <urn:iki:ui:property:name:action> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:form:property:method> sh:path <urn:iki:ui:property:name:method> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ; sh:pattern "^(get|post)$" .
+<urn:iki:ui:kind:name:form:property:child> sh:path <urn:iki:ui:property:name:child> ; sh:class <urn:iki:ui:node> .
