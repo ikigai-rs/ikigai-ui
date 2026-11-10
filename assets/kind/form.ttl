@@ -5,7 +5,7 @@
 
 # The `form` node kind. Closed: a property not named here is refused. Its fallback text, what a
 # target that cannot draw the kind shows instead, is `label`, which every `form` must carry.
-# `target` is the resource the form issues `verb` to, by its name; `action` is the URL a door
+# `resource` is the resource the form issues `verb` to, by its name; `action` is the URL a door
 # posts to, when the name is itself one.
 <urn:iki:ui:kind:name:form> a sh:NodeShape, rdfs:Class ;
   rdfs:subClassOf <urn:iki:ui:node> ;
@@ -13,7 +13,7 @@
   <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:label> ;
   sh:targetClass <urn:iki:ui:kind:name:form> ;
   sh:closed true ;
-  sh:property <urn:iki:ui:kind:name:form:property:name:type>, <urn:iki:ui:kind:name:form:property:name:label>, <urn:iki:ui:kind:name:form:property:name:action>, <urn:iki:ui:kind:name:form:property:name:method>, <urn:iki:ui:kind:name:form:property:name:child>, <urn:iki:ui:kind:name:form:property:name:description>, <urn:iki:ui:kind:name:form:property:name:target>, <urn:iki:ui:kind:name:form:property:name:verb> .
+  sh:property <urn:iki:ui:kind:name:form:property:name:type>, <urn:iki:ui:kind:name:form:property:name:label>, <urn:iki:ui:kind:name:form:property:name:action>, <urn:iki:ui:kind:name:form:property:name:method>, <urn:iki:ui:kind:name:form:property:name:child>, <urn:iki:ui:kind:name:form:property:name:description>, <urn:iki:ui:kind:name:form:property:name:resource>, <urn:iki:ui:kind:name:form:property:name:verb> .
 
 <urn:iki:ui:kind:name:form:property:name:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:form> ; sh:maxCount 1 .
 <urn:iki:ui:kind:name:form:property:name:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
@@ -21,5 +21,5 @@
 <urn:iki:ui:kind:name:form:property:name:method> sh:path <urn:iki:ui:property:name:method> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ; sh:pattern "^(get|post)$" .
 <urn:iki:ui:kind:name:form:property:name:child> sh:path <urn:iki:ui:property:name:child> ; sh:class <urn:iki:ui:node> .
 <urn:iki:ui:kind:name:form:property:name:description> sh:path <urn:iki:ui:property:name:description> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
-<urn:iki:ui:kind:name:form:property:name:target> sh:path <urn:iki:ui:property:name:target> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:form:property:name:resource> sh:path <urn:iki:ui:property:name:resource> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
 <urn:iki:ui:kind:name:form:property:name:verb> sh:path <urn:iki:ui:property:name:verb> ; sh:maxCount 1 ; sh:in ( "source" "sink" "new" "delete" ) .

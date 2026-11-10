@@ -108,12 +108,12 @@ fn text(p: &str, v: &str) -> (String, Value) {
     (p.to_string(), Value::Text(v.to_string()))
 }
 
-/// The form: `label`, a `description` (the model's summary, then [`GENERATED`]), `target` the
-/// resource and `verb` sink, `action` the same when it is a URL a door can post to, and a
+/// The form: `label`, a `description` (the model's summary, then [`GENERATED`]), `resource` (the
+/// resource's name) and `verb` sink, `action` the same when it is a URL a door can post to, and a
 /// field or choice per input, then a submit button. Validated before it is answered.
-pub fn form(label: &str, summary: &str, target: &str, inputs: &[Input]) -> Result<Node, Error> {
+pub fn form(label: &str, summary: &str, resource: &str, inputs: &[Input]) -> Result<Node, Error> {
     let label = if label.trim().is_empty() {
-        target
+        resource
     } else {
         label
     };
@@ -125,13 +125,13 @@ pub fn form(label: &str, summary: &str, target: &str, inputs: &[Input]) -> Resul
     let mut properties: BTreeMap<String, Value> = [
         text("label", label),
         text("description", &description),
-        text("target", target),
+        text("resource", resource),
         text("verb", "sink"),
         text("method", "post"),
     ]
     .into();
-    if ikigai_fn::html::safe_href(target).is_some_and(|h| h == target) {
-        properties.insert("action".into(), Value::Text(target.to_string()));
+    if ikigai_fn::html::safe_href(resource).is_some_and(|h| h == resource) {
+        properties.insert("action".into(), Value::Text(resource.to_string()));
     }
     let mut children = Vec::new();
     for i in inputs {
@@ -226,17 +226,17 @@ fn contract_input(a: &ArgSpec) -> Input {
     }
 }
 
-/// The form for the resource `target` from its contract (its Meta, `as=application/json`): its
+/// The form for `resource` from its contract (its Meta, `as=application/json`): its
 /// Sink's inputs, through both authoring forms ([`Description::action_specs`]), each but a
 /// binding (that is in the name already). A contract with no Sink is `InvalidArgument`.
-pub fn from_contract(target: &str, contract: &[u8]) -> Result<Node, Error> {
+pub fn from_contract(resource: &str, contract: &[u8]) -> Result<Node, Error> {
     let d: Description = serde_json::from_slice(contract)
-        .map_err(|e| invalid("iri", format!("{target}: not a contract: {e}")))?;
+        .map_err(|e| invalid("iri", format!("{resource}: not a contract: {e}")))?;
     let sink: ActionSpec = d
         .action_specs()
         .into_iter()
         .find(|a| a.verb == Verb::Sink)
-        .ok_or_else(|| invalid("iri", format!("{target}: its contract declares no Sink")))?;
+        .ok_or_else(|| invalid("iri", format!("{resource}: its contract declares no Sink")))?;
     let inputs: Vec<Input> = sink
         .inputs
         .iter()
@@ -249,7 +249,7 @@ pub fn from_contract(target: &str, contract: &[u8]) -> Result<Node, Error> {
         &sink.summary
     };
     let label = if d.title.is_empty() { &d.id } else { &d.title };
-    form(label, summary, target, &inputs)
+    form(label, summary, resource, &inputs)
 }
 
 // --- from an OpenAPI 3.1 document ------------------------------------------------------------
@@ -405,7 +405,7 @@ fn resolve<'a>(doc: &'a Doc, s: &'a Schema, at: &str) -> Result<&'a Schema, Erro
 }
 
 /// The form for operation `op` (its `operationId`) of the OpenAPI 3.1 document `doc`. The
-/// target is the first server's URL joined with the operation's path. A document that is not
+/// resource is the first server's URL joined with the operation's path. A document that is not
 /// 3.1 JSON is `InvalidArgument`; an operation it does not hold is `NotFound`.
 pub fn from_openapi(doc_iri: &str, doc: &[u8], op: &str) -> Result<Node, Error> {
     if doc.len() > MAX_BYTES {
@@ -482,11 +482,11 @@ pub fn from_openapi(doc_iri: &str, doc: &[u8], op: &str) -> Result<Node, Error> 
         .first()
         .map(|s| s.url.trim_end_matches('/'))
         .unwrap_or("");
-    let target = format!("{server}{path}");
+    let resource = format!("{server}{path}");
     let label = match (&operation.summary, &operation.operation_id) {
         (s, _) if !s.is_empty() => s.as_str(),
         (_, Some(id)) => id.as_str(),
         _ => op,
     };
-    form(label, &operation.description, &target, &inputs)
+    form(label, &operation.description, &resource, &inputs)
 }

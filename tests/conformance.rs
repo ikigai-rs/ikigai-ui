@@ -114,7 +114,7 @@ fn conforms() {
         .opt_out_check(
             "demo-contact",
             Check::Pipeline,
-            "a test model of a form's target: a form posts its fields as named arguments, \
+            "a test model of a form's resource: a form posts its fields as named arguments, \
              not one `content`; it is never a pipeline stage",
         )
         .opt_out_check(
@@ -125,7 +125,7 @@ fn conforms() {
         .opt_out_check(
             "demo-contact-flat",
             Check::Pipeline,
-            "a test model of a form's target: a form posts its fields as named arguments, \
+            "a test model of a form's resource: a form posts its fields as named arguments, \
              not one `content`; it is never a pipeline stage",
         )
         .body_space(root)

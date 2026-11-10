@@ -42,7 +42,7 @@
     "required": {
       "@id": "urn:iki:ui:property:name:required"
     },
-    "target": "urn:iki:ui:property:name:target",
+    "resource": "urn:iki:ui:property:name:resource",
     "verb": "urn:iki:ui:property:name:verb"
   }
 }

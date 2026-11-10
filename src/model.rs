@@ -157,7 +157,7 @@ pub const KINDS: [Kind; 15] = [
             "action": Url,
             "method": Method,
             "description": Text,
-            "target": Iri,
+            "resource": Iri,
             "verb": Verb
         ],
         Children::Any

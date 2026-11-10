@@ -3,7 +3,9 @@
   "properties": {
     "label": "Sign up",
     "action": "/signup",
-    "method": "post"
+    "method": "post",
+    "resource": "urn:iki:demo:signup",
+    "verb": "sink"
   },
   "children": [
     {

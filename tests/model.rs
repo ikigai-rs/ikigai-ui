@@ -134,7 +134,7 @@ fn every_kind_is_served_by_name_and_sealed() {
 }
 
 /// Invalid models and the path each is refused at.
-const INVALID: [(&str, &str); 14] = [
+const INVALID: [(&str, &str); 15] = [
     (
         r#"{"kind":"choice","properties":{"label":"C","name":"c"},"children":[{"kind":"text","properties":{"content":"A"}}]}"#,
         "/children/0",
@@ -146,6 +146,11 @@ const INVALID: [(&str, &str); 14] = [
     ),
     (
         r#"{"kind":"form","properties":{"label":"F","verb":"patch"}}"#,
+        "/",
+    ),
+    // `target` names a face (`urn:iki:ui:target:name:{target}`), not a form's resource.
+    (
+        r#"{"kind":"form","properties":{"label":"F","target":"urn:iki:demo:contact"}}"#,
         "/",
     ),
     (

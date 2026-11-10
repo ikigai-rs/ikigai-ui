@@ -42,7 +42,7 @@ fn a_resource_gives_a_form_of_its_sink_inputs() {
     let f = form(&kernel, &resource(common::CONTACT)).unwrap();
     assert_eq!(f.kind, "form");
     assert_eq!(prop(&f, "label"), Some(&text("Contact")));
-    assert_eq!(prop(&f, "target"), Some(&text(common::CONTACT)));
+    assert_eq!(prop(&f, "resource"), Some(&text(common::CONTACT)));
     assert_eq!(prop(&f, "action"), Some(&text(common::CONTACT)));
     assert_eq!(prop(&f, "verb"), Some(&text("sink")));
     assert_eq!(prop(&f, "method"), Some(&text("post")));
@@ -116,8 +116,8 @@ fn both_authoring_forms_and_the_openapi_document_give_the_same_form() {
     let kernel = kernel();
     let per_verb = form(&kernel, &resource(common::CONTACT)).unwrap();
     let mut flat = form(&kernel, &resource(common::CONTACT_FLAT)).unwrap();
-    // The flat resource is a different resource: its target differs, nothing else.
-    for p in ["target", "action"] {
+    // The flat resource is a different resource: its resource differs, nothing else.
+    for p in ["resource", "action"] {
         flat.properties.insert(p.into(), text(common::CONTACT));
     }
     assert_eq!(per_verb, flat);
