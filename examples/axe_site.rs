@@ -47,6 +47,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
         }
     }
+    // The gallery through the html target's templates (ledger #3355), in the demo shell, so axe
+    // covers every kind, a table with header cells and a form.
+    let gallery =
+        ikigai_ui::testkit::render::source(&kernel, "urn:iki:ui:html:screen:gallery", &[])?;
+    let about = ikigai_ui::testkit::render::source(&kernel, "urn:demo:page:about", &[])?;
+    let (head, rest) = about
+        .split_once("<main id=\"main\" tabindex=\"-1\">")
+        .expect("the shell's main");
+    let (_, tail) = rest.split_once("</main>").expect("the shell's main");
+    let page = format!(
+        "{head}<main id=\"main\" tabindex=\"-1\">\n<h1>Gallery</h1>\n{gallery}\n</main>{tail}"
+    );
+    files.push((
+        "/gallery.html".to_string(),
+        common::HTML.to_string(),
+        page.into_bytes(),
+    ));
     let borrowed: Vec<(&str, &str, &[u8])> = files
         .iter()
         .map(|(p, t, b)| (p.as_str(), t.as_str(), b.as_slice()))

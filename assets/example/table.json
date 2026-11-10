@@ -7,7 +7,29 @@
     {
       "kind": "group",
       "properties": {
-        "label": "Row 1"
+        "label": "Headers",
+        "header": "column"
+      },
+      "children": [
+        {
+          "kind": "text",
+          "properties": {
+            "content": "Fruit"
+          }
+        },
+        {
+          "kind": "text",
+          "properties": {
+            "content": "Count"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "group",
+      "properties": {
+        "label": "Row 1",
+        "header": "row"
       },
       "children": [
         {

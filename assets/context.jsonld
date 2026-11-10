@@ -27,6 +27,7 @@
     "caption": "urn:iki:ui:property:name:caption",
     "content": "urn:iki:ui:property:name:content",
     "description": "urn:iki:ui:property:name:description",
+    "header": "urn:iki:ui:property:name:header",
     "href": "urn:iki:ui:property:name:href",
     "input": "urn:iki:ui:property:name:input",
     "label": "urn:iki:ui:property:name:label",

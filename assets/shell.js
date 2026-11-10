@@ -205,9 +205,29 @@
     status(name ? name + ": " + text : text, false, true);
     return true;
   }
+  // A refused form (ledger #3355): an InvalidArgument naming one of the form's fields
+  // ("invalid argument `email`: …") lands on that field: its note beside it, aria-invalid, and
+  // focus on it, the first field in error. Anything else is the form's note, as for any control.
+  function fieldOf(form, text) {
+    var m = /invalid argument `([^`]+)`:\s*([\s\S]*)/.exec(text || "");
+    if (!m || !form.elements) return null;
+    var field = form.elements.namedItem(m[1]);
+    if (!field || !field.matches || !field.matches("input, select, textarea")) return null;
+    return { field: field, text: m[2] || text };
+  }
   function fail(detail, text, code) {
     var elt = detail && detail.elt;
     if (quiet(elt)) return;
+    var named = elt && elt.tagName === "FORM" ? fieldOf(elt, text) : null;
+    if (named && noteAt(named.field, elt, named.text, code)) {
+      named.field.setAttribute("aria-invalid", "true");
+      focusOn(named.field);
+      return;
+    }
+    if (elt && elt.tagName === "FORM") {
+      if (!noteAt(elt, document.getElementById("status"), text, code)) status(text, true);
+      return;
+    }
     if (!noteAt(elt, detail && detail.target, text, code)) status(text, true);
   }
   document.addEventListener("htmx:responseError", function (e) {

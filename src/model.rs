@@ -65,6 +65,9 @@ pub enum Type {
     Iri,
     /// A verb a form issues: `source`, `sink`, `new` or `delete`.
     Verb,
+    /// A table row's header scope: `column` (the row is the column headers) or `row` (the
+    /// row's first cell heads the row).
+    Scope,
 }
 
 /// What children a kind takes.
@@ -166,7 +169,7 @@ pub const KINDS: [Kind; 15] = [
     kind!("nav", "label", [], [], Children::Only("link")),
     kind!("status", "content", [], [], Children::Leaf),
     kind!("image", "alt", ["src": Url], [], Children::Leaf),
-    kind!("group", "label", [], [], Children::Any),
+    kind!("group", "label", [], ["header": Scope], Children::Any),
     kind!("visual", "label", [], ["description": Text], Children::Leaf),
 ];
 
@@ -178,6 +181,13 @@ pub const GALLERY: &str = include_str!("../assets/gallery.json");
 
 /// The verbs a form's `verb` names.
 pub const VERBS: [&str; 4] = ["source", "sink", "new", "delete"];
+
+/// The scopes a table row's `header` names: `column` makes every cell of the row a column
+/// header (`<th scope="col">`), `row` makes the row's first cell its row header
+/// (`<th scope="row">`). A property on the row rather than a `cell` kind: a header is a role a
+/// row plays in a table, the row is already a `group`, and the closed kind set (and every
+/// target descriptor's coverage of it) stays as it is.
+pub const SCOPES: [&str; 2] = ["column", "row"];
 
 /// The kind named `name`, or `None`.
 pub fn kind(name: &str) -> Option<&'static Kind> {
@@ -243,6 +253,7 @@ pub fn validate(root: &Node) -> Result<(), Error> {
                 (Type::Flag, Value::Text(s)) => s == "true" || s == "false",
                 (Type::Iri, Value::Text(s)) => ikigai_core::Iri::parse(s.as_str()).is_ok(),
                 (Type::Verb, Value::Text(s)) => VERBS.contains(&s.as_str()),
+                (Type::Scope, Value::Text(s)) => SCOPES.contains(&s.as_str()),
                 _ => false,
             };
             if !ok {
