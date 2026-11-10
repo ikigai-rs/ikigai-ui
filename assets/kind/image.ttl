@@ -11,8 +11,8 @@
   <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:alt> ;
   sh:targetClass <urn:iki:ui:kind:name:image> ;
   sh:closed true ;
-  sh:property <urn:iki:ui:kind:name:image:property:type>, <urn:iki:ui:kind:name:image:property:alt>, <urn:iki:ui:kind:name:image:property:src> .
+  sh:property <urn:iki:ui:kind:name:image:property:name:type>, <urn:iki:ui:kind:name:image:property:name:alt>, <urn:iki:ui:kind:name:image:property:name:src> .
 
-<urn:iki:ui:kind:name:image:property:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:image> ; sh:maxCount 1 .
-<urn:iki:ui:kind:name:image:property:alt> sh:path <urn:iki:ui:property:name:alt> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
-<urn:iki:ui:kind:name:image:property:src> sh:path <urn:iki:ui:property:name:src> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:image:property:name:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:image> ; sh:maxCount 1 .
+<urn:iki:ui:kind:name:image:property:name:alt> sh:path <urn:iki:ui:property:name:alt> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:image:property:name:src> sh:path <urn:iki:ui:property:name:src> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .

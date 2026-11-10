@@ -3,6 +3,9 @@
   "properties": {
     "label": "Email",
     "name": "email",
-    "input": "email"
+    "input": "email",
+    "required": "true",
+    "description": "Where the reply goes.",
+    "error": "An email address has an @ in it."
   }
 }

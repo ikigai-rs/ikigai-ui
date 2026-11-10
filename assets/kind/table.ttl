@@ -11,8 +11,8 @@
   <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:caption> ;
   sh:targetClass <urn:iki:ui:kind:name:table> ;
   sh:closed true ;
-  sh:property <urn:iki:ui:kind:name:table:property:type>, <urn:iki:ui:kind:name:table:property:caption>, <urn:iki:ui:kind:name:table:property:child> .
+  sh:property <urn:iki:ui:kind:name:table:property:name:type>, <urn:iki:ui:kind:name:table:property:name:caption>, <urn:iki:ui:kind:name:table:property:name:child> .
 
-<urn:iki:ui:kind:name:table:property:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:table> ; sh:maxCount 1 .
-<urn:iki:ui:kind:name:table:property:caption> sh:path <urn:iki:ui:property:name:caption> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
-<urn:iki:ui:kind:name:table:property:child> sh:path <urn:iki:ui:property:name:child> ; sh:class <urn:iki:ui:kind:name:group> .
+<urn:iki:ui:kind:name:table:property:name:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:table> ; sh:maxCount 1 .
+<urn:iki:ui:kind:name:table:property:name:caption> sh:path <urn:iki:ui:property:name:caption> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:table:property:name:child> sh:path <urn:iki:ui:property:name:child> ; sh:class <urn:iki:ui:kind:name:group> .

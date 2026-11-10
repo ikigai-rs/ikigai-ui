@@ -18,12 +18,12 @@ mod common;
 use std::sync::Arc;
 
 use ikigai_conformance::{Check, Expected, Fixture, Suite};
-use ikigai_core::{Kernel, Verb};
+use ikigai_core::Verb;
 
 #[test]
 fn conforms() {
-    let root = common::root(None, Vec::new());
-    let kernel = Kernel::new(root.clone());
+    let root = common::root(None, vec![Arc::new(common::form_models())]);
+    let kernel = common::kernel(root.clone());
     let pages = Arc::new(common::demo_pages());
     let report = Suite::new()
         .fixture(Fixture::new("ui-palette", Verb::Source).binding("name", "light"))
@@ -38,6 +38,18 @@ fn conforms() {
         .fixture(Fixture::new("demo-fragment", Verb::Source).binding("name", "home"))
         .fixture(Fixture::new("ui-kind-name", Verb::Source).binding("kind", "heading"))
         .fixture(Fixture::new("ui-example-kind", Verb::Source).binding("kind", "nav"))
+        .fixture(Fixture::new("ui-form-resource", Verb::Source).binding("iri", common::CONTACT))
+        .fixture(
+            Fixture::new("ui-form-openapi", Verb::Source)
+                .binding("doc", common::OPENAPI)
+                .binding("op", "contact"),
+        )
+        .cacheable("ui-form-resource")
+        .cacheable("ui-form-openapi")
+        .pure("demo-openapi")
+        .pure("demo-contact")
+        .cacheable("demo-contact")
+        .cacheable("demo-openapi")
         .cacheable("ui-kind")
         .pure("ui-kind")
         .cacheable("ui-kind-name")
@@ -80,6 +92,42 @@ fn conforms() {
             "a root view's id is its IRI, set by ikigai-core 0.2.5+ (ledger #2513), not by \
              this module; the door is the shell's header name (D8)",
         )
+        // The seal answers nothing on purpose (ledger #3354): every name it holds is NotFound,
+        // so no other module answers under `urn:iki:ui:kind:`.
+        .opt_out_check(
+            "ui-kind-seal",
+            Check::Outputs,
+            "the seal serves nothing by design: every name under urn:iki:ui:kind: that is not \
+             a kind's is NotFound here, so no later module answers it",
+        )
+        .opt_out_check(
+            "ui-kind-seal",
+            Check::Resolves,
+            "the seal resolves nothing by design: NotFound is its answer (ledger #3354)",
+        )
+        // The form fixtures' resources are models, read by Meta; their Sink is never fired.
+        .opt_out_check(
+            "demo-contact",
+            Check::Outputs,
+            "a test model: the form reads its contract (Meta); its Sink is never fired",
+        )
+        .opt_out_check(
+            "demo-contact",
+            Check::Pipeline,
+            "a test model of a form's target: a form posts its fields as named arguments, \
+             not one `content`; it is never a pipeline stage",
+        )
+        .opt_out_check(
+            "demo-contact-flat",
+            Check::Outputs,
+            "a test model: the form reads its contract (Meta); its Sink is never fired",
+        )
+        .opt_out_check(
+            "demo-contact-flat",
+            Check::Pipeline,
+            "a test model of a form's target: a form posts its fields as named arguments, \
+             not one `content`; it is never a pipeline stage",
+        )
         .body_space(root)
         .run_blocking(&kernel);
     println!("{report}");
@@ -101,6 +149,9 @@ fn conforms() {
         "ui-example-kind",
         "ui-context",
         "ui-screen-gallery",
+        "ui-form-resource",
+        "ui-form-openapi",
+        "ui-kind-seal",
     ] {
         assert!(
             report.to_string().contains(id),
