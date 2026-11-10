@@ -7,7 +7,7 @@
 //! | `urn:iki:uidemo:submission:id:{id}` | data | one submission, the demo's only stored state |
 //! | `urn:iki:ui:screen:name:contact` | alias | `urn:iki:ui:form:resource:urn:iki:uidemo:contact`: the form, generated from the contract |
 //! | `urn:iki:uidemo:page:{name}` | composition | the shell over a fragment ([`ikigai_ui::Pages`]): `gallery`, `contact`, `support` |
-//! | `urn:iki:uidemo:fragment:name:{name}` | composition | the page's body: a note and the screen it shows |
+//! | `urn:iki:uidemo:fragment:{name}` | composition | the page's body: a note and the screen it shows |
 //!
 //! The contact form is not written by hand: it is the `form` node ikigai-ui generates from the
 //! contact resource's own contract (the same model its OpenAPI description is projected from),
