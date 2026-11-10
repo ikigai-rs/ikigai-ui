@@ -6,7 +6,7 @@
 //! elements), an explicit node replacement or descriptor kind fallback, then the original
 //! kind's required fallback text. Native kinds can declare fallbacks for limits or child
 //! constraints. Descriptor `text` requests the source kind's text directly. Projection keeps
-//! only destination properties and permitted children, removing fallback metadata.
+//! only destination properties and permitted children, removing replacement metadata.
 //!
 //! The face is the only entry that selects a target; it never passes a target argument to
 //! another resource. It preserves the caller's resolution scope. There is no endpoint API
@@ -174,8 +174,8 @@ impl Descriptor {
             return self.project(&expansion);
         }
         // 3. The node's explicit replacement takes precedence over the descriptor.
-        if let Some(fallback) = &source.fallback {
-            return self.project(fallback);
+        if let Some(replacement) = &source.replacement {
+            return self.project(replacement);
         }
         let mut destination = source.kind.as_str();
         while let Some(next) = self.fallback.get(destination) {
@@ -194,7 +194,7 @@ impl Descriptor {
         let source_kind = model::kind(&source.kind).expect("validated model");
         Node {
             kind: "text".into(),
-            fallback: None,
+            replacement: None,
             properties: [(
                 "content".into(),
                 source.properties[source_kind.fallback].clone(),
@@ -248,7 +248,7 @@ impl Descriptor {
         };
         let result = Node {
             kind: destination.into(),
-            fallback: None,
+            replacement: None,
             properties,
             children,
         };

@@ -56,13 +56,13 @@ fn expected(node: &Node, descriptor: &Descriptor) -> Node {
     match destination.as_str() {
         "text" => Node {
             kind: "text".into(),
-            fallback: None,
+            replacement: None,
             properties: [("content".into(), text)].into(),
             children: vec![],
         },
         "list" => Node {
             kind: "list".into(),
-            fallback: None,
+            replacement: None,
             properties: [("label".into(), text)].into(),
             children: node
                 .children
@@ -380,7 +380,7 @@ fn limits_and_unconstructible_fallbacks_use_the_original_text() {
 fn host_screens_are_read_in_the_callers_scope_without_a_target_argument() {
     let screen = Node {
         kind: "visual".into(),
-        fallback: None,
+        replacement: None,
         properties: [("label".into(), Value::Text("Host visual".into()))].into(),
         children: vec![],
     };
@@ -484,7 +484,7 @@ fn a_screen_change_recomputes_both_faces() {
             reads.fetch_add(1, Ordering::SeqCst);
             let node = Node {
                 kind: "visual".into(),
-                fallback: None,
+                replacement: None,
                 properties: [(
                     "label".into(),
                     Value::Text(value.lock().unwrap().to_string()),
@@ -631,13 +631,13 @@ fn native_rendering_precedes_declared_fallback_and_limits_try_it() {
 }
 
 #[test]
-fn node_fallback_is_projected_before_the_descriptor_fallback() {
+fn node_replacement_is_projected_before_the_descriptor_fallback() {
     let kernel = common::host(None);
     let gpui = descriptor(&kernel, "gpui");
     let source = model::parse(
         br#"{
         "kind":"image", "properties":{"alt":"Original image", "src":"/image.png"},
-        "fallback":{"kind":"status", "properties":{"content":"Node replacement"}}
+        "replacement":{"kind":"status", "properties":{"content":"Node replacement"}}
     }"#,
     )
     .unwrap();
@@ -663,7 +663,7 @@ fn node_fallback_is_projected_before_the_descriptor_fallback() {
     let html = model_at(&kernel, &face("html", "replacement"));
     assert_eq!(html.kind, "image");
     assert!(
-        html.fallback.is_none(),
+        html.replacement.is_none(),
         "resolved faces omit replacement metadata"
     );
 }
@@ -754,7 +754,7 @@ fn the_ladder_applies_recursively_and_always_reaches_renderable_text() {
         br#"{
         "kind":"group", "properties":{"label":"Parent"}, "children":[{
             "kind":"image", "properties":{"alt":"Image", "src":"/image.png"},
-            "fallback":{"kind":"visual", "properties":{"label":"Replacement description"}}
+            "replacement":{"kind":"visual", "properties":{"label":"Replacement description"}}
         }]
     }"#,
     )
@@ -766,7 +766,7 @@ fn the_ladder_applies_recursively_and_always_reaches_renderable_text() {
         projected.children[0].properties["content"],
         Value::Text("Replacement description".into())
     );
-    assert!(projected.children[0].fallback.is_none());
+    assert!(projected.children[0].replacement.is_none());
     // Native claims must not hide a cycle that would be entered after a limit failure.
     gpui.fallback.insert("status".into(), "image".into());
     assert!(gpui.validate().is_err());

@@ -825,18 +825,18 @@ fn gallery_endpoint() -> AsyncFnEndpoint {
                 let text = |p: &str, v: &str| (p.to_string(), model::Value::Text(v.to_string()));
                 let mut root = model::Node {
                     kind: "group".into(),
-                    fallback: None,
+                    replacement: None,
                     properties: [text("label", &gallery.title)].into(),
                     children: Vec::new(),
                 };
                 for section in gallery.section {
                     let mut group = model::Node {
                         kind: "group".into(),
-                        fallback: None,
+                        replacement: None,
                         properties: [text("label", &section.label)].into(),
                         children: vec![model::Node {
                             kind: "heading".into(),
-                            fallback: None,
+                            replacement: None,
                             properties: [
                                 text("content", &section.label),
                                 ("level".to_string(), model::Value::Number(2)),

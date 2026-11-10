@@ -128,30 +128,34 @@ The face applies this fallback ladder to every node:
    constraints permit it.
 2. Expand into core kinds. This stage is reserved in the face function; today's closed
    vocabulary has no custom elements to expand.
-3. Use the node's optional `fallback` replacement subtree, otherwise the descriptor's
+3. Use the node's optional `replacement` subtree, otherwise the descriptor's
    `fallback` kind. A replacement subtree walks the same ladder. Descriptor chains try
    native rendering at each destination, then its expansion, then its next replacement.
 4. Show the original kind's required fallback text (`alt` for image, `caption` for table,
    and so on). Descriptor destination `text` requests that same text directly.
+
+Node `fallback` is refused. The shape-level `urn:iki:ui:property:name:fallback`
+annotation still identifies the property containing a kind's fallback text; a node's
+replacement subtree uses `urn:iki:ui:property:name:replacement`.
 
 Every nonnative kind needs a descriptor fallback decision; native kinds may also declare
 one for when a limit or projected child constraint prevents native rendering. `text` must
 be rendered and cannot have a descriptor replacement. All descriptor chains must terminate,
 even those beginning at native kinds. Projection copies destination-compatible properties,
 maps the source's fallback text to the destination's fallback property and projects children
-when the destination takes them. Faces remove fallback metadata after making their choice,
+when the destination takes them. Faces remove replacement metadata after making their choice,
 so a client walks only renderable nodes. An unsupported kind is never a rendering error;
 a malformed screen or descriptor remains an input/configuration error.
 
 A node's replacement is another validated node, not raw markup. The model's size/depth bounds,
 closed kind/property validation, safe URL checks, Turtle shapes and named JSON-LD paths
-include fallback subtrees. For example:
+include replacement subtrees. For example:
 
 ```json
 {
   "kind": "image",
   "properties": {"alt": "Revenue chart", "src": "/revenue.png"},
-  "fallback": {"kind": "text", "properties": {"content": "Revenue increased 10%."}}
+  "replacement": {"kind": "text", "properties": {"content": "Revenue increased 10%."}}
 }
 ```
 

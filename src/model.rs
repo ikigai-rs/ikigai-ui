@@ -22,7 +22,7 @@
 //! not name, a missing required property, a value of the wrong type and a child the kind does
 //! not take, each as `InvalidArgument` naming the node's path (a JSON pointer: `/`,
 //! `/children/0`, …). The Turtle shapes in `assets/kind/` say the same; `tests/model.rs` holds the
-//! two to agreement. Optional `fallback` replacement subtrees receive the same validation
+//! two to agreement. Optional `replacement` subtrees receive the same validation
 //! and bounds as children. [`parse`] bounds a model that arrives as input in size ([`MAX_BYTES`]) and
 //! depth ([`MAX_DEPTH`]) with an iterative pre-scan BEFORE serde sees it.
 
@@ -204,7 +204,7 @@ pub struct Node {
     pub kind: String,
     /// An explicit replacement, tried after native rendering and core expansion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fallback: Option<Box<Node>>,
+    pub replacement: Option<Box<Node>>,
     /// The properties, by name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, Value>,
@@ -254,13 +254,13 @@ pub fn validate(root: &Node) -> Result<(), Error> {
                 return Err(refuse(&path, format!("a {} needs `{p}`", k.name)));
             }
         }
-        if let Some(fallback) = &node.fallback {
+        if let Some(replacement) = &node.replacement {
             let at = if path == "/" {
-                "/fallback".into()
+                "/replacement".into()
             } else {
-                format!("{path}/fallback")
+                format!("{path}/replacement")
             };
-            stack.push((at, fallback));
+            stack.push((at, replacement));
         }
         for (i, child) in node.children.iter().enumerate() {
             let at = if path == "/" {
@@ -349,8 +349,8 @@ pub fn json_ld(node: &Node, iri: &str) -> serde_json::Value {
         );
         // Borrow the two branches together so both enter the iterative walk.
         for (key, value) in map.iter_mut() {
-            if key == "fallback" {
-                stack.push((format!("{path}/fallback"), value));
+            if key == "replacement" {
+                stack.push((format!("{path}/replacement"), value));
             } else if key == "children" {
                 let serde_json::Value::Array(children) = value else {
                     continue;

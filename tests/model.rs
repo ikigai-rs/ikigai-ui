@@ -57,13 +57,13 @@ fn turtle(root: &Node) -> String {
                 model::PROPERTY_PREFIX
             ));
         }
-        if let Some(fallback) = &node.fallback {
-            let fid = format!("{id}.fallback");
+        if let Some(replacement) = &node.replacement {
+            let fid = format!("{id}.replacement");
             out.push_str(&format!(
-                "<urn:test:node:{id}> <{}fallback> <urn:test:node:{fid}> .\n",
+                "<urn:test:node:{id}> <{}replacement> <urn:test:node:{fid}> .\n",
                 model::PROPERTY_PREFIX
             ));
-            stack.push((fid, fallback));
+            stack.push((fid, replacement));
         }
         for (i, child) in node.children.iter().enumerate() {
             let cid = format!("{id}.{i}");
@@ -352,13 +352,13 @@ fn a_model_past_the_size_bound_is_refused() {
 }
 
 #[test]
-fn fallback_subtrees_validate_in_rust_and_shapes_and_have_named_json_ld_nodes() {
+fn replacement_subtrees_validate_in_rust_and_shapes_and_have_named_json_ld_nodes() {
     let valid = node(
         r#"{
         "kind":"image", "properties":{"alt":"Image", "src":"/image.png"},
-        "fallback":{"kind":"group", "properties":{"label":"Replacement"},
+        "replacement":{"kind":"group", "properties":{"label":"Replacement"},
             "children":[{"kind":"text", "properties":{"content":"Description"}}],
-            "fallback":{"kind":"text", "properties":{"content":"Last replacement"}}
+            "replacement":{"kind":"text", "properties":{"content":"Last replacement"}}
         }
     }"#,
     );
@@ -367,29 +367,32 @@ fn fallback_subtrees_validate_in_rust_and_shapes_and_have_named_json_ld_nodes() 
     let ld = model::json_ld(&valid, "urn:test:screen");
     for (value, path) in [
         (&ld, "/"),
-        (&ld["fallback"], "/fallback"),
-        (&ld["fallback"]["children"][0], "/fallback/children/0"),
-        (&ld["fallback"]["fallback"], "/fallback/fallback"),
+        (&ld["replacement"], "/replacement"),
+        (&ld["replacement"]["children"][0], "/replacement/children/0"),
+        (
+            &ld["replacement"]["replacement"],
+            "/replacement/replacement",
+        ),
     ] {
         assert_eq!(value["@id"], format!("urn:test:screen:node:path:{path}"));
     }
     for bad in [
-        r#"{"kind":"image","properties":{"alt":"Image","src":"/image.png"},"fallback":{"kind":"heading","properties":{"content":"Missing level"}}}"#,
-        r#"{"kind":"text","properties":{"content":"Text"},"fallback":{"kind":"text","properties":{"content":"Replacement","level":2}}}"#,
+        r#"{"kind":"image","properties":{"alt":"Image","src":"/image.png"},"replacement":{"kind":"heading","properties":{"content":"Missing level"}}}"#,
+        r#"{"kind":"text","properties":{"content":"Text"},"replacement":{"kind":"text","properties":{"content":"Replacement","level":2}}}"#,
     ] {
         let invalid = node(bad);
         assert!(!shacl_conforms(&invalid));
         assert!(
-            matches!(model::parse(bad.as_bytes()), Err(Error::InvalidArgument { detail, .. }) if detail.starts_with("/fallback:"))
+            matches!(model::parse(bad.as_bytes()), Err(Error::InvalidArgument { detail, .. }) if detail.starts_with("/replacement:"))
         );
     }
 }
 
 #[test]
-fn fallback_subtrees_obey_the_same_input_depth_bound() {
+fn replacement_subtrees_obey_the_same_input_depth_bound() {
     let doc = format!(
         "{}{{\"kind\":\"text\",\"properties\":{{\"content\":\"End\"}}}}{}",
-        "{\"kind\":\"text\",\"properties\":{\"content\":\"Text\"},\"fallback\":".repeat(10_000),
+        "{\"kind\":\"text\",\"properties\":{\"content\":\"Text\"},\"replacement\":".repeat(10_000),
         "}".repeat(10_000)
     );
     assert!(
@@ -401,10 +404,33 @@ fn fallback_subtrees_obey_the_same_input_depth_bound() {
 fn every_kind_shape_accepts_a_valid_replacement_subtree() {
     for kind in KINDS {
         let mut example = model::parse(kind.example.as_bytes()).unwrap();
-        example.fallback = Some(Box::new(node(
+        example.replacement = Some(Box::new(node(
             r#"{"kind":"text","properties":{"content":"Replacement"}}"#,
         )));
         model::validate(&example).unwrap();
-        assert!(shacl_conforms(&example), "{} accepts fallback", kind.name);
+        assert!(
+            shacl_conforms(&example),
+            "{} accepts replacement",
+            kind.name
+        );
+        let obsolete = turtle(&example).replace(
+            "<urn:iki:ui:property:name:replacement>",
+            "<urn:iki:ui:property:name:fallback>",
+        );
+        assert!(
+            !ikigai_shacl::validate_report(&obsolete, &shapes())
+                .unwrap()
+                .conforms,
+            "{} refuses the old node predicate",
+            kind.name
+        );
     }
+}
+
+#[test]
+fn node_fallback_property_is_refused() {
+    let doc = br#"{"kind":"text","properties":{"content":"Text"},"fallback":{"kind":"text","properties":{"content":"Replacement"}}}"#;
+    assert!(
+        matches!(model::parse(doc), Err(Error::InvalidArgument { detail, .. }) if detail.contains("unknown field") && detail.contains("fallback"))
+    );
 }

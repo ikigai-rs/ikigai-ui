@@ -44,8 +44,8 @@
     },
     "resource": "urn:iki:ui:property:name:resource",
     "verb": "urn:iki:ui:property:name:verb",
-    "fallback": {
-      "@id": "urn:iki:ui:property:name:fallback",
+    "replacement": {
+      "@id": "urn:iki:ui:property:name:replacement",
       "@type": "@id"
     }
   }

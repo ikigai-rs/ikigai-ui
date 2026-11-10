@@ -152,14 +152,14 @@ pub fn form(label: &str, summary: &str, resource: &str, inputs: &[Input]) -> Res
         }
         let node = match &i.one_of {
             Some(values) => Node {
-                fallback: None,
+                replacement: None,
                 kind: "choice".into(),
                 properties: p,
                 children: values
                     .iter()
                     .filter(|v| !v.is_empty())
                     .map(|v| Node {
-                        fallback: None,
+                        replacement: None,
                         kind: "option".into(),
                         properties: [text("label", v), text("value", v)].into(),
                         children: Vec::new(),
@@ -169,7 +169,7 @@ pub fn form(label: &str, summary: &str, resource: &str, inputs: &[Input]) -> Res
             None => {
                 p.insert("input".into(), Value::Text(i.input.input().into()));
                 Node {
-                    fallback: None,
+                    replacement: None,
                     kind: "field".into(),
                     properties: p,
                     children: Vec::new(),
@@ -179,13 +179,13 @@ pub fn form(label: &str, summary: &str, resource: &str, inputs: &[Input]) -> Res
         children.push(node);
     }
     children.push(Node {
-        fallback: None,
+        replacement: None,
         kind: "button".into(),
         properties: [text("label", "Submit")].into(),
         children: Vec::new(),
     });
     let node = Node {
-        fallback: None,
+        replacement: None,
         kind: "form".into(),
         properties,
         children,
