@@ -18,6 +18,9 @@ ikigai-fn = "0.10.0"
 serde_json = "1.0"
 # The Meta renderer, so a contract reads as `application/json` and the form is generated from it.
 ikigai-vocab = "0.3"
+# The door is a socket server: not on wasm32, where CI's wasm32 lib job lints the workspace
+# (the service and the site still build there).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # The inbound-HTTP door (ecosystem's, not a server written here). 0.4.3 depends on ikigai-core
 # and ikigai-fn only: no second ikigai-ui, nothing from the cli.
 ikigai-web = "0.4.3"

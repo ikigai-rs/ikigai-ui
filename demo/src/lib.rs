@@ -23,6 +23,7 @@ use ikigai_core::{
     Request, Space, UriTemplate, Verb,
 };
 use ikigai_fn::html::{form_pairs, html_text};
+#[cfg(not(target_arch = "wasm32"))]
 use ikigai_web::{fixed_cap, CapFn, EdgeConfig, Route, RouteTable};
 
 /// The contact resource: its Sink takes a message.
@@ -414,6 +415,7 @@ pub fn kernel(root: Arc<dyn Space>) -> Kernel {
     Kernel::with_meta_renderer(root, Arc::new(ikigai_vocab::TurtleRenderer))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn route(pattern: &str, iri_template: &str) -> Route {
     Route {
         pattern: pattern.into(),
@@ -425,6 +427,7 @@ fn route(pattern: &str, iri_template: &str) -> Route {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// The door's routes: `/` and `/page/{name}` to the pages, `/ui/{…}` to ikigai-ui's
 /// artifacts (where the shell links them), and the html target's submit rule
 /// (`/resolution/iri/{+iri}`, [`ikigai_ui::target::SUBMIT`]).
@@ -440,11 +443,13 @@ pub fn door() -> EdgeConfig {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// What the door grants every request: a write to the contact service, nothing more.
 pub fn cap() -> CapFn {
     fixed_cap(vec![CONTACT_WRITE.to_string()])
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// Serve the demo on `listener` until it fails.
 pub async fn serve(listener: tokio::net::TcpListener, store: Store) -> std::io::Result<()> {
     ikigai_web::serve_with_listener(Arc::new(kernel(root(store))), cap(), listener, door()).await
