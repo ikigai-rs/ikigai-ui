@@ -88,6 +88,7 @@ use ikigai_core::{
     Representation, Request, UriTemplate, Verb,
 };
 
+pub mod model;
 pub mod palette;
 #[cfg(feature = "testkit")]
 pub mod testkit;
@@ -577,11 +578,222 @@ pub fn space() -> EndpointSpace {
             template(&format!("{CHOOSER}{{family}}:{{theme}}")),
             chooser_endpoint(),
         )
+        .bind(Exact::new(KIND), kind_list_endpoint())
+        .bind(template(&format!("{KIND}:name:{{kind}}")), kind_endpoint())
+        .bind(
+            template("urn:iki:ui:example:kind:{kind}"),
+            example_endpoint(),
+        )
+        .bind(Exact::new(model::CONTEXT_IRI), context_endpoint())
+        .bind(Exact::new(GALLERY), gallery_endpoint())
         .named(space_iri("ui"))
 }
 
 fn template(pattern: &str) -> UriTemplate {
     UriTemplate::parse(pattern).expect("a valid URI template")
+}
+
+// --- the node kinds and the model ------------------------------------------------------------
+
+/// The list of node kinds, `urn:iki:ui:kind`, and the prefix of every kind's name,
+/// `urn:iki:ui:kind:name:{kind}`. **Sealed**: [`space`] binds `urn:iki:ui:kind:name:{kind}` for
+/// EVERY `{kind}` and answers `NotFound` for a name [`model::KINDS`] does not hold, so a host that
+/// puts this space before another module never reaches that module under this prefix (a
+/// [`Fallback`](ikigai_core::Fallback) takes the first space that binds a name, and a refusal
+/// from it is the answer).
+pub const KIND: &str = "urn:iki:ui:kind";
+/// The gallery: `urn:iki:ui:screen:name:gallery`.
+pub const GALLERY: &str = "urn:iki:ui:screen:name:gallery";
+
+fn fixed(id: &'static str, media_type: &'static str, body: &'static str) -> FnEndpoint {
+    FnEndpoint::new(id, move |_: &Invocation<'_>| {
+        Ok(Representation::new(ReprType::new(media_type), body.as_bytes().to_vec()).cacheable())
+    })
+}
+
+fn kind_list_endpoint() -> FnEndpoint {
+    fixed("ui-kind", TURTLE, model::KIND_LIST).with_description(
+        Description::new("ui-kind")
+            .title("The UI node kinds")
+            .summary(
+                "The closed list of UI node kinds, as the SHACL node shape every node meets: \
+                 its type is one of urn:iki:ui:kind:name:{kind}, each listed by rdfs:member.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output(TURTLE),
+    )
+}
+
+fn kind_names() -> Vec<&'static str> {
+    model::KINDS.iter().map(|k| k.name).collect()
+}
+
+fn kind_arg(summary: &str) -> ArgSpec {
+    ArgSpec::new("kind")
+        .summary(summary)
+        .class(XSD_STRING)
+        .binding()
+        .one_of(kind_names())
+}
+
+fn the_kind(inv: &Invocation<'_>) -> Result<&'static model::Kind, Error> {
+    let name = inv.bindings.get("kind").unwrap_or_default();
+    model::kind(name).ok_or_else(|| {
+        Error::NotFound(format!(
+            "{}: not a kind (the kinds are: {})",
+            inv.request.target.as_str(),
+            kind_names().join(", ")
+        ))
+    })
+}
+
+/// Whether the request asked for the JSON-LD face.
+fn wants_json_ld(inv: &Invocation<'_>) -> bool {
+    inv.inline_str("as")
+        .ok()
+        .is_some_and(|t| t.split(';').next().unwrap_or_default().trim() == model::JSON_LD)
+}
+
+/// A model in the face the request asked for.
+fn model_face(inv: &Invocation<'_>, node: &model::Node) -> Result<Representation, Error> {
+    let (media_type, bytes) = if wants_json_ld(inv) {
+        (
+            model::JSON_LD,
+            serde_json::to_vec(&model::json_ld(node, inv.request.target.as_str())),
+        )
+    } else {
+        (model::MEDIA_TYPE, serde_json::to_vec(node))
+    };
+    let bytes = bytes.map_err(|e| Error::Endpoint(format!("a model serializes: {e}")))?;
+    Ok(Representation::new(ReprType::new(media_type), bytes).cacheable())
+}
+
+fn kind_endpoint() -> FnEndpoint {
+    FnEndpoint::new("ui-kind-name", |inv: &Invocation<'_>| {
+        let kind = the_kind(inv)?;
+        Ok(Representation::new(ReprType::new(TURTLE), kind.shape.as_bytes().to_vec()).cacheable())
+    })
+    .with_description(
+        Description::new("ui-kind-name")
+            .title("A UI node kind")
+            .summary(
+                "One UI node kind as a closed SHACL shape: its properties, the one that is its \
+                 fallback text (required), and the children it takes.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(kind_arg("the kind"))
+            .output(TURTLE),
+    )
+}
+
+fn example_endpoint() -> FnEndpoint {
+    FnEndpoint::new("ui-example-kind", |inv: &Invocation<'_>| {
+        let kind = the_kind(inv)?;
+        let node: model::Node = serde_json::from_str(kind.example)
+            .map_err(|e| Error::Endpoint(format!("the {} example: {e}", kind.name)))?;
+        model_face(inv, &node)
+    })
+    .with_description(
+        Description::new("ui-example-kind")
+            .title("A UI node kind's example")
+            .summary(
+                "One illustrative node of a kind, as application/vnd.ikigai.ui+json, or as \
+                 JSON-LD with as=application/ld+json.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(kind_arg("the kind"))
+            .output(model::MEDIA_TYPE)
+            .output(model::JSON_LD),
+    )
+}
+
+fn context_endpoint() -> FnEndpoint {
+    fixed("ui-context", model::JSON_LD, model::CONTEXT).with_description(
+        Description::new("ui-context")
+            .title("The UI model's JSON-LD context")
+            .summary(
+                "The one context both faces of a UI model share: a kind is \
+                 urn:iki:ui:kind:name:{kind}, a property urn:iki:ui:property:name:{p}.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output(model::JSON_LD),
+    )
+}
+
+/// The gallery's sections, as [`model::GALLERY`] lists them.
+#[derive(serde::Deserialize)]
+struct Gallery {
+    title: String,
+    section: Vec<Section>,
+}
+
+#[derive(serde::Deserialize)]
+struct Section {
+    label: String,
+    kind: Vec<String>,
+}
+
+/// `urn:iki:ui:screen:name:gallery`: a group per section of [`model::GALLERY`], each a heading
+/// and the section's examples, READ from `urn:iki:ui:example:kind:{kind}` so the screen hangs
+/// from them. The only Rust is the assembly: a compose template splices text, and this answer
+/// is a tree in two faces.
+fn gallery_endpoint() -> AsyncFnEndpoint {
+    let description = Description::new("ui-screen-gallery")
+        .title("The UI gallery")
+        .summary(
+            "Every node kind's example, grouped into sections, as one screen: \
+             application/vnd.ikigai.ui+json, or JSON-LD with as=application/ld+json.",
+        )
+        .verb(Verb::Source)
+        .verb(Verb::Meta)
+        .output(model::MEDIA_TYPE)
+        .output(model::JSON_LD);
+    AsyncFnEndpoint::new(
+        "ui-screen-gallery",
+        |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let gallery: Gallery = serde_json::from_str(model::GALLERY)
+                    .map_err(|e| Error::Endpoint(format!("the gallery list: {e}")))?;
+                let text = |p: &str, v: &str| (p.to_string(), model::Value::Text(v.to_string()));
+                let mut root = model::Node {
+                    kind: "group".into(),
+                    properties: [text("label", &gallery.title)].into(),
+                    children: Vec::new(),
+                };
+                for section in gallery.section {
+                    let mut group = model::Node {
+                        kind: "group".into(),
+                        properties: [text("label", &section.label)].into(),
+                        children: vec![model::Node {
+                            kind: "heading".into(),
+                            properties: [
+                                text("content", &section.label),
+                                ("level".to_string(), model::Value::Number(2)),
+                            ]
+                            .into(),
+                            children: Vec::new(),
+                        }],
+                    };
+                    for kind in &section.kind {
+                        let iri = Iri::parse(format!("urn:iki:ui:example:kind:{kind}"))
+                            .map_err(|e| Error::Endpoint(format!("{kind}: {e}")))?;
+                        let rep = inv.issue(Request::new(Verb::Source, iri)).await?;
+                        let node: model::Node = serde_json::from_slice(&rep.bytes)
+                            .map_err(|e| Error::Endpoint(format!("{kind}'s example: {e}")))?;
+                        group.children.push(node);
+                    }
+                    root.children.push(group);
+                }
+                model::validate(&root)?;
+                model_face(inv, &root)
+            })
+        },
+    )
+    .with_description(description)
 }
 
 // --- pages ---------------------------------------------------------------------------------

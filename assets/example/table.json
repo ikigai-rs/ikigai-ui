@@ -1,0 +1,28 @@
+{
+  "kind": "table",
+  "properties": {
+    "caption": "Totals"
+  },
+  "children": [
+    {
+      "kind": "group",
+      "properties": {
+        "label": "Row 1"
+      },
+      "children": [
+        {
+          "kind": "text",
+          "properties": {
+            "content": "Apples"
+          }
+        },
+        {
+          "kind": "text",
+          "properties": {
+            "content": "3"
+          }
+        }
+      ]
+    }
+  ]
+}

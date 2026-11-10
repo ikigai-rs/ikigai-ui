@@ -1,0 +1,10 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# The closed node vocabulary: every node is an instance of one of these kinds, and of no other.
+<urn:iki:ui:kind> a sh:NodeShape ;
+  rdfs:label "The UI node kinds" ;
+  sh:targetSubjectsOf rdf:type ;
+  sh:class <urn:iki:ui:node> ;
+  rdfs:member <urn:iki:ui:kind:name:heading>, <urn:iki:ui:kind:name:text>, <urn:iki:ui:kind:name:field>, <urn:iki:ui:kind:name:choice>, <urn:iki:ui:kind:name:button>, <urn:iki:ui:kind:name:link>, <urn:iki:ui:kind:name:list>, <urn:iki:ui:kind:name:table>, <urn:iki:ui:kind:name:form>, <urn:iki:ui:kind:name:nav>, <urn:iki:ui:kind:name:status>, <urn:iki:ui:kind:name:image>, <urn:iki:ui:kind:name:group>, <urn:iki:ui:kind:name:visual> .

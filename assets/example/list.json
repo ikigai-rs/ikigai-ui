@@ -1,0 +1,20 @@
+{
+  "kind": "list",
+  "properties": {
+    "label": "Steps"
+  },
+  "children": [
+    {
+      "kind": "text",
+      "properties": {
+        "content": "Read"
+      }
+    },
+    {
+      "kind": "text",
+      "properties": {
+        "content": "Write"
+      }
+    }
+  ]
+}

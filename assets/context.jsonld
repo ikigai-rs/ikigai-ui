@@ -1,0 +1,41 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "kind": "@type",
+    "properties": "@nest",
+    "children": {
+      "@id": "urn:iki:ui:property:name:child",
+      "@container": "@set"
+    },
+    "heading": "urn:iki:ui:kind:name:heading",
+    "text": "urn:iki:ui:kind:name:text",
+    "field": "urn:iki:ui:kind:name:field",
+    "choice": "urn:iki:ui:kind:name:choice",
+    "button": "urn:iki:ui:kind:name:button",
+    "link": "urn:iki:ui:kind:name:link",
+    "list": "urn:iki:ui:kind:name:list",
+    "table": "urn:iki:ui:kind:name:table",
+    "form": "urn:iki:ui:kind:name:form",
+    "nav": "urn:iki:ui:kind:name:nav",
+    "status": "urn:iki:ui:kind:name:status",
+    "image": "urn:iki:ui:kind:name:image",
+    "group": "urn:iki:ui:kind:name:group",
+    "visual": "urn:iki:ui:kind:name:visual",
+    "action": "urn:iki:ui:property:name:action",
+    "alt": "urn:iki:ui:property:name:alt",
+    "caption": "urn:iki:ui:property:name:caption",
+    "content": "urn:iki:ui:property:name:content",
+    "description": "urn:iki:ui:property:name:description",
+    "href": "urn:iki:ui:property:name:href",
+    "input": "urn:iki:ui:property:name:input",
+    "label": "urn:iki:ui:property:name:label",
+    "level": {
+      "@id": "urn:iki:ui:property:name:level",
+      "@type": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "method": "urn:iki:ui:property:name:method",
+    "name": "urn:iki:ui:property:name:name",
+    "src": "urn:iki:ui:property:name:src",
+    "value": "urn:iki:ui:property:name:value"
+  }
+}

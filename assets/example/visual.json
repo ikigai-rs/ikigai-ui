@@ -1,0 +1,7 @@
+{
+  "kind": "visual",
+  "properties": {
+    "label": "Sales by month",
+    "description": "Sales rose every month from January to June."
+  }
+}

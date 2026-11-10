@@ -1,0 +1,21 @@
+{
+  "kind": "choice",
+  "properties": {
+    "label": "Size",
+    "name": "size"
+  },
+  "children": [
+    {
+      "kind": "text",
+      "properties": {
+        "content": "Small"
+      }
+    },
+    {
+      "kind": "text",
+      "properties": {
+        "content": "Large"
+      }
+    }
+  ]
+}

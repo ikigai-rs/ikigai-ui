@@ -36,6 +36,17 @@ fn conforms() {
         .fixture(Fixture::new("ui-page-demo", Verb::Source).binding("name", "home"))
         .fixture(Fixture::new("demo-title", Verb::Source).binding("name", "home"))
         .fixture(Fixture::new("demo-fragment", Verb::Source).binding("name", "home"))
+        .fixture(Fixture::new("ui-kind-name", Verb::Source).binding("kind", "heading"))
+        .fixture(Fixture::new("ui-example-kind", Verb::Source).binding("kind", "nav"))
+        .cacheable("ui-kind")
+        .pure("ui-kind")
+        .cacheable("ui-kind-name")
+        .pure("ui-kind-name")
+        .cacheable("ui-example-kind")
+        .pure("ui-example-kind")
+        .cacheable("ui-context")
+        .pure("ui-context")
+        .cacheable("ui-screen-gallery")
         .cacheable("ui-htmx")
         .cacheable("ui-shell-js")
         .cacheable("ui-template-shell")
@@ -53,6 +64,10 @@ fn conforms() {
         .pure("demo-title")
         .pure("demo-fragment")
         .namespace("urn:iki:ui:token:")
+        // The node kinds and their properties are this crate's own,
+        // documented in `ikigai_ui::model` and shipped as the kinds' shapes (ledger #3352).
+        .namespace("urn:iki:ui:kind:")
+        .namespace("urn:iki:ui:property:")
         .self_named_space("ui", ikigai_ui::space)
         .host_named_space("ikigai_ui::pages(family, base)", pages)
         // Since core 0.2.5 a root exact alias is a view of its own (ledger #2513): listed, and
@@ -81,6 +96,11 @@ fn conforms() {
         "ui-chooser",
         "ui-page-demo",
         "ui-head-demo",
+        "ui-kind",
+        "ui-kind-name",
+        "ui-example-kind",
+        "ui-context",
+        "ui-screen-gallery",
     ] {
         assert!(
             report.to_string().contains(id),

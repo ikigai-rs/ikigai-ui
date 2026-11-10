@@ -1,0 +1,8 @@
+{
+  "kind": "button",
+  "properties": {
+    "label": "Save",
+    "name": "op",
+    "value": "save"
+  }
+}

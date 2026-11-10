@@ -1,0 +1,18 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# The `link` node kind. Closed: a property not named here is refused. Its fallback text, what a
+# target that cannot draw the kind shows instead, is `label`, which every `link` must carry.
+<urn:iki:ui:kind:name:link> a sh:NodeShape, rdfs:Class ;
+  rdfs:subClassOf <urn:iki:ui:node> ;
+  rdfs:label "link" ;
+  <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:label> ;
+  sh:targetClass <urn:iki:ui:kind:name:link> ;
+  sh:closed true ;
+  sh:property <urn:iki:ui:kind:name:link:property:type>, <urn:iki:ui:kind:name:link:property:label>, <urn:iki:ui:kind:name:link:property:href> .
+
+<urn:iki:ui:kind:name:link:property:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:link> ; sh:maxCount 1 .
+<urn:iki:ui:kind:name:link:property:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:link:property:href> sh:path <urn:iki:ui:property:name:href> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
