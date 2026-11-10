@@ -3,11 +3,7 @@
 
 mod common;
 
-use std::sync::Arc;
-
-use ikigai_core::{
-    AsyncFnEndpoint, EndpointSpace, Exact, Invocation, InvokeFuture, Iri, Request, Verb,
-};
+use ikigai_ui::model::Value;
 use ikigai_ui::testkit::render;
 
 #[test]
@@ -69,27 +65,64 @@ fn every_kind_has_a_template() {
 
 #[test]
 fn a_generated_form_renders_and_posts_to_its_action() {
-    // A screen that is the form generated from the contact contract.
-    let screen = AsyncFnEndpoint::new("test-screen", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
-        Box::pin(async move {
-            let iri =
-                Iri::parse(format!("{}{}", ikigai_ui::FORM_RESOURCE, common::CONTACT)).unwrap();
-            inv.issue(Request::new(Verb::Source, iri)).await
-        })
-    });
-    let extra = EndpointSpace::new().bind(Exact::new("urn:iki:ui:screen:name:contact"), screen);
-    let kernel = common::kernel(common::root(
-        None,
-        vec![Arc::new(extra), Arc::new(common::form_models())],
-    ));
+    // The contact contract at an http URL: the form's action is that URL.
+    let kernel = common::form_host(common::CONTACT);
     let html = render::source(&kernel, "urn:iki:ui:html:screen:contact", &[]).unwrap();
     assert!(
         html.starts_with("<form id=\"ui-n\" class=\"ui-form\" method=\"post\""),
         "{html}"
     );
-    assert!(html.contains("hx-post=\""), "{html}");
+    assert_eq!(common::attribute(&html, "action"), common::CONTACT);
+    assert_eq!(common::attribute(&html, "hx-post"), common::CONTACT);
     assert!(html.contains("<input id=\"ui-n.0\""), "{html}");
     assert!(html.contains("<button type=\"submit\""), "{html}");
+}
+
+#[test]
+fn a_form_from_a_urn_contract_posts_to_the_door_url_for_its_resource() {
+    // No action: the resource reaches the door through the html descriptor's submit rule.
+    let kernel = common::form_host(common::CONTACT_URN);
+    let html = render::source(&kernel, "urn:iki:ui:html:screen:contact", &[]).unwrap();
+    let door = "/resolution/iri/urn%3Ademo%3Acontact";
+    assert!(html.starts_with("<form id=\"ui-n\""), "{html}");
+    assert_eq!(common::attribute(&html, "method"), "post");
+    assert_eq!(common::attribute(&html, "action"), door);
+    assert_eq!(common::attribute(&html, "hx-post"), door);
+}
+
+#[test]
+fn a_host_overrides_the_submit_rule_from_its_directory() {
+    let dir = common::scratch("submit-rule");
+    let rule = include_str!("../assets/target/html.json")
+        .replace("/resolution/iri/{resource}", "/door/{+resource}");
+    std::fs::create_dir_all(dir.join("target")).unwrap();
+    std::fs::write(dir.join("target/html.json"), rule).unwrap();
+    let kernel = common::form_host_in(Some(&dir), common::CONTACT_URN);
+    let html = render::source(&kernel, "urn:iki:ui:html:screen:contact", &[]).unwrap();
+    assert_eq!(common::attribute(&html, "action"), "/door/urn:demo:contact");
+}
+
+#[test]
+fn the_html_face_refuses_a_form_verb_it_has_no_method_for() {
+    for verb in ["new", "delete"] {
+        let node = ikigai_ui::model::Node {
+            kind: "form".into(),
+            replacement: None,
+            properties: [
+                ("label".to_string(), Value::Text("Make".into())),
+                ("resource".to_string(), Value::Text("urn:demo:thing".into())),
+                ("verb".to_string(), Value::Text(verb.into())),
+            ]
+            .into_iter()
+            .collect(),
+            children: Vec::new(),
+        };
+        let err = ikigai_ui::html::form_method(&node).unwrap_err();
+        assert!(
+            matches!(&err, ikigai_core::Error::InvalidArgument { name, detail } if name == "verb" && detail.contains(verb)),
+            "{err}"
+        );
+    }
 }
 
 #[test]

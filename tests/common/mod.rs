@@ -203,6 +203,11 @@ pub fn snapshots() -> PathBuf {
 
 pub const CONTACT: &str = "http://example.org/contact";
 pub const CONTACT_FLAT: &str = "http://example.org/contact-flat";
+/// The contact resource by a `urn:` name, which a door reaches only through a route: its
+/// form has a `resource` and no `action`. Its Sink records each `name` it is sent in [`SUNK`].
+pub const CONTACT_URN: &str = "urn:demo:contact";
+/// The `name` of every message [`CONTACT_URN`]'s Sink accepted.
+pub static SUNK: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 pub const OPENAPI: &str = "urn:demo:openapi";
 const XSD: &str = "http://www.w3.org/2001/XMLSchema#";
 /// What writing to the contact resources requires.
@@ -270,25 +275,14 @@ pub const OPENAPI_DOC: &str = r##"{
 /// The models: the contact resource, its per-verb form (its Source reads `q`, its Sink the
 /// contact inputs), the same Sink authored flat, and the OpenAPI document.
 pub fn form_models() -> EndpointSpace {
-    let contact = Description::new("demo-contact")
-        .title("Contact")
-        .summary("The contact resource.")
-        .verb(Verb::Source)
-        .verb(Verb::Sink)
-        .verb(Verb::Meta)
-        .action(
-            ikigai_core::ActionSpec::new(Verb::Source)
-                .input(ArgSpec::new("q").class(XSD_STRING).optional())
-                .output("text/plain"),
-        );
-    let sink = contact_inputs().into_iter().fold(
-        ikigai_core::ActionSpec::new(Verb::Sink)
-            .summary("Send us a message.")
-            .requires(CONTACT_WRITE)
-            .output("text/plain"),
-        |a, i| a.input(i),
-    );
-    let contact = contact.action(sink);
+    let by_urn = contact_description("demo-contact-urn");
+    let sunk = |inv: &Invocation<'_>| {
+        if inv.request.verb == Verb::Sink {
+            let name = String::from_utf8_lossy(inv.inline_arg("name")?).into_owned();
+            SUNK.lock().unwrap().push(name);
+        }
+        accepted(inv)
+    };
     let flat = contact_inputs().into_iter().fold(
         Description::new("demo-contact-flat")
             .title("Contact")
@@ -302,7 +296,12 @@ pub fn form_models() -> EndpointSpace {
     EndpointSpace::new()
         .bind(
             Exact::new(CONTACT),
-            FnEndpoint::new("demo-contact", accepted).with_description(contact),
+            FnEndpoint::new("demo-contact", accepted)
+                .with_description(contact_description("demo-contact")),
+        )
+        .bind(
+            Exact::new(CONTACT_URN),
+            FnEndpoint::new("demo-contact-urn", sunk).with_description(by_urn),
         )
         .bind(
             Exact::new(CONTACT_FLAT),
@@ -326,4 +325,57 @@ pub fn form_models() -> EndpointSpace {
                     .output("application/json"),
             ),
         )
+}
+
+/// The contact resource's description: its Source reads `q`, its Sink the contact inputs.
+fn contact_description(id: &str) -> Description {
+    let contact = Description::new(id)
+        .title("Contact")
+        .summary("The contact resource.")
+        .verb(Verb::Source)
+        .verb(Verb::Sink)
+        .verb(Verb::Meta)
+        .action(
+            ikigai_core::ActionSpec::new(Verb::Source)
+                .input(ArgSpec::new("q").class(XSD_STRING).optional())
+                .output("text/plain"),
+        );
+    let sink = contact_inputs().into_iter().fold(
+        ikigai_core::ActionSpec::new(Verb::Sink)
+            .summary("Send us a message.")
+            .requires(CONTACT_WRITE)
+            .output("text/plain"),
+        |a, i| a.input(i),
+    );
+    contact.action(sink)
+}
+
+/// A host whose screen `urn:iki:ui:screen:name:contact` is the form generated from
+/// `resource`'s contract (`urn:iki:ui:form:resource:{resource}`).
+pub fn form_host(resource: &'static str) -> Kernel {
+    form_host_in(None, resource)
+}
+
+/// [`form_host`], with a UI directory.
+pub fn form_host_in(dir: Option<&Path>, resource: &'static str) -> Kernel {
+    let screen = ikigai_core::AsyncFnEndpoint::new(
+        "test-screen",
+        move |inv: &Invocation<'_>| -> ikigai_core::InvokeFuture<'_> {
+            Box::pin(async move {
+                let iri = Iri::parse(format!("{}{resource}", ikigai_ui::FORM_RESOURCE)).unwrap();
+                inv.issue(Request::new(Verb::Source, iri)).await
+            })
+        },
+    );
+    let extra = EndpointSpace::new().bind(Exact::new("urn:iki:ui:screen:name:contact"), screen);
+    kernel(root(dir, vec![Arc::new(extra), Arc::new(form_models())]))
+}
+
+/// The value of the first `name="…"` attribute in `html`.
+pub fn attribute<'a>(html: &'a str, name: &str) -> &'a str {
+    let at = html
+        .find(&format!(" {name}=\""))
+        .unwrap_or_else(|| panic!("no {name} in {html}"));
+    let rest = &html[at + name.len() + 3..];
+    &rest[..rest.find('"').unwrap()]
 }

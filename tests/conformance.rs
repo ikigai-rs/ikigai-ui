@@ -166,6 +166,18 @@ fn conforms() {
             "a test model of a form's resource: a form posts its fields as named arguments, \
              not one `content`; it is never a pipeline stage",
         )
+        .opt_out_check(
+            "demo-contact-urn",
+            Check::Outputs,
+            "a test model: the form reads its contract (Meta); tests/door.rs fires its Sink \
+             through a door, which records the name it was sent",
+        )
+        .opt_out_check(
+            "demo-contact-urn",
+            Check::Pipeline,
+            "a test model of a form's resource: a form posts its fields as named arguments, \
+             not one `content`; it is never a pipeline stage",
+        )
         .body_space(root)
         .run_blocking(&kernel);
     println!("{report}");

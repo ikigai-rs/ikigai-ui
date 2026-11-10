@@ -28,6 +28,7 @@
     "visual"
   ],
   "fallback": {},
+  "submit": "/resolution/iri/{resource}",
   "limits": {
     "table": {
       "max_rows": 1000,

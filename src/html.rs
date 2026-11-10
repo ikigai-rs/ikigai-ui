@@ -276,6 +276,46 @@ fn property(node: &Node, name: &str) -> Option<String> {
     }
 }
 
+fn text_of<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
+    match node.properties.get(name) {
+        Some(Value::Text(s)) => Some(s),
+        _ => None,
+    }
+}
+
+/// A form's submit URL: its `action` when it has one, else its `resource` through the `html`
+/// descriptor's submit rule ([`crate::target::Descriptor::submit`]).
+async fn submit(inv: &Invocation<'_>, node: &Node) -> Result<Option<String>, Error> {
+    if let Some(action) = text_of(node, "action") {
+        return Ok(Some(action.to_string()));
+    }
+    let Some(resource) = text_of(node, "resource") else {
+        return Ok(None);
+    };
+    let descriptor = crate::target::read_descriptor(inv, "html").await?;
+    Ok(descriptor.submit_url(resource))
+}
+
+/// A form's HTTP method: its `method` when it has one, else from its `verb` the way the
+/// ikigai-web door maps methods to verbs: `source` is GET and `sink` (the default) POST. An
+/// HTML form has no method for `new` or `delete`, so the html face refuses them.
+pub fn form_method(node: &Node) -> Result<String, Error> {
+    if let Some(method) = text_of(node, "method") {
+        return Ok(method.to_string());
+    }
+    match text_of(node, "verb") {
+        None | Some("sink") => Ok("post".into()),
+        Some("source") => Ok("get".into()),
+        Some(verb) => Err(Error::InvalidArgument {
+            name: "verb".into(),
+            detail: format!(
+                "the html face submits a form by GET (source) or POST (sink); an HTML form has \
+                 no method for {verb}"
+            ),
+        }),
+    }
+}
+
 pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
     AsyncFnEndpoint::new(
         "ui-html-property",
@@ -285,8 +325,13 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                 let at = inv.bindings.get("node").unwrap_or_default();
                 let (node, _) = locate(&root, at)?;
                 let name = inv.bindings.get("property").unwrap_or_default();
-                let value = property(node, name)
-                    .ok_or_else(|| Error::NotFound(format!("{at}: no property {name}")))?;
+                let value = match (node.kind.as_str(), name) {
+                    ("form", "submit") => submit(inv, node).await?,
+                    ("form", "method") => Some(form_method(node)?),
+                    _ => property(node, name),
+                };
+                let value =
+                    value.ok_or_else(|| Error::NotFound(format!("{at}: no property {name}")))?;
                 Ok(Representation::new(ReprType::new(crate::TEXT), value.into_bytes()).cacheable())
             })
         },
@@ -297,7 +342,9 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
             .summary(
                 "One property of a screen's node as plain text, for a kind template to splice \
                  escaped. `fallback` is the kind's fallback text and `invalid` whether the node \
-                 carries an error; an absent property is NotFound unless the kind defaults it.",
+                 carries an error; a form's `submit` is its action, else its resource through \
+                 the html descriptor's submit rule, and its `method` get or post from its verb; \
+                 an absent property is NotFound unless the kind defaults it.",
             )
             .verb(Verb::Source)
             .verb(Verb::Meta)

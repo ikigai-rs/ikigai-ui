@@ -71,6 +71,10 @@ base64 = "0.22"
 # The test hosts' Meta renderer, as a real host configures one: the forms (ledger #3354) read a
 # resource's contract as Meta `as=application/json`. 0.3 is the release on ikigai-core 0.3.
 ikigai-vocab = "0.3"
+# tests/door.rs: a form generated from a `urn:` contract submits through a real ikigai-web door
+# to the resource's Sink. 0.4.0 is the release on ikigai-core 0.3.0; <0.5.0.
+ikigai-web = "0.4.0"
+tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
 
 [package.metadata.docs.rs]
 # Document the test kit too.
