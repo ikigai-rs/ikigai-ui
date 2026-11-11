@@ -171,6 +171,13 @@ impl TextInput {
         cx.notify()
     }
 
+    fn invalidate_layout(&mut self) {
+        // Shaped glyph indices belong to the old UTF-8 text. Until the next paint,
+        // neither pointer hit-testing nor IME geometry may reuse those indices.
+        self.last_layout.clear();
+        self.last_bounds = None;
+    }
+
     fn cursor_offset(&self) -> usize {
         if self.selection_reversed {
             self.selected_range.start
@@ -341,6 +348,8 @@ impl EntityInputHandler for TextInput {
                 .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
+        self.selection_reversed = false;
+        self.invalidate_layout();
         cx.notify();
     }
 
@@ -386,6 +395,8 @@ impl EntityInputHandler for TextInput {
             })
             .map(|new_range| new_range.start + range.start..new_range.end + range.start)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
+        self.selection_reversed = false;
+        self.invalidate_layout();
 
         cx.notify();
     }
@@ -691,4 +702,79 @@ pub(super) fn bind_keys(cx: &mut App) {
         KeyBinding::new("end", End, Some("TextInput")),
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, Some("TextInput")),
     ]);
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+    use gpui::TestAppContext;
+
+    #[gpui::test]
+    fn ime_selection_replaces_the_direction_of_a_backward_selection(cx: &mut TestAppContext) {
+        let (input, cx) = cx.add_window_view(|_, cx| TextInput::new("before 🦀 after", cx));
+        cx.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                // Select backward, then let the IME replace that selection with marked text.
+                input.select_to(7, cx);
+                assert!(input.selection_reversed);
+                input.replace_and_mark_text_in_range(None, "e\u{301}🦀", Some(2..4), window, cx);
+                assert_eq!(input.content.as_ref(), "before e\u{301}🦀");
+                assert_eq!(input.marked_range, Some(7..14));
+                assert_eq!(input.selected_range, 10..14);
+                let selected = input.selected_text_range(false, window, cx).unwrap();
+                assert_eq!(selected.range, 9..11);
+                assert!(!selected.reversed, "the IME supplied a forward selection");
+                assert_eq!(input.cursor_offset(), 14);
+                // Shift-left must shrink the IME selection from its active end.
+                input.select_left(&SelectLeft, window, cx);
+                assert_eq!(input.selected_range, 10..10);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn edits_do_not_hit_test_unicode_with_an_old_ascii_layout(cx: &mut TestAppContext) {
+        let (input, cx) = cx.add_window_view(|_, cx| TextInput::new("abcd", cx));
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                let bounds = input.last_bounds.expect("input was painted");
+                let x = input.last_layout[0].shaped.x_for_index(1);
+                let position = point(bounds.left() + x, bounds.top() + px(1.));
+                // Input and pointer events can arrive before the next paint. Byte 1 of
+                // the previous ASCII layout is inside the newly inserted emoji.
+                input.replace_text_in_range(Some(0..4), "🦀", window, cx);
+                let offset = input.index_for_mouse_position(position);
+                input.move_to(offset, cx);
+                input.backspace(&Backspace, window, cx);
+                assert_eq!(input.content.as_ref(), "🦀");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn grapheme_deletion_and_large_multiline_paste_keep_valid_ranges(cx: &mut TestAppContext) {
+        let (input, cx) = cx.add_window_view(|_, cx| TextInput::new("e\u{301}🦀\n日本語", cx));
+        cx.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                input.multiline = true;
+                input.move_to(7, cx); // after the combining cluster and the emoji
+                input.backspace(&Backspace, window, cx);
+                assert_eq!(input.content.as_ref(), "e\u{301}\n日本語");
+                assert_eq!(input.selected_range, 3..3);
+                input.backspace(&Backspace, window, cx);
+                assert_eq!(input.content.as_ref(), "\n日本語");
+                assert_eq!(input.selected_range, 0..0);
+                input.delete(&Delete, window, cx);
+                assert_eq!(input.content.as_ref(), "日本語");
+                input.select_all(&SelectAll, window, cx);
+                let pasted = "e\u{301}🦀\n日本語\n".repeat(10000);
+                cx.write_to_clipboard(ClipboardItem::new_string(pasted.clone()));
+                input.paste(&Paste, window, cx);
+                assert_eq!(input.content.as_ref(), pasted);
+                assert_eq!(input.selected_range, pasted.len()..pasted.len());
+                assert!(!input.selection_reversed);
+            });
+        });
+    }
 }

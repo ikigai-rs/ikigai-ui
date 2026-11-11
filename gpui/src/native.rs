@@ -631,6 +631,67 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_late_old_load_cannot_replace_the_newer_snapshot(cx: &mut TestAppContext) {
+        let (started, start) = mpsc::channel();
+        let (finished, finish) = mpsc::channel();
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let gate = release.clone();
+        let space = EndpointSpace::new()
+            .bind(
+                Exact::new("urn:iki:ui:face:target:gpui:screen:old"),
+                FnEndpoint::new("old-face", move |_: &Invocation<'_>| {
+                    started.send(()).unwrap();
+                    gate.wait();
+                    finished.send(()).unwrap();
+                    Ok(Representation::new(
+                        ReprType::new(ikigai_ui::model::MEDIA_TYPE),
+                        br#"{"kind":"text","properties":{"content":"Old"}}"#.to_vec(),
+                    ))
+                }),
+            )
+            .bind(
+                Exact::new("urn:iki:ui:face:target:gpui:screen:new"),
+                FnEndpoint::new("new-face", |_: &Invocation<'_>| {
+                    Ok(Representation::new(
+                        ReprType::new(ikigai_ui::model::MEDIA_TYPE),
+                        br#"{"kind":"text","properties":{"content":"New"}}"#.to_vec(),
+                    ))
+                }),
+            );
+        let worker = Worker::new(
+            Arc::new(ikigai_core::Kernel::new(Arc::new(space))),
+            Capability::root(),
+            Scope::empty(),
+        );
+        let (screen, cx) = cx.add_window_view(|_, cx| Screen::new(worker, "old", cx));
+        start.recv_timeout(Duration::from_secs(2)).unwrap();
+        screen.update(cx, |s, cx| s.load("new", cx));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if screen.update(cx, |s, cx| {
+                s.poll(cx);
+                s.loading.is_none()
+            }) {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // Let the older request finish only after the newer face is visible.
+        release.wait();
+        finish.recv_timeout(Duration::from_secs(2)).unwrap();
+        cx.run_until_parked();
+        screen.update(cx, |s, cx| {
+            s.poll(cx);
+            assert!(s.loading.is_none());
+            assert_eq!(
+                text(s.snapshot.as_ref().unwrap().root(), "content"),
+                Some("New")
+            );
+        });
+    }
+
+    #[gpui::test]
     fn contact_inputs_submit_and_keep_values_after_field_refusal(cx: &mut TestAppContext) {
         let store = ikigai_ui_demo::Store::default();
         let root = Arc::new(Fallback::new(vec![
@@ -654,10 +715,34 @@ mod tests {
             assert!(Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(5));
         }
+        // The composed screen can wrap the generated form in groups. Locate controls
+        // by their model identity instead of assuming the form is the screen root.
+        fn path_to(node: &Node, path: &str, kind: &str, name: Option<&str>) -> Option<String> {
+            if node.kind == kind && name.is_none_or(|name| text(node, "name") == Some(name)) {
+                return Some(path.to_string());
+            }
+            node.children
+                .iter()
+                .enumerate()
+                .find_map(|(i, child)| path_to(child, &format!("{path}/{i}"), kind, name))
+        }
+        let (name_path, email_path, message_path, choice_path, submit_path, form_path) = screen
+            .update(cx, |s, _| {
+                let root = s.snapshot.as_ref().expect(&s.message).root();
+                let path = |kind, name| path_to(root, "/", kind, name).unwrap();
+                (
+                    path("field", Some("name")),
+                    path("field", Some("email")),
+                    path("field", Some("message")),
+                    path("choice", Some("topic")),
+                    path("button", None),
+                    path("form", None),
+                )
+            });
         for (path, value) in [
-            ("//0", "Ada"),
-            ("//1", "invalid"),
-            ("//3", "Hello from GPUI"),
+            (name_path.as_str(), "Ada"),
+            (email_path.as_str(), "invalid"),
+            (message_path.as_str(), "Hello from GPUI"),
         ] {
             let input = screen.update(cx, |s, _| s.inputs[path].clone());
             cx.update(|window, cx| window.focus(&input.focus_handle(cx)));
@@ -665,16 +750,16 @@ mod tests {
         }
         cx.simulate_keystrokes("enter");
         cx.simulate_input("Second line 🦀");
-        let choice_focus = screen.update(cx, |s, _| s.focus["//2/1"].clone());
+        let choice_focus = screen.update(cx, |s, _| s.focus[&format!("{choice_path}/1")].clone());
         cx.update(|window, _| window.focus(&choice_focus));
         cx.simulate_keystrokes("space");
-        let submit_focus = screen.update(cx, |s, _| s.focus["//4"].clone());
+        let submit_focus = screen.update(cx, |s, _| s.focus[&submit_path].clone());
         cx.update(|window, _| window.focus(&submit_focus));
         cx.simulate_keystrokes("enter");
         loop {
             if screen.update(cx, |s, cx| {
                 s.poll(cx);
-                s.forms["/"].pending.is_none()
+                s.forms[&form_path].pending.is_none()
             }) {
                 break;
             }
@@ -683,15 +768,18 @@ mod tests {
         }
         cx.update(|_, cx| {
             let screen = screen.read(cx);
-            assert!(screen.forms["/"].feedback.fields.contains_key("email"));
-            assert_eq!(screen.inputs["//0"].read(cx).content.as_ref(), "Ada");
+            assert!(screen.forms[&form_path]
+                .feedback
+                .fields
+                .contains_key("email"));
+            assert_eq!(screen.inputs[&name_path].read(cx).content.as_ref(), "Ada");
             assert_eq!(
-                screen.inputs["//3"].read(cx).content.as_ref(),
+                screen.inputs[&message_path].read(cx).content.as_ref(),
                 "Hello from GPUI\nSecond line 🦀"
             );
         });
         assert!(store.lock().unwrap().is_empty());
-        let input = screen.update(cx, |s, _| s.inputs["//1"].clone());
+        let input = screen.update(cx, |s, _| s.inputs[&email_path].clone());
         cx.update(|window, cx| window.focus(&input.focus_handle(cx)));
         cx.simulate_keystrokes("cmd-a");
         cx.simulate_input("ada@example.org");
@@ -700,7 +788,7 @@ mod tests {
         loop {
             if screen.update(cx, |s, cx| {
                 s.poll(cx);
-                s.forms["/"].pending.is_none()
+                s.forms[&form_path].pending.is_none()
             }) {
                 break;
             }
@@ -708,15 +796,16 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(store.lock().unwrap().len(), 1);
+        assert_eq!(store.lock().unwrap()[0].topic, "feedback");
         assert_eq!(
             store.lock().unwrap()[0].message,
             "Hello from GPUI\nSecond line 🦀"
         );
         // Tab traversal reaches the first field and then the email field.
-        let first = screen.update(cx, |s, _| s.inputs["//0"].clone());
+        let first = screen.update(cx, |s, _| s.inputs[&name_path].clone());
         cx.update(|window, cx| window.focus(&first.focus_handle(cx)));
         cx.simulate_keystrokes("tab");
         cx.update(|window, cx| assert!(input.focus_handle(cx).is_focused(window)));
-        cx.update(|_, cx| assert!(screen.read(cx).forms["/"].feedback.fields.is_empty()));
+        cx.update(|_, cx| assert!(screen.read(cx).forms[&form_path].feedback.fields.is_empty()));
     }
 }
