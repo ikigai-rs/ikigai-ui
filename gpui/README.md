@@ -59,15 +59,19 @@ RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps
 ```
 
 The portable integration tests exercise real target faces and the existing demo
-Sink, field refusals, capability denial, and vocabulary rejection. A synchronous
-composition that sleeps for five seconds runs on a different OS thread while
+Sink, exact named Unicode values, field refusals, capability denial, vocabulary
+rejection, and model size/depth bounds. A synchronous composition that sleeps for
+five seconds runs on a different OS thread while
 nonblocking polling continues.
 
-On macOS, three GPUI tests create test windows, draw the entire gallery, exercise
+On macOS, GPUI tests create test windows, draw the entire gallery, exercise
 boolean controls, and enter native text while the five-second composition is
 executing. They also exercise contact form editing, multiline Unicode input,
 keyboard choice selection/submission, field refusals, retained values and focus
-traversal. These pass locally with the same test command.
+traversal. Input regressions cover stale layout byte offsets after Unicode edits,
+IME selection direction, grapheme deletion and large multiline pastes. Navigation
+tests ensure a late older load cannot replace a newer snapshot. These pass locally
+with the same test command.
 
 The repository's stock Linux CI compiles the native walker, runs the portable
 worker tests and existing repository tests, and checks MSRV, wasm, docs and HTML

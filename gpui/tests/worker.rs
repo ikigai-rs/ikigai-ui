@@ -186,3 +186,62 @@ fn five_second_composition_never_runs_on_the_polling_thread() {
     );
     assert!(before.elapsed() >= Duration::from_secs(5));
 }
+
+#[test]
+fn snapshot_validation_bounds_the_native_walkers_inputs() {
+    for invalid in [
+        serde_json::json!({"kind":"field", "properties":{"label":"Missing name"}}),
+        serde_json::json!({"kind":"heading", "properties":{"content":"Bad level", "level":i64::MAX}}),
+        serde_json::json!({"kind":"choice", "properties":{"label":"Bad option", "name":"topic"},
+            "children":[{"kind":"text", "properties":{"content":"Not an option"}}]}),
+        serde_json::json!({"kind":"link", "properties":{"label":"Code", "href":"javascript:alert(1)"}}),
+        serde_json::json!({"kind":"table", "properties":{"caption":"Bad row"},
+            "children":[{"kind":"field", "properties":{"label":"Not a row", "name":"row"}}]}),
+    ] {
+        assert!(Snapshot::from_face(&serde_json::to_vec(&invalid).unwrap()).is_err());
+    }
+    let empty_table = br#"{"kind":"table","properties":{"caption":"No rows"}}"#;
+    assert!(Snapshot::from_face(empty_table).is_ok());
+    let mut deep = r#"{"kind":"text","properties":{"content":"Leaf"}}"#.to_string();
+    for _ in 0..model::MAX_DEPTH {
+        deep =
+            format!(r#"{{"kind":"group","properties":{{"label":"Nested"}},"children":[{deep}]}}"#);
+    }
+    assert!(Snapshot::from_face(deep.as_bytes()).is_err());
+    let huge =
+        serde_json::json!({"kind":"text", "properties":{"content":"x".repeat(model::MAX_BYTES)}});
+    assert!(Snapshot::from_face(&serde_json::to_vec(&huge).unwrap()).is_err());
+}
+
+#[test]
+fn submission_preserves_each_named_value_as_utf8_bytes() {
+    let (sent, received) = mpsc::channel();
+    let sink = EndpointSpace::new().bind(
+        Exact::new("urn:test:native-values"),
+        FnEndpoint::new("native-values", move |inv: &Invocation<'_>| {
+            let values: BTreeMap<String, String> = ["z-last", "a-first", "topic", "message"]
+                .into_iter()
+                .map(|name| Ok((name.to_string(), inv.inline_str(name)?.to_string())))
+                .collect::<Result<_, Error>>()?;
+            sent.send(values).unwrap();
+            Ok(Representation::new(ReprType::new("text/plain"), Vec::new()))
+        }),
+    );
+    let worker = Worker::new(
+        Arc::new(Kernel::new(Arc::new(sink))),
+        Capability::root(),
+        Scope::empty(),
+    );
+    let form = model::parse(br#"{"kind":"form","properties":{"label":"Values","resource":"urn:test:native-values","verb":"sink"}}"#).unwrap();
+    let values = BTreeMap::from([
+        ("z-last".into(), "🦀 e\u{301}".into()),
+        ("a-first".into(), "".into()),
+        ("topic".into(), "stored-value-not-the-label".into()),
+        ("message".into(), "line one\n日本語\n".repeat(10000)),
+    ]);
+    wait(&worker.submit(&form, values.clone())).unwrap();
+    assert_eq!(
+        received.recv_timeout(Duration::from_secs(2)).unwrap(),
+        values
+    );
+}
