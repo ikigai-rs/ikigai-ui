@@ -77,8 +77,9 @@ base64 = "0.22"
 # resource's contract as Meta `as=application/json`. 0.3 is the release on ikigai-core 0.3.
 ikigai-vocab = "0.3"
 # tests/door.rs: a form generated from a `urn:` contract submits through a real ikigai-web door
-# to the resource's Sink. 0.4.0 is the release on ikigai-core 0.3.0; <0.5.0.
-ikigai-web = "0.4.0"
+# to the resource's Sink. 0.5.0 is the current door release, still on ikigai-core 0.3;
+# a caret on it is <0.6.0.
+ikigai-web = "0.5.0"
 tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
 # tests/screen.rs binds prefix tables with `DynamicSpace::refresh`, behind `declare` (ledger #3365).
 ikigai-core = { version = "0.3.0", features = ["declare"] }
