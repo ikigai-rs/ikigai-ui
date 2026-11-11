@@ -58,6 +58,93 @@ fn fixed(id: &'static str, media: &'static str, body: serde_json::Value) -> FnEn
     )
 }
 
+const JSON_LD: &str = "application/ld+json";
+
+/// The Thing shape as Turtle, the way a SHACL author writes it.
+const TURTLE_SHAPE: &str = r#"@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix demo: <urn:demo:> .
+demo:ThingShape a sh:NodeShape ;
+    sh:targetClass demo:Thing ;
+    rdfs:label "Thing" ;
+    sh:property [ sh:path demo:friend ; sh:name "Friend" ; sh:order 2 ] ,
+        [ sh:path demo:name ; sh:name "Name" ; sh:order 1 ] ,
+        [ sh:path demo:card ; sh:name "Card" ; sh:order 3 ] .
+"#;
+
+/// The same shape as compact JSON-LD in the view's own terms.
+const COMPACT_SHAPE: &str = r#"{
+  "@context": {
+    "sh": "http://www.w3.org/ns/shacl#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "targetClass": {"@id": "sh:targetClass", "@type": "@id"},
+    "label": "rdfs:label",
+    "property": {"@id": "sh:property", "@container": "@set"},
+    "path": {"@id": "sh:path", "@type": "@id"},
+    "name": "sh:name",
+    "order": "sh:order"
+  },
+  "@id": "urn:demo:ThingShape",
+  "@type": "sh:NodeShape",
+  "targetClass": "urn:demo:Thing",
+  "label": "Thing",
+  "property": [
+    {"path": "urn:demo:friend", "name": "Friend", "order": 2},
+    {"path": "urn:demo:name", "name": "Name", "order": 1},
+    {"path": "urn:demo:card", "name": "Card", "order": 3}
+  ]
+}"#;
+
+/// The same shape as JSON-LD with other prefixes, an `@graph` and its property nodes apart.
+const PREFIXED_SHAPE: &str = r#"{
+  "@context": {"shacl": "http://www.w3.org/ns/shacl#", "s": "http://www.w3.org/2000/01/rdf-schema#"},
+  "@graph": [
+    {"@id": "urn:demo:OtherShape", "shacl:targetClass": {"@id": "urn:demo:Other"},
+     "shacl:property": {"@id": "_:x"}},
+    {"@id": "_:x", "shacl:path": {"@id": "urn:demo:hidden"}, "shacl:name": "Hidden"},
+    {"@id": "_:f", "shacl:path": {"@id": "urn:demo:friend"}, "shacl:name": "Friend", "shacl:order": 2},
+    {"@id": "urn:demo:ThingShape", "@type": "shacl:NodeShape",
+     "shacl:targetClass": {"@id": "urn:demo:Thing"}, "s:label": {"@value": "Thing", "@language": "en"},
+     "shacl:property": [{"@id": "_:f"},
+       {"shacl:path": {"@id": "urn:demo:name"}, "shacl:name": "Name", "shacl:order": 1},
+       {"shacl:path": {"@id": "urn:demo:card"}, "shacl:name": "Card", "shacl:order": 3}]}
+  ]
+}"#;
+
+/// The same shape expanded: every key a full IRI, no context.
+const EXPANDED_SHAPE: &str = r#"[{
+  "@id": "urn:demo:ThingShape",
+  "@type": ["http://www.w3.org/ns/shacl#NodeShape"],
+  "http://www.w3.org/ns/shacl#targetClass": [{"@id": "urn:demo:Thing"}],
+  "http://www.w3.org/2000/01/rdf-schema#label": [{"@value": "Thing"}],
+  "http://www.w3.org/ns/shacl#property": [
+    {"http://www.w3.org/ns/shacl#path": [{"@id": "urn:demo:card"}],
+     "http://www.w3.org/ns/shacl#name": [{"@value": "Card"}],
+     "http://www.w3.org/ns/shacl#order": [{"@value": 3}]},
+    {"http://www.w3.org/ns/shacl#path": [{"@id": "urn:demo:name"}],
+     "http://www.w3.org/ns/shacl#name": [{"@value": "Name"}],
+     "http://www.w3.org/ns/shacl#order": [{"@value": 1}]},
+    {"http://www.w3.org/ns/shacl#path": [{"@id": "urn:demo:friend"}],
+     "http://www.w3.org/ns/shacl#name": [{"@value": "Friend"}],
+     "http://www.w3.org/ns/shacl#order": [{"@value": 2}]}
+  ]
+}]"#;
+
+/// A shape served as `media`, whatever face it is asked for (as a file is).
+fn shape_at(id: &'static str, media: &'static str, body: String) -> FnEndpoint {
+    FnEndpoint::new(id, move |_: &Invocation<'_>| {
+        Ok(Representation::new(ReprType::new(media), body.clone().into_bytes()).cacheable())
+    })
+    .with_description(
+        Description::new(id)
+            .title(id)
+            .summary("A shape.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output(media),
+    )
+}
+
 fn space() -> EndpointSpace {
     let mut s = EndpointSpace::new()
         .bind(
@@ -89,21 +176,6 @@ fn space() -> EndpointSpace {
         .bind(
             Exact::new("urn:demo:card"),
             json("card", serde_json::json!({"number": SECRET}), false),
-        )
-        .bind(
-            Exact::new("urn:iki:ui:shape:type:urn:demo:Thing"),
-            fixed(
-                "thing-shape",
-                "application/ld+json",
-                serde_json::json!({
-                    "rdfs:label": "Thing",
-                    "sh:property": [
-                        {"sh:path": "friend", "sh:name": "Friend", "sh:order": 2},
-                        {"sh:path": "name", "sh:name": "Name", "sh:order": 1},
-                        {"sh:path": "card", "sh:name": "Card", "sh:order": 3}
-                    ]
-                }),
-            ),
         );
     // A chain c0 → c1 → … → c9, deeper than the bound.
     const CHAIN: [&str; 10] = [
@@ -130,7 +202,10 @@ fn space() -> EndpointSpace {
 }
 
 fn host(curated: bool) -> Kernel {
-    let mut s = space();
+    let mut s = space().bind(
+        Exact::new("urn:iki:ui:shape:type:urn:demo:Thing"),
+        shape_at("thing-shape", JSON_LD, COMPACT_SHAPE.to_string()),
+    );
     if curated {
         s = s.bind(
             Exact::new("urn:iki:ui:view:type:urn:demo:Pal"),
@@ -151,7 +226,25 @@ fn host(curated: bool) -> Kernel {
             ),
         );
     }
-    common::host_with(None, vec![Arc::new(s)])
+    common::host_with(None, vec![Arc::new(s), json_ld()])
+}
+
+/// The host's RDF and JSON-LD modules, which read a shape for the view.
+fn json_ld() -> Arc<dyn ikigai_core::Space> {
+    Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(ikigai_rdf::space()) as Arc<dyn ikigai_core::Space>,
+        Arc::new(ikigai_jsonld::space()),
+    ]))
+}
+
+/// A host whose Thing shape is `shape` (and, unless `modules` is false, the JSON-LD modules).
+fn shaped(shape: FnEndpoint, modules: bool) -> Kernel {
+    let s = space().bind(Exact::new("urn:iki:ui:shape:type:urn:demo:Thing"), shape);
+    let mut extra: Vec<Arc<dyn ikigai_core::Space>> = vec![Arc::new(s)];
+    if modules {
+        extra.push(json_ld());
+    }
+    common::host_with(None, extra)
 }
 
 fn view(kernel: &Kernel, iri: &str, cap: &Capability) -> Node {
@@ -335,4 +428,111 @@ fn a_curated_type_view_overrides_the_generated_one_and_can_start_from_it() {
     // Without a curated view, the same name is the generated one.
     let plain = view(&host(false), "urn:demo:b", &cap);
     assert_eq!(plain.properties["label"], Value::Text("Thing b".into()));
+}
+
+/// The Properties group's (kind, label or content) pairs, in order.
+fn properties(v: &Node) -> Vec<String> {
+    let props = v
+        .children
+        .iter()
+        .find(|c| c.properties.get("label") == Some(&Value::Text("Properties".into())))
+        .expect("a properties group");
+    props
+        .children
+        .iter()
+        .map(|c| {
+            let p = c.properties.get("label").or(c.properties.get("content"));
+            format!("{} {p:?}", c.kind)
+        })
+        .collect()
+}
+
+#[test]
+fn a_shape_reads_the_same_as_turtle_compact_json_ld_other_prefixes_or_expanded() {
+    let cap = Capability::scoped([WRITE, CARD]);
+    let forms = [
+        ("turtle", "text/turtle", TURTLE_SHAPE),
+        ("compact", JSON_LD, COMPACT_SHAPE),
+        ("prefixed", JSON_LD, PREFIXED_SHAPE),
+        ("expanded", JSON_LD, EXPANDED_SHAPE),
+    ];
+    let views: Vec<(&str, Node)> = forms
+        .iter()
+        .map(|(id, media, body)| {
+            let kernel = shaped(shape_at(id, media, body.to_string()), true);
+            (*id, view(&kernel, "urn:demo:a", &cap))
+        })
+        .collect();
+    for (id, v) in &views {
+        let t = texts(v);
+        assert_eq!(
+            properties(v),
+            [
+                "text Some(Text(\"Name: Alpha\"))",
+                "group Some(Text(\"Friend\"))",
+                "group Some(Text(\"Card\"))",
+            ],
+            "{id}: {t:?}"
+        );
+        assert!(
+            !t.iter().any(|s| s.contains("not in the shape")),
+            "{id}: {t:?}"
+        );
+        assert!(
+            !t.iter().any(|s| s.contains("could not be read")),
+            "{id}: {t:?}"
+        );
+    }
+    let first = serde_json::to_value(&views[0].1).unwrap();
+    for (id, v) in &views[1..] {
+        assert_eq!(serde_json::to_value(v).unwrap(), first, "{id}");
+    }
+}
+
+#[test]
+fn a_shape_that_cannot_be_read_as_json_ld_is_a_note_not_silence() {
+    let cap = Capability::scoped([WRITE, CARD]);
+    let cases = [
+        // No transreptor reads it as JSON-LD.
+        (
+            shaped(shape_at("plain", "text/plain", "a shape?".into()), true),
+            "nothing here reads as JSON-LD",
+        ),
+        // JSON-LD that does not compact.
+        (
+            shaped(
+                shape_at("broken", JSON_LD, "{\"@context\": 7}".into()),
+                true,
+            ),
+            "does not flatten",
+        ),
+        // A host with no JSON-LD compaction (nor a Turtle transreptor).
+        (
+            shaped(shape_at("ttl", "text/turtle", TURTLE_SHAPE.into()), false),
+            "could not be read",
+        ),
+        // The old informal keys, with no context: `sh:` is not SHACL there.
+        (
+            shaped(
+                shape_at(
+                    "informal",
+                    JSON_LD,
+                    r#"{"sh:property": [{"sh:path": "name", "sh:name": "Name"}]}"#.into(),
+                ),
+                true,
+            ),
+            "IRI confused with prefix",
+        ),
+    ];
+    for (kernel, why) in cases {
+        let v = view(&kernel, "urn:demo:a", &cap);
+        let t = texts(&v);
+        let note = t
+            .iter()
+            .find(|s| s.starts_with("The shape for urn:demo:Thing could not be read: "))
+            .unwrap_or_else(|| panic!("no note ({why}): {t:?}"));
+        assert!(note.contains(why), "{note}");
+        // The view shows as if there were no shape: every property, under its key.
+        assert!(t.iter().any(|s| s == "hidden: not in the shape"), "{t:?}");
+    }
 }
