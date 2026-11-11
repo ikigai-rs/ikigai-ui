@@ -73,6 +73,12 @@ IME selection direction, grapheme deletion and large multiline pastes. Navigatio
 tests ensure a late older load cannot replace a newer snapshot. These pass locally
 with the same test command.
 
+The test platform shapes text with its own text system, so these tests cannot see
+whether a real window draws any. That depends on GPUI's `font-kit` feature, which
+this crate enables on macOS by name because it turns GPUI's defaults off; without
+it every window drew boxes and no text. `tests/text_system.rs` pins that line.
+Look at the demo's windows after any change to the GPUI dependency.
+
 The repository's stock Linux CI compiles the native walker, runs the portable
 worker tests and existing repository tests, and checks MSRV, wasm, docs and HTML
 accessibility. Window tests stay on macOS: GPUI's `test-support` feature forces
