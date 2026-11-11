@@ -58,7 +58,12 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Install Chromium
         working-directory: .ikigai-ui-checker/axe
-        run: npx playwright install --with-deps chromium
+        # `--with-deps` installs Chromium's system packages with apt. When the runner cannot reach
+        # Ubuntu's mirrors (2026-11-11: `Temporary failure resolving 'security.ubuntu.com'` for hours,
+        # failing every caller before axe ran), fall back to Chromium alone: GitHub's Ubuntu image
+        # already carries the libraries Chrome needs. A missing library still fails the launch, loudly,
+        # in the axe step; this only stops a mirror outage from looking like an accessibility failure.
+        run: npx playwright install --with-deps chromium || { echo "::warning::apt deps unavailable; installing Chromium alone"; npx playwright install chromium; }
       - name: Write the site
         run: ${{ inputs.prepare }}
       - name: axe
