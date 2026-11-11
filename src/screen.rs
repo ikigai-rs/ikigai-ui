@@ -27,7 +27,9 @@
 //!
 //! **Overrides** merge into the referenced node's properties and are checked against its kind:
 //! a generated form can be relabeled, but a property its kind does not have is refused. Every
-//! error is `InvalidArgument` naming the screen and the source line.
+//! error is `InvalidArgument` naming the screen and the source line. A reference line inside a
+//! `region` is refused: it would be read here, in the screen's space under the caller's whole
+//! grant; a `reference` node there resolves in the region's narrowed space ([`crate::region`]).
 //!
 //! ## Prefixes: ikigai-fn's, not a second expander
 //!
@@ -628,12 +630,26 @@ pub async fn compile(
     }
     let this = screen.strip_prefix(SCREEN_PREFIX).unwrap_or(screen);
     let mut wanted: Vec<(usize, &str)> = Vec::new();
-    let mut stack = vec![&outline.root];
-    while let Some(line) = stack.pop() {
+    let mut stack = vec![(&outline.root, false)];
+    while let Some((line, in_region)) = stack.pop() {
         if let Head::Reference(name) = &line.head {
+            // Read here, it would be read in the screen's space under the caller's whole grant,
+            // and a region's interior resolves in its narrowed space (ledger #3410).
+            if in_region {
+                return Err(at_unit(
+                    screen,
+                    outline.unit,
+                    line.number,
+                    format!(
+                        "`{name}` inside a region would be read outside it; write a \
+                         `reference` node, which resolves in the region's space"
+                    ),
+                ));
+            }
             wanted.push((line.number, name));
         }
-        stack.extend(line.children.iter());
+        let in_region = in_region || line.head == Head::Kind(crate::region::KIND);
+        stack.extend(line.children.iter().map(|c| (c, in_region)));
     }
     wanted.sort();
     let mut references: BTreeMap<String, (Node, usize)> = BTreeMap::new();

@@ -531,6 +531,12 @@ async fn table(
     let Some(columns) = layout else {
         return Ok(None);
     };
+    // The table, its header and every row with its cells, before any row is read: one that
+    // would cross the node bound is the list, whose items past it are links.
+    let size = 1 + (items.len() + 1) * (columns.len() + 1);
+    if walk.nodes + size > MAX_NODES {
+        return Ok(None);
+    }
     let header = node(
         "group",
         vec![("label", t("Headers")), ("header", t("column"))],

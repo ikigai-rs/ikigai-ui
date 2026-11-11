@@ -9,6 +9,9 @@
 //!   only the names in `allow` and the screen's settings ([`crate::setting::NAMES`]), with the
 //!   ROOT cut off. A reference, a custom element's definition or anything an expansion reads
 //!   outside it is `Unresolved`: the root endpoint is never entered, and the face refuses.
+//!   An outline's reference LINE inside a region is refused when the screen compiles
+//!   ([`crate::screen::compile`]): it would be read then, outside the region; a `reference` node
+//!   is what resolves inside it.
 //! - **Attenuated** (`Capability::attenuate`): with `scopes`, what the region may read is read
 //!   under the caller's capability narrowed to them, so a grant the caller holds but the region
 //!   does not name is not used inside it. A name the narrowed grant may not read stays

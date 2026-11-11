@@ -536,3 +536,75 @@ fn a_shape_that_cannot_be_read_as_json_ld_is_a_note_not_silence() {
         assert!(t.iter().any(|s| s == "hidden: not in the shape"), "{t:?}");
     }
 }
+
+#[test]
+fn a_table_of_resources_is_bounded_like_any_other_nested_read() {
+    // A list of resources whose type lays out as a table: past the node bound, no row is read.
+    const ROWS: usize = 2 * ikigai_ui::view::MAX_NODES;
+    let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = reads.clone();
+    let row = FnEndpoint::new("row", move |inv: &Invocation<'_>| {
+        if inv.request.verb == Verb::Source {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        let n = inv.bindings.get("n").unwrap_or_default();
+        let body = serde_json::json!({"@type": "urn:demo:Row", "n": n});
+        Ok(Representation::new(
+            ReprType::new("application/json"),
+            serde_json::to_vec(&body).unwrap(),
+        )
+        .cacheable())
+    })
+    .with_description(
+        Description::new("row")
+            .title("A row")
+            .summary("A row.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output("application/json"),
+    );
+    let rows: Vec<serde_json::Value> = (0..ROWS)
+        .map(|i| serde_json::json!({"@id": format!("urn:demo:row:{i}")}))
+        .collect();
+    let s = EndpointSpace::new()
+        .bind(
+            Exact::new("urn:demo:many"),
+            json("many", serde_json::json!({"rows": rows}), false),
+        )
+        .bind(
+            Exact::new("urn:demo:few"),
+            json("few", serde_json::json!({"rows": &rows[..3]}), false),
+        )
+        .bind(
+            ikigai_core::UriTemplate::parse("urn:demo:row:{n}").unwrap(),
+            row,
+        )
+        .bind(
+            Exact::new("urn:iki:ui:shape:type:urn:demo:Row"),
+            shape_at(
+                "row-shape",
+                JSON_LD,
+                serde_json::json!({
+                    "@context": {"sh": "http://www.w3.org/ns/shacl#"},
+                    "@id": "urn:demo:RowShape",
+                    "sh:targetClass": {"@id": "urn:demo:Row"},
+                    "urn:iki:ui:shape:layout": "table",
+                    "sh:property": [{"sh:path": {"@id": "urn:demo:n"}, "sh:name": "N"}]
+                })
+                .to_string(),
+            ),
+        );
+    let kernel = common::host_with(None, vec![Arc::new(s), json_ld()]);
+    let v = view(&kernel, "urn:demo:many", &Capability::root());
+    let read = reads.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(
+        read <= ikigai_ui::view::MAX_NODES,
+        "{read} rows read past the node bound of {}",
+        ikigai_ui::view::MAX_NODES
+    );
+    // Past the bound, the rows that were not read are links to their views.
+    assert!(!kinds(&v, "link").is_empty());
+    // A table that fits is still a table.
+    let few = view(&kernel, "urn:demo:few", &Capability::root());
+    assert_eq!(kinds(&few, "table").len(), 1);
+}
