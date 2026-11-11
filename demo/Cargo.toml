@@ -2,7 +2,7 @@
 name = "ikigai-ui-demo"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.87"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 description = "ikigai-ui's demo host: the gallery, a contact form generated from the service's own contract, and the support page, over an ikigai-web door."
 repository = "https://github.com/ikigai-rs/ikigai-ui"

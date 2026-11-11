@@ -45,6 +45,10 @@ fn conforms() {
             "content",
             "group label=Probe\n  urn:iki:ui:example:kind:heading content=Probed",
         ))
+        .fixture(Fixture::new("ui-sexpr-compile", Verb::Source).arg(
+            "content",
+            "(group :label \"Probe\" (urn:iki:ui:example:kind:heading :content \"Probed\"))",
+        ))
         .fixture(
             Fixture::new("ui-html-node", Verb::Source)
                 .binding("screen", "gallery")
@@ -65,6 +69,12 @@ fn conforms() {
             Fixture::new("ui-face-target-screen", Verb::Source)
                 .binding("target", "gpui")
                 .binding("screen", "gallery"),
+        )
+        .opt_out_check(
+            "ui-lisp-compile",
+            Check::Resolves,
+            "this host binds no urn:lisp:eval (ikigai-lisp); the root crate's tests/sexpr.rs \
+             resolves it against the real eval",
         )
         .opt_out_check(
             "ui-form-openapi",

@@ -10,8 +10,10 @@ resolver = "3"
 name = "ikigai-ui"
 version = "0.5.0"
 edition = "2021"
-# ikigai-core needs 1.87 (`usize::is_multiple_of`); the shared CI's msrv job holds it there.
-rust-version = "1.87"
+# ikigai-core needs 1.87 (`usize::is_multiple_of`); 1.88 since ledger #3367, for the
+# ikigai-lisp dev-dependency (`slice::as_chunks`, via Steel), which the shared CI's msrv job builds
+# with `--all-targets`.
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 description = "The shared UI path for ikigai hosts, as resources: vendored htmx, the token stylesheet, the shell script and the page shell, compiled in or overridden from a directory, plus the UI test kit."
 authors = ["Brian Sletten <brian.sletten@gmail.com>"]
