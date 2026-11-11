@@ -21,9 +21,10 @@ ikigai-vocab = "0.3"
 # The door is a socket server: not on wasm32, where CI's wasm32 lib job lints the workspace
 # (the service and the site still build there).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# The inbound-HTTP door (ecosystem's, not a server written here). 0.4.3 depends on ikigai-core
-# and ikigai-fn only: no second ikigai-ui, nothing from the cli.
-ikigai-web = "0.4.3"
+# The inbound-HTTP door (ecosystem's, not a server written here). 0.5.0 is the current
+# door release; a caret on it is <0.6.0. Its ikigai dependencies are ikigai-core 0.3,
+# ikigai-fn 0.10 and ikigai-http 0.6: one shared core, no second ikigai-ui or cli package.
+ikigai-web = "0.5.0"
 tokio = { version = "1", features = ["rt", "net", "macros"] }
 # `DynamicSpace::refresh`, which binds a prefix table read through the kernel (ledger #3365).
 ikigai-core = { version = "0.3.0", features = ["declare"] }
