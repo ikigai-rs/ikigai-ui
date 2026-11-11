@@ -46,7 +46,7 @@
 //!
 //! ## The model's s-expression face
 //!
-//! [`print`] writes a model back as this datum (kinds and elements as heads, properties as
+//! [`print()`] writes a model back as this datum (kinds and elements as heads, properties as
 //! `:key value`, children nested and indented), so a generated view can be read and edited as an
 //! s-expression; [`read`] of what it prints compiles to the same model. A screen answers it with
 //! `as=text/x-ikigai-ui-sexpr`. Hints and replacements have no s-expression spelling (nor an
