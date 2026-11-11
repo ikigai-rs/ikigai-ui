@@ -7,6 +7,7 @@
 //! | `urn:iki:uidemo:submission:id:{id}` | data | one submission, the demo's only stored state |
 //! | `urn:iki:ui:screen:name:{screen}:source` | resource | a screen's outline ([`SCREENS`]): `contact` (the form, generated from the contract) and `write` (the same in short names) |
 //! | `urn:iki:ui:screen:name:{screen}` | composition | the outline compiled by ikigai-ui ([`ikigai_ui::screen`]) |
+//! | `urn:iki:uidemo:inbox` | data | a UI node: the latest submission's sender, readable only under [`SUBMISSION_READ`]; the contact screen references it, so a caller without the grant sees it withheld ([`INBOX_WITHHELD`]) |
 //! | `urn:iki:uidemo:prefixes` | data | the demo's prefix table, `demo:` for `urn:iki:uidemo:` ([`PREFIXES`]) |
 //! | `urn:iki:uidemo:example:rating` | data | a rating element node, which `write` references as `demo:example:rating` |
 //! | `urn:iki:uidemo:page:{name}` | composition | the shell over a fragment ([`ikigai_ui::Pages`]): `gallery`, `contact`, `support` |
@@ -40,6 +41,12 @@ pub const CONTACT_WRITE: &str = "urn:cap:uidemo:contact:write";
 /// What reading the submissions requires; the door does NOT grant it (who wrote what is not
 /// public, and sign-in comes later, #2169).
 pub const SUBMISSION_READ: &str = "urn:cap:uidemo:submission:read";
+/// The latest submission's sender, as a UI node: read only under [`SUBMISSION_READ`].
+pub const INBOX: &str = "urn:iki:uidemo:inbox";
+/// What the contact screen shows of [`INBOX`] to a caller without the grant: its reference's
+/// fallback text (ledger #3361). The door grants no read, so every visitor sees this.
+pub const INBOX_WITHHELD: &str =
+    "Recent messages are withheld: reading them needs the submission read grant.";
 /// The values `topic` takes.
 pub const TOPICS: [&str; 3] = ["question", "feedback", "support"];
 /// The demo's pages.
@@ -276,10 +283,40 @@ fn submission(store: Store) -> FnEndpoint {
     )
 }
 
+fn inbox(store: Store) -> FnEndpoint {
+    FnEndpoint::new("uidemo-inbox", move |_: &Invocation<'_>| {
+        let held = store
+            .lock()
+            .map_err(|_| Error::Endpoint("poisoned".into()))?;
+        let content = match held.last() {
+            Some(s) => format!(
+                "Latest message from {} ({}), about {}.",
+                s.name, s.email, s.topic
+            ),
+            None => "No messages yet.".to_string(),
+        };
+        let node = serde_json::json!({"kind": "text", "properties": {"content": content}});
+        Ok(Representation::new(
+            ReprType::new(ikigai_ui::model::MEDIA_TYPE),
+            serde_json::to_vec(&node).map_err(|e| Error::Endpoint(e.to_string()))?,
+        ))
+    })
+    .with_description(
+        Description::new("uidemo-inbox")
+            .title("The inbox")
+            .summary("The latest submission's sender, as a UI text node.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .requires(SUBMISSION_READ)
+            .output(ikigai_ui::model::MEDIA_TYPE),
+    )
+}
+
 /// The service: the contact Sink and the submissions, over `store`.
 pub fn service(store: Store) -> EndpointSpace {
     EndpointSpace::new()
         .bind(Exact::new(CONTACT), contact(store.clone()))
+        .bind(Exact::new(INBOX), inbox(store.clone()))
         .bind(Exact::new(SUBMISSION), submissions(store.clone()))
         .bind(
             UriTemplate::parse(format!("{SUBMISSION_ID}{{id}}")).expect("a template"),

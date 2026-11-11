@@ -1,0 +1,22 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# The `region` structural node (ledger #3361): a group whose children resolve in a narrowed
+# space, confined to the names `allow` lists (separated by spaces) and read under the scopes
+# `scopes` lists. It composes to a `group` labelled `label`, its fallback text. Never a target
+# kind. Closed, with any children and no replacement.
+<urn:iki:ui:structure:name:region> a sh:NodeShape, rdfs:Class ;
+  rdfs:subClassOf <urn:iki:ui:node> ;
+  rdfs:label "region" ;
+  <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:label> ;
+  sh:targetClass <urn:iki:ui:structure:name:region> ;
+  sh:closed true ;
+  sh:property <urn:iki:ui:structure:name:region:property:name:type>, <urn:iki:ui:structure:name:region:property:name:label>, <urn:iki:ui:structure:name:region:property:name:allow>, <urn:iki:ui:structure:name:region:property:name:scopes>, <urn:iki:ui:structure:name:region:property:name:child> .
+
+<urn:iki:ui:structure:name:region:property:name:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:structure:name:region> ; sh:maxCount 1 .
+<urn:iki:ui:structure:name:region:property:name:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:structure:name:region:property:name:allow> sh:path <urn:iki:ui:property:name:allow> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:structure:name:region:property:name:scopes> sh:path <urn:iki:ui:property:name:scopes> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:structure:name:region:property:name:child> sh:path <urn:iki:ui:property:name:child> ; sh:class <urn:iki:ui:node> .

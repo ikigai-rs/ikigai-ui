@@ -24,6 +24,10 @@
 //! | `urn:iki:ui:screen:name:{screen}` | composition | a screen compiled from its outline, `{screen}:source` ([`screen`]; [`screen::screens`], placed last) |
 //! | `urn:iki:ui:outline:compile` | transreptor | an outline to the model ([`screen::COMPILER`]) |
 //! | `urn:iki:ui:prefixes` | data | the default prefix table, `ui:` for `urn:iki:ui:` ([`screen::PREFIXES`]) |
+//! | `urn:iki:ui:setting:name:{name}` | data | a setting a screen runs under: `target`, `theme`, `locale`, `density`, `viewer`, the default here, a host's screen space ahead of it ([`setting`]) |
+//! | `urn:iki:ui:face:screen:{screen}` | composition | a screen through the target its screen space names ([`target::SCREEN_FACE`]) |
+//! | `urn:iki:ui:structure:name:{name}` | data | a structural node's SHACL shape: `reference` ([`reference`](mod@reference)), `region` ([`region`]) |
+//! | `urn:iki:ui:example:structure:{name}` | data | a structural node's example |
 //! | `urn:iki:ui:chooser-override:{family}:{theme}` | a host's | a family's own chooser; bound to nothing, it turns the chooser off ([`CHOOSER_OVERRIDE`]) |
 //!
 //! The model's target resources are [`target::PREFIX`] (`html` and `gpui` descriptors),
@@ -105,7 +109,9 @@ pub mod html;
 pub mod model;
 pub mod palette;
 pub mod reference;
+pub mod region;
 pub mod screen;
+pub mod setting;
 pub mod target;
 #[cfg(feature = "testkit")]
 pub mod testkit;
@@ -657,6 +663,22 @@ pub fn space() -> EndpointSpace {
             template("urn:iki:ui:face:target:{target}:screen:{screen}"),
             target::face_endpoint(),
         )
+        .bind(
+            template(&format!("{}{{screen}}", target::SCREEN_FACE)),
+            target::screen_face_endpoint(),
+        )
+        .bind(
+            template(&format!("{}{{name}}", setting::PREFIX)),
+            setting::default_endpoint(),
+        )
+        .bind(
+            template(&format!("{}{{name}}", model::STRUCTURE_PREFIX)),
+            structure_endpoint(),
+        )
+        .bind(
+            template("urn:iki:ui:example:structure:{name}"),
+            structure_example_endpoint(),
+        )
         .named(space_iri("ui"))
 }
 
@@ -811,6 +833,69 @@ fn example_endpoint() -> FnEndpoint {
             .verb(Verb::Source)
             .verb(Verb::Meta)
             .input(kind_arg("the kind"))
+            .output(model::MEDIA_TYPE)
+            .output(model::JSON_LD),
+    )
+}
+
+fn structure_arg(summary: &str) -> ArgSpec {
+    ArgSpec::new("name")
+        .summary(summary)
+        .class(XSD_STRING)
+        .binding()
+        .one_of(model::STRUCTURES.iter().map(|k| k.name))
+}
+
+fn the_structure(inv: &Invocation<'_>) -> Result<&'static model::Kind, Error> {
+    let name = inv.bindings.get("name").unwrap_or_default();
+    model::structure(name).ok_or_else(|| {
+        Error::NotFound(format!(
+            "{}: not a structural node (reference, region)",
+            inv.request.target.as_str()
+        ))
+    })
+}
+
+fn structure_endpoint() -> FnEndpoint {
+    FnEndpoint::new("ui-structure-name", |inv: &Invocation<'_>| {
+        let structure = the_structure(inv)?;
+        Ok(
+            Representation::new(ReprType::new(TURTLE), structure.shape.as_bytes().to_vec())
+                .cacheable(),
+        )
+    })
+    .with_description(
+        Description::new("ui-structure-name")
+            .title("A UI structural node")
+            .summary(
+                "A structural node of the UI model as a closed SHACL shape: a reference (a \
+                 resource's name and its fallback text) or a region (a group resolved in a \
+                 narrowed space). The face composes them away; they are never a target kind.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(structure_arg("the structural node"))
+            .output(TURTLE),
+    )
+}
+
+fn structure_example_endpoint() -> FnEndpoint {
+    FnEndpoint::new("ui-example-structure", |inv: &Invocation<'_>| {
+        let structure = the_structure(inv)?;
+        let node: model::Node = serde_json::from_str(structure.example)
+            .map_err(|e| Error::Endpoint(format!("the {} example: {e}", structure.name)))?;
+        model_face(inv, &node)
+    })
+    .with_description(
+        Description::new("ui-example-structure")
+            .title("A UI structural node's example")
+            .summary(
+                "One illustrative reference or region, as application/vnd.ikigai.ui+json, or \
+                 as JSON-LD with as=application/ld+json.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(structure_arg("the structural node"))
             .output(model::MEDIA_TYPE)
             .output(model::JSON_LD),
     )

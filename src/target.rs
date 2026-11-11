@@ -11,8 +11,12 @@
 //! The face is the only entry that selects a target; it never passes a target argument to
 //! another resource. It preserves the caller's resolution scope. There is no endpoint API
 //! for injecting an additional corridor while retaining root resolution: `Invocation::confine`
-//! severs the root, hiding host screens and directory overrides. Until the host can arrange
-//! that corridor, this face does not install one or bypass the caller's scope.
+//! severs the root, hiding host screens and directory overrides. So the HOST injects the
+//! screen space with `Kernel::issue_in` ([`crate::setting`]), and
+//! `urn:iki:ui:face:screen:{screen}` ([`SCREEN_FACE`]) reads its target from the setting
+//! `urn:iki:ui:setting:name:target` there; `urn:iki:ui:face:target:{target}:screen:{screen}`
+//! stays the entry point that names its target. A face narrows only, for a region
+//! ([`crate::region`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -263,6 +267,11 @@ impl Descriptor {
         // takes the withheld rung: its fallback text, never a value.
         if source.kind == crate::reference::KIND {
             return crate::reference::withheld(source);
+        }
+        // A region the face did not narrow ([`compose`] runs first) is its group; what inside
+        // it is unresolved takes its own rung.
+        if source.kind == crate::region::KIND {
+            return self.project(&crate::region::group(source));
         }
         // 0. A custom element that reaches projection unexpanded ([`crate::element::expand`]
         // runs first): kept when claimed, else its declared fallback, else its fallback text.
@@ -557,27 +566,202 @@ pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
     )
 }
 
+/// A screen composed for `descriptor` in the space `inv` runs in (ledger #3361), before the
+/// descriptor projects it: in rounds, every reference resolved under the caller's capability
+/// ([`crate::reference`]), then every custom element down its ladder ([`crate::element`]),
+/// until no reference is left (at most [`crate::reference::MAX_DEPTH`] rounds, else refused);
+/// then each region composed the same way in its narrowed space ([`crate::region`]), to a
+/// `group`; then each write-only field made the form that sinks to its own resource. What
+/// comes out holds no reference and no region.
+pub async fn compose(
+    inv: &Invocation<'_>,
+    node: &Node,
+    descriptor: &Descriptor,
+) -> Result<Node, Error> {
+    let mut budget = crate::reference::Budget::default();
+    let node = compose_in(inv, node, descriptor, &mut budget, 0).await?;
+    let node = write_only(&node, false)?;
+    model::validate(&node)?;
+    Ok(node)
+}
+
+type Composed<'a> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<Node, Error>> + Send + 'a>>;
+
+fn compose_in<'a>(
+    inv: &'a Invocation<'_>,
+    node: &'a Node,
+    descriptor: &'a Descriptor,
+    budget: &'a mut crate::reference::Budget,
+    regions: usize,
+) -> Composed<'a> {
+    Box::pin(async move {
+        let mut node = node.clone();
+        let mut rounds = 0;
+        loop {
+            node = crate::reference::resolve_in(inv, &node, budget).await?;
+            node = crate::element::expand(inv, &node, descriptor).await?;
+            if !crate::reference::any(&node) {
+                break;
+            }
+            rounds += 1;
+            if rounds >= crate::reference::MAX_DEPTH {
+                return Err(Error::InvalidArgument {
+                    name: "reference".into(),
+                    detail: format!(
+                        "expansions introduce references past {} rounds",
+                        crate::reference::MAX_DEPTH
+                    ),
+                });
+            }
+        }
+        open_regions(inv, &node, descriptor, budget, regions).await
+    })
+}
+
+/// `node` with each outermost region composed in its narrowed space.
+fn open_regions<'a>(
+    inv: &'a Invocation<'_>,
+    node: &'a Node,
+    descriptor: &'a Descriptor,
+    budget: &'a mut crate::reference::Budget,
+    regions: usize,
+) -> Composed<'a> {
+    Box::pin(async move {
+        if node.kind == crate::region::KIND {
+            if regions >= crate::region::MAX_DEPTH {
+                return Err(crate::region::refuse(format!(
+                    "regions nested past {}",
+                    crate::region::MAX_DEPTH
+                )));
+            }
+            let narrowed = crate::region::narrow(inv, node).await?;
+            let group = crate::region::group(node);
+            return compose_in(&narrowed, &group, descriptor, budget, regions + 1).await;
+        }
+        let mut out = node.clone();
+        let mut children = Vec::with_capacity(node.children.len());
+        for child in &node.children {
+            children.push(open_regions(inv, child, descriptor, budget, regions).await?);
+        }
+        out.children = children;
+        if let Some(r) = &node.replacement {
+            out.replacement = Some(Box::new(
+                open_regions(inv, r, descriptor, budget, regions).await?,
+            ));
+        }
+        Ok(out)
+    })
+}
+
+/// The label of the button a write-only field's form submits with.
+pub const WRITE_ONLY_SUBMIT: &str = "Save";
+
+/// `node` with each write-only field (a `field` naming its own `resource`) made the form that
+/// sinks to that resource: the field (its input `password` unless it names one) and a submit
+/// button. It holds no value, so nothing is read back. One inside another form is refused:
+/// it is its own form.
+fn write_only(node: &Node, in_form: bool) -> Result<Node, Error> {
+    if node.kind == "field" && node.properties.contains_key("resource") {
+        if in_form {
+            return Err(Error::InvalidArgument {
+                name: "field".into(),
+                detail: "a write-only field is its own form; it cannot sit inside another".into(),
+            });
+        }
+        let mut field = node.clone();
+        let resource = field.properties.remove("resource").expect("checked above");
+        field
+            .properties
+            .entry("input".into())
+            .or_insert(Value::Text("password".into()));
+        let label = field.properties["label"].clone();
+        let mut properties: BTreeMap<String, Value> = [
+            ("label".into(), label),
+            ("resource".into(), resource),
+            ("verb".into(), Value::Text("sink".into())),
+        ]
+        .into();
+        if let Some(d) = field.properties.get("description") {
+            properties.insert("description".into(), d.clone());
+        }
+        let button = Node {
+            kind: "button".into(),
+            hint: Default::default(),
+            replacement: None,
+            properties: [("label".into(), Value::Text(WRITE_ONLY_SUBMIT.into()))].into(),
+            children: Vec::new(),
+        };
+        return Ok(Node {
+            kind: "form".into(),
+            hint: Default::default(),
+            replacement: None,
+            properties,
+            children: vec![field, button],
+        });
+    }
+    let in_form = in_form || node.kind == "form";
+    let mut out = node.clone();
+    out.children = node
+        .children
+        .iter()
+        .map(|c| write_only(c, in_form))
+        .collect::<Result<_, _>>()?;
+    if let Some(r) = &node.replacement {
+        out.replacement = Some(Box::new(write_only(r, in_form)?));
+    }
+    Ok(out)
+}
+
+/// The face: `screen` composed ([`compose`]) and projected through `target`'s descriptor.
+async fn face(inv: &Invocation<'_>, target: &str, screen: &str) -> Result<Representation, Error> {
+    let descriptor = read_descriptor(inv, target).await?;
+    let iri = Iri::parse(format!("urn:iki:ui:screen:name:{screen}")).map_err(|e| {
+        Error::InvalidArgument {
+            name: "screen".into(),
+            detail: e.to_string(),
+        }
+    })?;
+    let rep = inv.issue(Request::new(Verb::Source, iri)).await?;
+    let node = model::parse(&rep.bytes)?;
+    let node = compose(inv, &node, &descriptor).await?;
+    crate::model_face(inv, &descriptor.apply(&node)?)
+}
+
 pub(crate) fn face_endpoint() -> AsyncFnEndpoint {
     AsyncFnEndpoint::new("ui-face-target-screen", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
         Box::pin(async move {
-            let name = inv.bindings.get("target").unwrap_or_default();
-            let descriptor = read_descriptor(inv, name).await?;
+            let target = inv.bindings.get("target").unwrap_or_default();
             let screen = inv.bindings.get("screen").unwrap_or_default();
-            let iri = Iri::parse(format!("urn:iki:ui:screen:name:{screen}"))
-                .map_err(|e| Error::InvalidArgument { name: "screen".into(), detail: e.to_string() })?;
-            let rep = inv.issue(Request::new(Verb::Source, iri)).await?;
-            let node = model::parse(&rep.bytes)?;
-            // References first, under the caller's capability (ledger #3361).
-            let node = crate::reference::resolve(inv, &node).await?;
-            let node = crate::element::expand(inv, &node, &descriptor).await?;
-            crate::model_face(inv, &descriptor.apply(&node)?)
+            face(inv, target, screen).await
         })
     }).with_description(
         Description::new("ui-face-target-screen")
             .title("A screen through a UI target")
-            .summary("The target entry point: read the screen and descriptor, take each custom element down its ladder (native when claimed, else its definition's expansion, else its declared fallback, else its fallback text), then apply native rendering, declared fallback and finally fallback text per kind, keeping only the hints the face reads. No target argument is passed downstream.")
+            .summary("The target entry point: read the screen and descriptor, resolve each reference under the caller's capability (withheld when denied) and each region in its narrowed space, take each custom element down its ladder (native when claimed, else its definition's expansion, else its declared fallback, else its fallback text), then apply native rendering, declared fallback and finally fallback text per kind, keeping only the hints the face reads. No target argument is passed downstream.")
             .verb(Verb::Source).verb(Verb::Meta)
             .input(argument("target", "the target name").one_of(NAMES))
+            .input(argument("screen", "the screen name"))
+            .output(model::MEDIA_TYPE).output(model::JSON_LD),
+    )
+}
+
+/// The screen-space face, `urn:iki:ui:face:screen:{screen}`: the target is the setting
+/// [`crate::setting::TARGET`] in the space the request runs in, never a name or an argument.
+pub const SCREEN_FACE: &str = "urn:iki:ui:face:screen:";
+
+pub(crate) fn screen_face_endpoint() -> AsyncFnEndpoint {
+    AsyncFnEndpoint::new("ui-face-screen", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+        Box::pin(async move {
+            let target = crate::setting::read(inv, "target").await?;
+            let screen = inv.bindings.get("screen").unwrap_or_default();
+            face(inv, &target, screen).await
+        })
+    }).with_description(
+        Description::new("ui-face-screen")
+            .title("A screen in its screen space")
+            .summary("The face of a screen under the settings of the space it runs in: the target is urn:iki:ui:setting:name:target there (a host's screen space, injected with Kernel::issue_in, else the default), composed and projected as urn:iki:ui:face:target:{target}:screen:{screen} is.")
+            .verb(Verb::Source).verb(Verb::Meta)
             .input(argument("screen", "the screen name"))
             .output(model::MEDIA_TYPE).output(model::JSON_LD),
     )

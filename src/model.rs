@@ -138,7 +138,14 @@ pub const KINDS: [Kind; 15] = [
         "field",
         "label",
         ["name": Text],
-        ["input": Text, "value": Text, "required": Flag, "description": Text, "error": Text],
+        [
+            "input": Text,
+            "value": Text,
+            "required": Flag,
+            "description": Text,
+            "error": Text,
+            "resource": Iri
+        ],
         Children::Leaf
     ),
     kind!(
@@ -172,6 +179,39 @@ pub const KINDS: [Kind; 15] = [
     kind!("group", "label", [], ["header": Scope], Children::Any),
     kind!("visual", "label", [], ["description": Text], Children::Leaf),
 ];
+
+macro_rules! structure {
+    ($name:literal, $fallback:literal, [$($r:literal: $rt:ident),*], [$($o:literal: $ot:ident),*], $children:expr) => {
+        Kind {
+            name: $name,
+            fallback: $fallback,
+            required: &[$(($r, Type::$rt)),*],
+            optional: &[$(($o, Type::$ot)),*],
+            children: $children,
+            shape: include_str!(concat!("../assets/structure/", $name, ".ttl")),
+            example: include_str!(concat!("../assets/example/structure/", $name, ".json")),
+        }
+    };
+}
+
+/// The structural nodes (ledger #3361): a `reference` names a resource ([`crate::reference`]),
+/// a `region` narrows the space its children resolve in ([`crate::region`]). They are the
+/// model's, with shapes at `urn:iki:ui:structure:name:{name}`, but never a target kind: the face
+/// composes them away before a descriptor projects (a reference to its value or its withheld
+/// rung, a region to a `group`), so no descriptor covers them and the kinds stay sealed.
+/// Neither takes a replacement.
+pub const STRUCTURES: [Kind; 2] = [
+    structure!("reference", "fallback", ["resource": Iri], [], Children::Leaf),
+    structure!("region", "label", [], ["allow": Text, "scopes": Text], Children::Any),
+];
+
+/// A structural node's IRI is this plus its name.
+pub const STRUCTURE_PREFIX: &str = "urn:iki:ui:structure:name:";
+
+/// The structural node named `name`, or `None`.
+pub fn structure(name: &str) -> Option<&'static Kind> {
+    STRUCTURES.iter().find(|k| k.name == name)
+}
 
 /// The list of kinds, Turtle: the node shape every node meets (`urn:iki:ui:kind`).
 pub const KIND_LIST: &str = include_str!("../assets/kind.ttl");
@@ -331,13 +371,23 @@ pub fn validate(root: &Node) -> Result<(), Error> {
             push_children(&path, node, &mut stack);
             continue;
         }
-        if node.kind == crate::reference::KIND {
-            crate::reference::validate(node).map_err(|detail| refuse(&path, detail))?;
-            continue;
-        }
-        let Some(k) = kind(&node.kind) else {
+        let structural = structure(&node.kind);
+        let Some(k) = kind(&node.kind).or(structural) else {
             return Err(refuse(&path, format!("`{}` is not a kind", node.kind)));
         };
+        if structural.is_some() && node.replacement.is_some() {
+            return Err(refuse(&path, format!("a {} takes no replacement", k.name)));
+        }
+        if k.name == crate::region::KIND {
+            crate::region::validate(node).map_err(|detail| refuse(&path, detail))?;
+        }
+        // A write-only field (one naming its own `resource`) is written, never read back.
+        if k.name == "field"
+            && node.properties.contains_key("resource")
+            && node.properties.contains_key("value")
+        {
+            return Err(refuse(&path, "a write-only field holds no `value`".into()));
+        }
         for (p, v) in &node.properties {
             let Some(t) = k.property(p) else {
                 return Err(refuse(&path, format!("a {} has no property `{p}`", k.name)));

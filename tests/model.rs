@@ -26,11 +26,20 @@ fn read(kernel: &Kernel, iri: &str, as_type: Option<&str>) -> Result<(String, Ve
 /// The shapes graph: the kind list's node shape and every kind's shape.
 fn shapes() -> String {
     let mut all = model::KIND_LIST.to_string();
-    for k in &KINDS {
+    for k in KINDS.iter().chain(&model::STRUCTURES) {
         all.push('\n');
         all.push_str(k.shape);
     }
     all
+}
+
+/// A node's type IRI: a kind's, or a structural node's (ledger #3361).
+fn type_iri(kind: &str) -> String {
+    if model::structure(kind).is_some() {
+        format!("{}{kind}", model::STRUCTURE_PREFIX)
+    } else {
+        format!("{}{kind}", model::KIND_PREFIX)
+    }
 }
 
 /// A model as RDF, for the SHACL side: a node is `<urn:test:node:{path}>`, typed by its kind's
@@ -40,9 +49,8 @@ fn turtle(root: &Node) -> String {
     let mut stack = vec![("root".to_string(), root)];
     while let Some((id, node)) = stack.pop() {
         out.push_str(&format!(
-            "<urn:test:node:{id}> a <{}{}> .\n",
-            model::KIND_PREFIX,
-            node.kind
+            "<urn:test:node:{id}> a <{}> .\n",
+            type_iri(&node.kind)
         ));
         for (p, v) in &node.properties {
             let object = match v {
@@ -81,12 +89,11 @@ fn shacl_conforms(node: &Node) -> bool {
     // SHACL reads `rdfs:subClassOf` from the DATA graph, so the data carries the vocabulary
     // (each kind is a subclass of `urn:iki:ui:node`, as its shape says) beside the model.
     let mut data = turtle(node);
-    for k in &KINDS {
+    for k in KINDS.iter().chain(&model::STRUCTURES) {
         assert!(k.shape.contains("rdfs:subClassOf <urn:iki:ui:node>"));
         data.push_str(&format!(
-            "<{}{}> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <urn:iki:ui:node> .\n",
-            model::KIND_PREFIX,
-            k.name
+            "<{}> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <urn:iki:ui:node> .\n",
+            type_iri(k.name)
         ));
     }
     let report =
@@ -433,4 +440,56 @@ fn node_fallback_property_is_refused() {
     assert!(
         matches!(model::parse(doc), Err(Error::InvalidArgument { detail, .. }) if detail.contains("unknown field") && detail.contains("fallback"))
     );
+}
+
+/// The structural nodes (ledger #3361): their examples, a write-only field and an invalid set
+/// agree in the Turtle shapes and the Rust validator, and the context names them.
+#[test]
+fn the_structural_shapes_and_the_validator_agree() {
+    for k in &model::STRUCTURES {
+        let n = node(k.example);
+        assert_eq!(n.kind, k.name);
+        model::validate(&n).unwrap_or_else(|e| panic!("{}: {e}", k.name));
+        assert!(
+            shacl_conforms(&n),
+            "the shapes accept the {} example",
+            k.name
+        );
+        assert!(k.shape.contains(&format!(
+            "<urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:{}>",
+            k.fallback
+        )));
+        let context: serde_json::Value = serde_json::from_str(model::CONTEXT).unwrap();
+        assert_eq!(
+            context["@context"][k.name],
+            format!("{}{}", model::STRUCTURE_PREFIX, k.name)
+        );
+    }
+    let write_only = node(
+        r#"{"kind":"field","properties":{"label":"Password","name":"password","resource":"urn:example:password"}}"#,
+    );
+    model::validate(&write_only).unwrap();
+    assert!(shacl_conforms(&write_only));
+    let invalid = [
+        // No fallback.
+        r#"{"kind":"reference","properties":{"resource":"urn:a"}}"#,
+        // No resource.
+        r#"{"kind":"reference","properties":{"fallback":"x"}}"#,
+        // A property it does not name.
+        r#"{"kind":"reference","properties":{"resource":"urn:a","fallback":"x","label":"y"}}"#,
+        // A replacement.
+        r#"{"kind":"reference","properties":{"resource":"urn:a","fallback":"x"},"replacement":{"kind":"text","properties":{"content":"c"}}}"#,
+        // A region with no label.
+        r#"{"kind":"region","properties":{"allow":"urn:a"}}"#,
+        // A region's child that is not a node.
+        r#"{"kind":"region","properties":{"label":"R"},"children":[{"kind":"script","properties":{"content":"x"}}]}"#,
+    ];
+    for json in invalid {
+        let n = node(json);
+        assert!(
+            matches!(model::validate(&n), Err(Error::InvalidArgument { .. })),
+            "{json}"
+        );
+        assert!(!shacl_conforms(&n), "the shapes refuse {json}");
+    }
 }

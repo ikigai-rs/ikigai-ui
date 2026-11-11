@@ -114,6 +114,16 @@ async fn the_door_serves_the_gallery_and_a_working_contact_form() {
     }
     assert_eq!(store.lock().unwrap().len(), 1);
 
+    // The contact screen references the inbox; the door grants no read, so after a stored
+    // submission a visitor still sees the withheld rung and nothing of the sender (ledger #3361).
+    let page = call(addr, "GET", "/page/contact", "").await;
+    assert!(page.starts_with("HTTP/1.1 200"), "{page}");
+    assert!(page.contains("Recent messages are withheld"), "{page}");
+    assert!(
+        !page.contains("Ada Lovelace") && !page.contains("ada@example.org"),
+        "{page}"
+    );
+
     // The submissions are not the door's to show.
     let answer = call(addr, "GET", &format!("/resolution/iri/{SUBMISSION}"), "").await;
     assert!(!answer.starts_with("HTTP/1.1 200"), "{answer}");
@@ -142,4 +152,19 @@ async fn the_door_serves_the_gallery_and_a_working_contact_form() {
         .unwrap();
     let all: serde_json::Value = serde_json::from_slice(&all.bytes).unwrap();
     assert_eq!(all.as_array().unwrap().len(), 1);
+
+    // Under the read grant the same screen shows the inbox in place of its reference.
+    let face = kernel
+        .issue(
+            Request::new(
+                Verb::Source,
+                Iri::parse("urn:iki:ui:face:target:html:screen:contact").unwrap(),
+            ),
+            &cap,
+        )
+        .await
+        .unwrap();
+    let face = String::from_utf8(face.bytes).unwrap();
+    assert!(face.contains("Latest message from Ada Lovelace"), "{face}");
+    assert!(!face.contains("withheld"), "{face}");
 }

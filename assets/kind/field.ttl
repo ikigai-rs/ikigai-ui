@@ -11,7 +11,7 @@
   <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:label> ;
   sh:targetClass <urn:iki:ui:kind:name:field> ;
   sh:closed true ;
-  sh:property <urn:iki:ui:kind:name:field:property:name:replacement>, <urn:iki:ui:kind:name:field:property:name:type>, <urn:iki:ui:kind:name:field:property:name:label>, <urn:iki:ui:kind:name:field:property:name:name>, <urn:iki:ui:kind:name:field:property:name:input>, <urn:iki:ui:kind:name:field:property:name:value>, <urn:iki:ui:kind:name:field:property:name:required>, <urn:iki:ui:kind:name:field:property:name:description>, <urn:iki:ui:kind:name:field:property:name:error> .
+  sh:property <urn:iki:ui:kind:name:field:property:name:replacement>, <urn:iki:ui:kind:name:field:property:name:type>, <urn:iki:ui:kind:name:field:property:name:label>, <urn:iki:ui:kind:name:field:property:name:name>, <urn:iki:ui:kind:name:field:property:name:input>, <urn:iki:ui:kind:name:field:property:name:value>, <urn:iki:ui:kind:name:field:property:name:required>, <urn:iki:ui:kind:name:field:property:name:description>, <urn:iki:ui:kind:name:field:property:name:error>, <urn:iki:ui:kind:name:field:property:name:resource> .
 
 <urn:iki:ui:kind:name:field:property:name:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:field> ; sh:maxCount 1 .
 <urn:iki:ui:kind:name:field:property:name:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
@@ -21,6 +21,11 @@
 <urn:iki:ui:kind:name:field:property:name:required> sh:path <urn:iki:ui:property:name:required> ; sh:maxCount 1 ; sh:in ( true false "true" "false" ) .
 <urn:iki:ui:kind:name:field:property:name:description> sh:path <urn:iki:ui:property:name:description> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
 <urn:iki:ui:kind:name:field:property:name:error> sh:path <urn:iki:ui:property:name:error> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+
+# A WRITE-ONLY field names its own `resource`: the face makes it a form that sinks to that
+# resource, and it holds no `value` (the Rust validator refuses one), so a password or a card
+# number is written and never read back into the screen.
+<urn:iki:ui:kind:name:field:property:name:resource> sh:path <urn:iki:ui:property:name:resource> ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
 
 # Optional replacement subtree, validated by its own kind shape.
 <urn:iki:ui:kind:name:field:property:name:replacement> sh:path <urn:iki:ui:property:name:replacement> ;

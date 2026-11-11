@@ -139,10 +139,12 @@ async fn screen(inv: &Invocation<'_>) -> Result<Node, Error> {
     })?;
     let rep = inv.issue(Request::new(Verb::Source, iri)).await?;
     let node = model::parse(&rep.bytes)?;
-    // Custom elements down the html descriptor's ladder (ledger #3358): the html face claims
-    // none natively, so each is expanded, falls back or shows its fallback text.
+    // Composed for the html descriptor (ledger #3358, #3361): references resolved under the
+    // caller's capability (withheld when denied), regions in their narrowed spaces, custom
+    // elements down the ladder (the html face claims none natively, so each is expanded, falls
+    // back or shows its fallback text) and write-only fields made their own forms.
     let descriptor = crate::target::read_descriptor(inv, "html").await?;
-    crate::element::expand(inv, &node, &descriptor).await
+    crate::target::compose(inv, &node, &descriptor).await
 }
 
 /// The node at `{node}` and its parent's kind.

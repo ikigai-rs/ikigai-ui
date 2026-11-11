@@ -14,11 +14,26 @@ fn read(kernel: &ikigai_core::Kernel, iri: &str, scope: Scope) -> Result<Node, E
 }
 
 #[test]
-fn the_contact_outline_compiles_to_the_generated_form() {
+fn the_contact_outline_compiles_to_the_generated_form_and_a_reference() {
     let kernel = ikigai_ui_demo::kernel(ikigai_ui_demo::root(Arc::default()));
     let form = format!("{}{}", ikigai_ui::FORM_RESOURCE, ikigai_ui_demo::CONTACT);
     let screen = read(&kernel, "urn:iki:ui:screen:name:contact", Scope::empty()).unwrap();
-    assert_eq!(screen, read(&kernel, &form, Scope::empty()).unwrap());
+    assert_eq!(screen.kind, "group");
+    assert_eq!(
+        screen.children[0],
+        read(&kernel, &form, Scope::empty()).unwrap()
+    );
+    // The screen holds the inbox's name, never its value (ledger #3361).
+    let inbox = &screen.children[1];
+    assert_eq!(inbox.kind, "reference");
+    assert_eq!(
+        inbox.properties["resource"],
+        Value::Text(ikigai_ui_demo::INBOX.into())
+    );
+    assert_eq!(
+        inbox.properties["fallback"],
+        Value::Text(ikigai_ui_demo::INBOX_WITHHELD.into())
+    );
 }
 
 #[test]
