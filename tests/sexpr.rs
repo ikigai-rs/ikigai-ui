@@ -379,3 +379,114 @@ fn the_models_sexpr_face_reads_back_to_the_same_model() {
         Err(Error::InvalidArgument { .. })
     ));
 }
+
+/// `urn:lisp:eval`, counting its runs: ikigai-lisp's own space, each hit's endpoint wrapped.
+struct CountedEval {
+    inner: Arc<dyn Space>,
+    runs: Arc<AtomicUsize>,
+}
+
+impl Space for CountedEval {
+    fn resolve(&self, request: &Request, scope: &Scope) -> ikigai_core::Resolution {
+        let runs = self.runs.clone();
+        self.inner.resolve(request, scope).map_endpoint(|inner| {
+            let description = inner.describe();
+            Arc::new(
+                ikigai_core::AsyncFnEndpoint::new(
+                    "counted-eval",
+                    move |inv: &Invocation<'_>| -> ikigai_core::InvokeFuture<'_> {
+                        runs.fetch_add(1, Ordering::SeqCst);
+                        let inner = inner.clone();
+                        Box::pin(async move { inner.invoke(inv).await })
+                    },
+                )
+                .with_description(description),
+            )
+        })
+    }
+}
+
+#[test]
+fn a_program_with_cacheable_is_cached_and_one_without_it_is_re_run() {
+    let ticks = Arc::new(AtomicUsize::new(0));
+    let counted = ticks.clone();
+    // A live resource: a new value on every read, never cacheable.
+    let tick = EndpointSpace::new().bind(
+        ikigai_core::Exact::new("urn:test:tick"),
+        FnEndpoint::new("test-tick", move |_: &Invocation<'_>| {
+            let n = counted.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(Representation::new(
+                ReprType::new("text/plain"),
+                n.to_string().into_bytes(),
+            ))
+        })
+        .with_description(
+            Description::new("test-tick")
+                .verb(Verb::Source)
+                .output("text/plain"),
+        ),
+    );
+    let sources = EndpointSpace::new().bind(
+        UriTemplate::parse("urn:iki:ui:screen:name:{screen}:source").unwrap(),
+        FnEndpoint::new("test-screen-source", |inv: &Invocation<'_>| {
+            let text = match inv.bindings.get("screen").unwrap_or_default() {
+                "live" => r#"(list 'text ':content (source "urn:test:tick"))"#,
+                "pure" => r#"(cacheable (list 'text ':content "fixed"))"#,
+                "still" => r#"(list 'text ':content "fixed")"#,
+                other => return Err(Error::NotFound(format!("no screen `{other}`"))),
+            };
+            Ok(
+                Representation::new(ReprType::new(sexpr::LISP), text.as_bytes().to_vec())
+                    .cacheable(),
+            )
+        })
+        .with_description(
+            Description::new("test-screen-source")
+                .verb(Verb::Source)
+                .output(sexpr::LISP),
+        ),
+    );
+    let runs = Arc::new(AtomicUsize::new(0));
+    let kernel = Kernel::new(Arc::new(Fallback::new(vec![
+        Arc::new(ikigai_ui::space()),
+        Arc::new(CountedEval {
+            inner: Arc::new(ikigai_lisp::space()),
+            runs: runs.clone(),
+        }),
+        Arc::new(tick),
+        Arc::new(sources),
+        Arc::new(screen::screens()),
+    ])));
+    let content = |name: &str| read(&kernel, name).unwrap().properties["content"].clone();
+
+    // Live: the program reads a live resource, so every read of its screen runs it again.
+    assert_eq!(content("live"), Value::Text("1".into()));
+    assert_eq!(content("live"), Value::Text("2".into()));
+    assert_eq!(content("live"), Value::Text("3".into()));
+    assert_eq!(
+        runs.load(Ordering::SeqCst),
+        3,
+        "the live program ran on every read"
+    );
+
+    // A program that does not declare `(cacheable …)` is live even when what it computes is
+    // constant: its eval answers uncacheable, and so does its screen.
+    runs.store(0, Ordering::SeqCst);
+    assert_eq!(content("still"), Value::Text("fixed".into()));
+    assert_eq!(content("still"), Value::Text("fixed".into()));
+    assert_eq!(
+        runs.load(Ordering::SeqCst),
+        2,
+        "an undeclared program re-runs"
+    );
+
+    // Declared pure: run once, then its screen is served from cache.
+    runs.store(0, Ordering::SeqCst);
+    assert_eq!(content("pure"), Value::Text("fixed".into()));
+    assert_eq!(content("pure"), Value::Text("fixed".into()));
+    assert_eq!(
+        runs.load(Ordering::SeqCst),
+        1,
+        "a declared-pure program is cached"
+    );
+}
