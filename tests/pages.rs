@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use common::*;
 use ikigai_core::Error;
-use ikigai_ui::testkit::snapshot::{check, Outcome};
+use ikigai_ui::testkit::snapshot::assert_snapshots;
 
 #[test]
 fn the_pages_match_their_snapshots() {
@@ -43,22 +43,7 @@ fn the_pages_match_their_snapshots() {
         "tokens.css".into(),
         text(&kernel, ikigai_ui::TOKENS_CSS, &[]),
     ));
-    // Every snapshot is checked (and a missing one written) before any failure is reported.
-    let outcomes: Vec<_> = rendered
-        .iter()
-        .map(|(name, page)| (name, check(&snapshots(), name, page).unwrap()))
-        .collect();
-    let bad: Vec<String> = outcomes
-        .iter()
-        .filter(|(_, o)| *o != Outcome::Same)
-        .map(|(name, o)| format!("{name}: {o:?}"))
-        .collect();
-    assert!(
-        bad.is_empty(),
-        "{}\n(a written snapshot is new: review it and commit it; to accept a change, delete \
-         the file and run again)",
-        bad.join("\n")
-    );
+    assert_snapshots(&snapshots(), rendered);
 }
 
 #[test]

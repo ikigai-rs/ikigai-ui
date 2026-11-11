@@ -243,6 +243,8 @@ when the process stops. `demo/tests/door.rs` drives the door end to end.
 `ikigai-ui = { version = "0.5", features = ["testkit"] }` as a dev-dependency gives a UI repo:
 
 - `snapshot`: pages held to files in the repo (written once, never re-blessed by a switch);
+  `snapshot::assert_snapshots` checks every page, writes all missing files, then fails once
+  listing every new, changed, or unreadable snapshot;
 - `vectors`: FND-H's escaping and link vectors, ikigai-fn's file verbatim, to run any escaper against;
 - `contrast`: the floor for every palette, through ikigai-a11y;
 - `lint`: no hex color outside the palette tables, every `var(--x)` defined;
