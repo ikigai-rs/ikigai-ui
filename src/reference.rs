@@ -1,11 +1,14 @@
 //! Reference nodes (ledger #3361): a screen names a resource, never holds its value.
 //!
 //! A `reference` node carries `resource` (an absolute IRI) and `fallback` (text), and takes no
-//! children and no replacement. The target face ([`crate::target`]) resolves every reference
-//! BEFORE custom elements expand and the descriptor projects: it issues `Source` on the
-//! resource under the CALLER's capability, in the caller's scope, and splices the model it
-//! answers in place of the node. A referenced model may itself hold references (a reference
-//! can name another screen); they resolve in turn, bounded by [`MAX_DEPTH`].
+//! children and no replacement; its shape is [`model::STRUCTURES`]' (`urn:iki:ui:structure:name:reference`).
+//! The target face ([`crate::target::compose`]) resolves every reference BEFORE custom elements
+//! expand and the descriptor projects: it issues `Source` on the resource under the CALLER's
+//! capability, in the caller's scope, and splices the model it answers in place of the node.
+//! A referenced model may itself hold references (a reference can name another screen); they
+//! resolve in turn, bounded by [`MAX_DEPTH`]. References an element's expansion introduces
+//! resolve in the next round, the same way. Inside a region ([`crate::region`]) references
+//! resolve in the region's narrowed space, never the screen's.
 //!
 //! ## The withheld rung
 //!
@@ -46,27 +49,6 @@ fn refuse(detail: impl Into<String>) -> Error {
     }
 }
 
-/// Check a reference node's shape (called by [`model::validate`]).
-pub(crate) fn validate(node: &Node) -> Result<(), String> {
-    for p in node.properties.keys() {
-        if p != RESOURCE && p != FALLBACK {
-            return Err(format!("a reference has no property `{p}`"));
-        }
-    }
-    match node.properties.get(RESOURCE) {
-        Some(Value::Text(s)) if Iri::parse(s.as_str()).is_ok() => {}
-        _ => return Err(format!("a reference needs `{RESOURCE}`, an absolute IRI")),
-    }
-    match node.properties.get(FALLBACK) {
-        Some(Value::Text(s)) if !s.is_empty() => {}
-        _ => return Err(format!("a reference needs `{FALLBACK}`, its fallback text")),
-    }
-    if !node.children.is_empty() || node.replacement.is_some() {
-        return Err("a reference takes no children and no replacement".into());
-    }
-    Ok(())
-}
-
 /// The withheld rung: the reference's fallback text, and nothing of the value.
 pub fn withheld(node: &Node) -> Node {
     Node {
@@ -78,10 +60,40 @@ pub fn withheld(node: &Node) -> Node {
     }
 }
 
-/// Resolve every reference in `node` under `inv`'s capability and scope.
+/// How many references one face has resolved so far, across its rounds and regions.
+#[derive(Debug, Default)]
+pub struct Budget {
+    resolved: usize,
+}
+
+/// Resolve every reference in `node` under `inv`'s capability and scope. A region's interior is
+/// left as it is: it resolves in the region's own narrowed space ([`crate::region`]).
 pub async fn resolve(inv: &Invocation<'_>, node: &Node) -> Result<Node, Error> {
-    let mut count = 0;
-    walk(inv, node, 0, &mut count).await
+    resolve_in(inv, node, &mut Budget::default()).await
+}
+
+/// [`resolve`], counting against `budget`.
+pub async fn resolve_in(
+    inv: &Invocation<'_>,
+    node: &Node,
+    budget: &mut Budget,
+) -> Result<Node, Error> {
+    walk(inv, node, 0, &mut budget.resolved).await
+}
+
+/// Whether `node` holds a reference outside every region.
+pub fn any(node: &Node) -> bool {
+    let mut stack = vec![node];
+    while let Some(n) = stack.pop() {
+        if n.kind == KIND {
+            return true;
+        }
+        if n.kind != crate::region::KIND {
+            stack.extend(n.children.iter());
+            stack.extend(n.replacement.as_deref());
+        }
+    }
+    false
 }
 
 type Walk<'a> = Pin<Box<dyn Future<Output = Result<Node, Error>> + Send + 'a>>;
@@ -93,6 +105,9 @@ fn walk<'a>(
     count: &'a mut usize,
 ) -> Walk<'a> {
     Box::pin(async move {
+        if node.kind == crate::region::KIND {
+            return Ok(node.clone());
+        }
         if node.kind != KIND {
             let mut out = node.clone();
             if let Some(replacement) = &node.replacement {

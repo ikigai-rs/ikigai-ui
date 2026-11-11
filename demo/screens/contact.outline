@@ -1,2 +1,6 @@
-# The contact screen: the form ikigai-ui generates from the contact service's own contract.
-urn:iki:ui:form:resource:urn:iki:uidemo:contact
+# The contact screen: the form ikigai-ui generates from the contact service's own contract, and
+# a reference to the inbox (ledger #3361). The face reads the inbox under the CALLER's grant; the
+# door grants no submission read, so a visitor sees its fallback text, never a sender.
+group label="Contact"
+  urn:iki:ui:form:resource:urn:iki:uidemo:contact
+  reference resource=urn:iki:uidemo:inbox fallback="Recent messages are withheld: reading them needs the submission read grant."

@@ -11,7 +11,8 @@
 //!
 //! ## The outline
 //!
-//! - One line per node. A line is a CORE KIND (`heading`, `group`, …) with `key=value`
+//! - One line per node. A line is a CORE KIND (`heading`, `group`, …) or a structural node
+//!   (`reference`, `region`: [`model::STRUCTURES`], which a face resolves) with `key=value`
 //!   properties; a custom element's full IRI (`urn:{ns}:ui:element:name:{name}`), which stays an
 //!   element node for a face to take down its ladder ([`crate::element`]); or a REFERENCE: any
 //!   other name, whose Source answers a UI node or subtree (a generated form, another screen, a
@@ -203,7 +204,7 @@ fn word_ok(key: &str) -> bool {
 /// One line's head and properties.
 fn tokens(screen: &str, number: usize, text: &str) -> Result<(Head, Vec<(String, Raw)>), Error> {
     let (head, mut rest) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
-    let head = if let Some(k) = model::kind(head) {
+    let head = if let Some(k) = model::kind(head).or_else(|| model::structure(head)) {
         Head::Kind(k.name)
     } else if model::is_element(head) {
         Head::Element(head.to_string())
@@ -509,7 +510,7 @@ impl Build<'_> {
                 node.clone()
             }
         };
-        let kind = model::kind(&node.kind);
+        let kind = model::kind(&node.kind).or_else(|| model::structure(&node.kind));
         for (key, raw) in &line.properties {
             let t = match kind {
                 Some(k) => Some(k.property(key).ok_or_else(|| {

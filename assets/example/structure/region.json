@@ -1,0 +1,17 @@
+{
+  "kind": "region",
+  "properties": {
+    "label": "Payment",
+    "allow": "urn:example:account:card urn:iki:ui:element:name:rating",
+    "scopes": "urn:cap:example:card:read"
+  },
+  "children": [
+    {
+      "kind": "reference",
+      "properties": {
+        "resource": "urn:example:account:card",
+        "fallback": "Card number withheld"
+      }
+    }
+  ]
+}

@@ -250,8 +250,11 @@ pub async fn definitions(
             if model::is_element(&n.kind) && !read.contains_key(&n.kind) {
                 found.push(n.kind.clone());
             }
-            stack.extend(n.children.iter());
-            stack.extend(n.replacement.as_deref());
+            // A region's elements are read inside the region, in its narrowed space.
+            if n.kind != crate::region::KIND {
+                stack.extend(n.children.iter());
+                stack.extend(n.replacement.as_deref());
+            }
         }
         for element in found {
             if read.contains_key(&element) {
@@ -339,7 +342,30 @@ impl Expander<'_> {
 
     /// `node` with every element down the ladder. `depth` is the number of open expansions;
     /// recursion is bounded by [`MAX_DEPTH`] expansions times the model's own depth bound.
+    /// `nodes` with the open element's slot filled and nothing expanded: a region's interior,
+    /// which expands inside the region ([`crate::region`]).
+    fn fill(&mut self, nodes: &[Node]) -> Result<Vec<Node>, Error> {
+        let mut out = Vec::with_capacity(nodes.len());
+        for n in nodes {
+            if n.kind == SLOT {
+                out.extend(self.slots.last().cloned().unwrap_or_default());
+            } else {
+                self.count()?;
+                let mut c = n.clone();
+                c.children = self.fill(&n.children)?;
+                out.push(c);
+            }
+        }
+        Ok(out)
+    }
+
     fn walk(&mut self, node: &Node, depth: usize) -> Result<Node, Error> {
+        if node.kind == crate::region::KIND {
+            self.count()?;
+            let mut out = node.clone();
+            out.children = self.fill(&node.children)?;
+            return Ok(out);
+        }
         if !model::is_element(&node.kind) {
             self.count()?;
             let mut out = node.clone();

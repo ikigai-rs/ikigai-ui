@@ -178,6 +178,36 @@ this phase does **not** install a target resolution corridor; it preserves the c
 scope without inventing a root bypass. `tests/target.rs` reproduces that kernel limitation.
 A host needing a structural corridor must arrange it at the kernel boundary.
 
+## A screen is a space (ledger #3361)
+
+A screen composes references and spaces; the face composes them away before the descriptor
+projects.
+
+- **Settings** are names, `urn:iki:ui:setting:name:{name}` (`target`, `theme`, `locale`,
+  `density`, `viewer`), answered by the space the screen runs in. The library's space answers
+  each with its default; a host builds a named screen space (`setting::screen_space`) and
+  injects it ahead of the root with `Kernel::issue_in` (`setting::scope`).
+  `urn:iki:ui:face:screen:{screen}` reads its target from `setting:name:target` there;
+  `urn:iki:ui:face:target:{target}:screen:{screen}` stays the entry point that names one. Each
+  screen space is its own cache partition, and every answer stays keyed on the capability.
+- **A `reference`** (`resource`, `fallback`) names a resource. The face reads it under the
+  CALLER's capability; one the caller may not read is withheld: its fallback text renders, and
+  the value is in no byte of the face and no cache entry readable under that grant.
+- **A `region`** (`label`, `allow`, `scopes`) is a group whose children compose in a narrowed
+  space: `Invocation::confine` to the names `allow` lists and the screen's settings, read under
+  the caller's capability attenuated to `scopes`. A reference, an element definition or what an
+  element's expansion reads outside it is `Unresolved`, and the face refuses.
+- **A write-only field** names its own `resource`: the face makes it a form that sinks to that
+  resource (input `password` by default), and it holds no `value`, so a password or a card
+  number is never read back into the screen.
+
+`reference` and `region` are structural nodes, not kinds: their shapes are
+`urn:iki:ui:structure:name:{name}`, their examples `urn:iki:ui:example:structure:{name}`, and the
+JSON-LD context names them. `tests/space.rs` and `tests/reference.rs` hold the behaviour, and
+`tests/model.rs` holds the shapes and the validator to agreement. The demo's contact screen
+references `urn:iki:uidemo:inbox`, which the door's grant may not read: every visitor sees its
+withheld rung.
+
 ## The demo
 
 ```sh

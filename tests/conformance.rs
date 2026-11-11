@@ -56,6 +56,20 @@ fn conforms() {
                 .binding("target", "gpui")
                 .binding("screen", "gallery"),
         )
+        // Settings and structural nodes (ledger #3361): the screen-space face reads its target
+        // from the setting; with no screen space injected, the root's default answers.
+        .fixture(Fixture::new("ui-face-screen", Verb::Source).binding("screen", "gallery"))
+        .fixture(Fixture::new("ui-setting-name", Verb::Source).binding("name", "target"))
+        .fixture(Fixture::new("ui-structure-name", Verb::Source).binding("name", "reference"))
+        .fixture(Fixture::new("ui-example-structure", Verb::Source).binding("name", "region"))
+        .pure("ui-face-screen")
+        .cacheable("ui-face-screen")
+        .pure("ui-setting-name")
+        .cacheable("ui-setting-name")
+        .pure("ui-structure-name")
+        .cacheable("ui-structure-name")
+        .pure("ui-example-structure")
+        .cacheable("ui-example-structure")
         // The html target (ledger #3355): every view reads the screen through the kernel.
         .fixture(Fixture::new("ui-html-screen", Verb::Source).binding("screen", "gallery"))
         .fixture(
@@ -134,6 +148,8 @@ fn conforms() {
         .namespace("urn:iki:ui:property:")
         // This crate's own custom elements (ledger #3358), urn:iki:ui:element:name:{name}.
         .namespace("urn:iki:ui:element:")
+        // The structural nodes, reference and region (ledger #3361): the shapes are this crate's.
+        .namespace("urn:iki:ui:structure:")
         .self_named_space("ui", ikigai_ui::space)
         .host_named_space("ikigai_ui::pages(family, base)", pages)
         // Since core 0.2.5 a root exact alias is a view of its own (ledger #2513): listed, and
@@ -224,6 +240,10 @@ fn conforms() {
         "ui-target-name",
         "ui-support",
         "ui-face-target-screen",
+        "ui-face-screen",
+        "ui-setting-name",
+        "ui-structure-name",
+        "ui-example-structure",
         "ui-element-name",
         "ui-screen-elements",
     ] {

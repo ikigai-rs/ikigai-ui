@@ -1,0 +1,7 @@
+{
+  "kind": "reference",
+  "properties": {
+    "resource": "urn:example:account:card",
+    "fallback": "Card number withheld"
+  }
+}

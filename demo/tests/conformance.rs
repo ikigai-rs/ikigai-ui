@@ -98,11 +98,18 @@ fn conforms() {
         .pure("ui-head-uidemo")
         .pure("ui-support")
         .pure("ui-face-target-screen")
+        .fixture(Fixture::new("ui-face-screen", Verb::Source).binding("screen", "gallery"))
+        .pure("ui-face-screen")
+        .pure("ui-setting-name")
+        .pure("ui-structure-name")
+        .pure("ui-example-structure")
         // ikigai-ui's own vocabularies, as its tests/conformance.rs registers them.
         .namespace("urn:iki:ui:token:")
         .namespace("urn:iki:ui:kind:")
         .namespace("urn:iki:ui:property:")
         .namespace("urn:iki:ui:element:")
+        // The structural nodes, reference and region (ledger #3361): the shapes are this crate's.
+        .namespace("urn:iki:ui:structure:")
         .body_space(root)
         .run_blocking(&kernel);
     println!("{report}");

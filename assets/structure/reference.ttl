@@ -1,0 +1,21 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# The `reference` structural node (ledger #3361): it names a resource, `resource`, which the face
+# resolves under the CALLER's capability and splices in its place; a caller who may not read it
+# sees `fallback`, the withheld rung. Never a target kind: the face composes it away before a
+# descriptor projects. Closed, with no children and no replacement.
+<urn:iki:ui:structure:name:reference> a sh:NodeShape, rdfs:Class ;
+  rdfs:subClassOf <urn:iki:ui:node> ;
+  rdfs:label "reference" ;
+  <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:fallback> ;
+  sh:targetClass <urn:iki:ui:structure:name:reference> ;
+  sh:closed true ;
+  sh:property <urn:iki:ui:structure:name:reference:property:name:type>, <urn:iki:ui:structure:name:reference:property:name:fallback>, <urn:iki:ui:structure:name:reference:property:name:resource> .
+
+<urn:iki:ui:structure:name:reference:property:name:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:structure:name:reference> ; sh:maxCount 1 .
+<urn:iki:ui:structure:name:reference:property:name:fallback> sh:path <urn:iki:ui:property:name:fallback> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+# The referenced resource's absolute IRI (the Rust validator parses it).
+<urn:iki:ui:structure:name:reference:property:name:resource> sh:path <urn:iki:ui:property:name:resource> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
