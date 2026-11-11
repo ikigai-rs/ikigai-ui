@@ -21,6 +21,8 @@
 //! | `urn:iki:ui:chooser:{family}:{theme}` | composition | what the shell puts in a family's `<header>`, for ANY family: its override if bound, else the theme chooser ([`CHOOSER`]) |
 //! | `urn:iki:ui:form:resource:{iri}` | data | a `form` node generated from `{iri}`'s contract, its Sink's inputs ([`form`]) |
 //! | `urn:iki:ui:form:openapi:{doc}:operation:{op}` | data | the same from an OpenAPI 3.1 document's operation ([`form`]) |
+//! | `urn:iki:ui:view:resource:{iri}` | data | `{iri}`'s view: curated for its type, else generated from its own model, recursively ([`view`]) |
+//! | `urn:iki:ui:view:generated:{iri}` | data | always the generated view ([`view`]) |
 //! | `urn:iki:ui:screen:name:{screen}` | composition | a screen compiled from its outline, `{screen}:source` ([`screen`]; [`screen::screens`], placed last) |
 //! | `urn:iki:ui:outline:compile` | transreptor | an outline to the model ([`screen::COMPILER`]) |
 //! | `urn:iki:ui:sexpr:compile` | transreptor | a screen s-expression to the model ([`sexpr::COMPILER`]) |
@@ -118,6 +120,7 @@ pub mod sexpr;
 pub mod target;
 #[cfg(feature = "testkit")]
 pub mod testkit;
+pub mod view;
 
 /// The name [`space`] claims: `urn:iki:space:ui`.
 pub const SPACE_ID: &str = "urn:iki:space:ui";
@@ -641,6 +644,14 @@ pub fn space() -> EndpointSpace {
         .bind(
             template("urn:iki:ui:target:name:{name}"),
             target::descriptor_endpoint(),
+        )
+        .bind(
+            template(&format!("{}{{iri}}", view::RESOURCE)),
+            view::endpoint("ui-view-resource", true),
+        )
+        .bind(
+            template(&format!("{}{{iri}}", view::GENERATED)),
+            view::endpoint("ui-view-generated", false),
         )
         .bind(Exact::new(target::SUPPORT), target::support_endpoint())
         .bind(
