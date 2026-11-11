@@ -6,7 +6,7 @@
 //! | `urn:iki:ui:view:resource:{iri}` | the view of `{iri}`: the curated view for its type when one is bound, else the generated one |
 //! | `urn:iki:ui:view:generated:{iri}` | always the generated view, so a curated view can start from it and override only what it needs (a `reference` to it) without naming itself |
 //! | `urn:iki:ui:view:type:{class}` | an author's view for a type (a model); `{iri}` in any text property is the shown resource |
-//! | `urn:iki:ui:shape:type:{class}` | the shape a generated view reads for a type (SHACL in compact JSON-LD, below) |
+//! | `urn:iki:ui:shape:type:{class}` | the shape a generated view reads for a type (SHACL in any RDF syntax the host reads, below) |
 //!
 //! ## What a generated view reads, all through the kernel under the CALLER's capability
 //!
@@ -14,10 +14,18 @@
 //!   summary the first text, its verbs and outputs a `list` labeled "Contract".
 //! - **Its data**, `{iri}`'s Source as a JSON object: `@type` names its classes; every other key
 //!   is a property. A value `{"@id": …}` is another resource; an array is a list of values.
-//! - **Its shape**, `urn:iki:ui:shape:type:{class}` for each class, a JSON object:
-//!   `{"label": …, "layout": "detail" | "table", "property": [{"path": …, "name": …,
-//!   "order": …}]}` (the `sh:`/`rdfs:` prefixed keys are read too). A shape says which
-//!   properties show, their labels and order; with none, every property shows under its key.
+//! - **Its shape**, `urn:iki:ui:shape:type:{class}` for each class: SHACL in any RDF syntax.
+//!   It is Sourced `as=application/ld+json` (through the kernel's transreptors when it answers
+//!   another syntax, Turtle say), flattened and compacted by the host's `urn:jsonld:flatten`
+//!   and `urn:jsonld:compact` against
+//!   [`SHAPE_CONTEXT`], so whatever prefixes, `@graph` or expanded IRIs it was written with,
+//!   it reads in one form: the node shape (its `sh:targetClass` the class, else the one with
+//!   properties), its `rdfs:label`, `urn:iki:ui:shape:layout` (`"detail"` | `"table"`) and each
+//!   `sh:property`'s `sh:path`, `sh:name` and `sh:order`. A path names the data's key that is
+//!   the path IRI itself, else its local name (after the last `#`, `/` or `:`). A shape says
+//!   which properties show, their labels and order; with none, every property shows under its
+//!   key. A shape that is bound and cannot be read in that form is a note in the view, and the
+//!   view shows as if there were none. The library parses no RDF: the host's modules do.
 //!   A list of resources whose type's layout is `table` is a `table`, a column per property.
 //! - **The caller's actions**, `urn:kernel:actions verb=sink`: when `{iri}` is one, its form
 //!   (`urn:iki:ui:form:resource:{iri}`) follows; when it is not, there is no form. The
@@ -41,7 +49,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::model::{self, Node, Value};
+use crate::model::{self, Node, Value, JSON_LD};
 
 /// The view of a resource: curated for its type, else generated.
 pub const RESOURCE: &str = "urn:iki:ui:view:resource:";
@@ -51,6 +59,22 @@ pub const GENERATED: &str = "urn:iki:ui:view:generated:";
 pub const TYPE: &str = "urn:iki:ui:view:type:";
 /// The shape a generated view reads for a type.
 pub const SHAPE: &str = "urn:iki:ui:shape:type:";
+/// The host's JSON-LD flattening, which makes a shape one node per subject.
+pub const FLATTEN: &str = "urn:jsonld:flatten";
+/// The host's JSON-LD compaction, which reads a shape in [`SHAPE_CONTEXT`]'s terms.
+pub const COMPACT: &str = "urn:jsonld:compact";
+/// The context a shape is compacted against, whatever prefixes or form it was written in.
+pub const SHAPE_CONTEXT: &str = r#"{"@context": {
+  "sh": "http://www.w3.org/ns/shacl#",
+  "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+  "targetClass": {"@id": "sh:targetClass", "@type": "@id"},
+  "label": "rdfs:label",
+  "layout": "urn:iki:ui:shape:layout",
+  "property": {"@id": "sh:property", "@container": "@set"},
+  "path": {"@id": "sh:path", "@type": "@id"},
+  "name": "sh:name",
+  "order": "sh:order"
+}}"#;
 /// How deep nested resources render before they become links.
 pub const MAX_DEPTH: usize = 3;
 /// How many nodes one view produces before nested resources become links.
@@ -135,49 +159,108 @@ struct Shape {
     properties: Option<Vec<Property>>,
 }
 
-fn key<'a>(o: &'a Map<String, Json>, names: &[&str]) -> Option<&'a Json> {
-    names.iter().find_map(|n| o.get(*n))
+/// One value of a compacted term: the first of a set, a value object's `@value`.
+fn first(v: &Json) -> Option<&Json> {
+    match v {
+        Json::Array(a) => a.first().and_then(first),
+        Json::Object(o) if o.contains_key("@value") => o.get("@value"),
+        v => Some(v),
+    }
 }
 
-fn shape_from(json: &Json) -> Shape {
-    let Some(o) = json.as_object() else {
-        return Shape::default();
+fn string(o: &Map<String, Json>, term: &str) -> Option<String> {
+    match first(o.get(term)?)? {
+        Json::String(s) => Some(s.clone()),
+        Json::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// `node`, or the node of `graph` it only refers to (`{"@id": "_:b0"}`).
+fn resolve<'a>(
+    node: &'a Json,
+    graph: &'a BTreeMap<&'a str, &'a Map<String, Json>>,
+) -> Option<&'a Map<String, Json>> {
+    let o = node.as_object()?;
+    match o.get("@id").and_then(Json::as_str) {
+        Some(id) if o.len() == 1 => graph.get(id).copied(),
+        _ => Some(o),
+    }
+}
+
+/// The shape for `class` in a document compacted against [`SHAPE_CONTEXT`]: its one node, or
+/// the node of its `@graph` whose `targetClass` is `class`, else the first with properties.
+fn shape_from(json: &Json, class: &str) -> Result<Shape, String> {
+    let nodes: Vec<&Map<String, Json>> = match json {
+        Json::Object(o) => match o.get("@graph") {
+            Some(Json::Array(g)) => g.iter().filter_map(Json::as_object).collect(),
+            Some(g) => g.as_object().into_iter().collect(),
+            None => vec![o],
+        },
+        _ => Vec::new(),
     };
-    let label = key(o, &["label", "rdfs:label", "name", "sh:name"])
-        .and_then(Json::as_str)
-        .map(str::to_string);
-    let table = key(o, &["layout", "ui:layout"]).and_then(Json::as_str) == Some("table");
-    let properties = key(o, &["property", "sh:property"])
-        .and_then(Json::as_array)
-        .map(|ps| {
-            let mut out: Vec<Property> = ps
-                .iter()
-                .enumerate()
-                .filter_map(|(i, p)| {
-                    let p = p.as_object()?;
-                    let path = key(p, &["path", "sh:path"])?;
-                    let path = path
-                        .as_str()
-                        .or_else(|| path.get("@id").and_then(Json::as_str))?
-                        .to_string();
-                    let name = key(p, &["name", "sh:name", "rdfs:label"])
-                        .and_then(Json::as_str)
-                        .unwrap_or(&path)
-                        .to_string();
-                    let order = key(p, &["order", "sh:order"])
-                        .and_then(Json::as_f64)
-                        .unwrap_or(i as f64 + 1e6);
-                    Some(Property { path, name, order })
-                })
-                .collect();
+    let graph: BTreeMap<&str, &Map<String, Json>> = nodes
+        .iter()
+        .filter_map(|n| Some((n.get("@id")?.as_str()?, *n)))
+        .collect();
+    let targets = |n: &Map<String, Json>| match n.get("targetClass") {
+        Some(Json::Array(a)) => a.iter().any(|c| c.as_str() == Some(class)),
+        Some(c) => c.as_str() == Some(class),
+        None => false,
+    };
+    let o = nodes
+        .iter()
+        .find(|n| targets(n))
+        .or_else(|| nodes.iter().find(|n| n.contains_key("property")))
+        .or_else(|| nodes.first().filter(|_| nodes.len() == 1))
+        .ok_or_else(|| "it names no shape".to_string())?;
+    if !["property", "label", "layout", "targetClass"]
+        .iter()
+        .any(|k| o.contains_key(*k))
+    {
+        return Err("it says nothing a view reads (sh:property, rdfs:label, layout)".to_string());
+    }
+    let label = string(o, "label").or_else(|| string(o, "name"));
+    let table = string(o, "layout").as_deref() == Some("table");
+    let properties = match o.get("property") {
+        None => None,
+        Some(ps) => {
+            let ps = match ps {
+                Json::Array(a) => a.iter().collect(),
+                p => vec![p],
+            };
+            let mut out = Vec::new();
+            for (i, p) in ps.into_iter().enumerate() {
+                let p = resolve(p, &graph).ok_or_else(|| "a property is not a node".to_string())?;
+                let path = string(p, "path")
+                    .ok_or_else(|| "a property has no single IRI path".to_string())?;
+                let name = string(p, "name")
+                    .or_else(|| string(p, "label"))
+                    .unwrap_or_else(|| local(&path).to_string());
+                let order = string(p, "order")
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .unwrap_or(i as f64 + 1e6);
+                out.push(Property { path, name, order });
+            }
             out.sort_by(|a, b| a.order.total_cmp(&b.order));
-            out
-        });
-    Shape {
+            Some(out)
+        }
+    };
+    Ok(Shape {
         label,
         table,
         properties,
-    }
+    })
+}
+
+/// A path IRI's local name: what follows its last `#`, `/` or `:`.
+fn local(path: &str) -> &str {
+    path.rsplit(['#', '/', ':']).next().unwrap_or(path)
+}
+
+/// `path`'s value in `data`: under the path itself, else under its local name.
+fn get<'a>(data: &'a Map<String, Json>, path: &str) -> Option<&'a Json> {
+    data.get(path).or_else(|| data.get(local(path)))
 }
 
 fn types(data: &Map<String, Json>) -> Vec<String> {
@@ -237,17 +320,66 @@ async fn optional(inv: &Invocation<'_>, request: Request) -> Result<Option<Vec<u
     }
 }
 
-async fn shape(inv: &Invocation<'_>, class: &str) -> Result<Option<Shape>, Error> {
+/// The shape for `class` in the known form: Sourced `as=application/ld+json` (through the
+/// kernel's transreptors when it answers another RDF syntax), flattened and compacted against
+/// [`SHAPE_CONTEXT`] by the host's `urn:jsonld:flatten` and `urn:jsonld:compact`. `None` when no shape is bound or the
+/// caller may not read it; `Some(Err(why))` when one is bound and cannot be read that way.
+async fn shape(inv: &Invocation<'_>, class: &str) -> Result<Option<Result<Shape, String>>, Error> {
     let Ok(at) = Iri::parse(format!("{SHAPE}{class}")) else {
         return Ok(None);
     };
-    match optional(inv, Request::new(Verb::Source, at)).await {
-        Ok(Some(bytes)) => Ok(serde_json::from_slice::<Json>(&bytes)
-            .ok()
-            .map(|j| shape_from(&j))),
-        Ok(None) | Err(Error::Denied(_)) => Ok(None),
-        Err(e) => Err(e),
-    }
+    let asked =
+        Request::new(Verb::Source, at.clone()).with_arg("as", ArgRef::Inline(JSON_LD.into()));
+    let rep = match inv.issue(asked).await {
+        // A shape with one face refuses the face it does not have; read the one it has.
+        Err(Error::InvalidArgument { name, .. }) if name == "as" => {
+            inv.issue(Request::new(Verb::Source, at)).await
+        }
+        r => r,
+    };
+    let rep = match rep {
+        Ok(rep) => rep,
+        Err(Error::NotFound(_) | Error::Unresolved(_) | Error::Denied(_)) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let media = rep.repr_type.media_type.clone();
+    let bytes = if media == JSON_LD || media == "application/json" {
+        rep.bytes
+    } else {
+        let Some(plan) = inv.select_transreptor(&media, JSON_LD) else {
+            return Ok(Some(Err(format!(
+                "it is {media}, which nothing here reads as JSON-LD"
+            ))));
+        };
+        match inv.transrept(rep.into_body(), &plan).await {
+            Ok(r) => inv.collect(r.bytes).await?.to_vec(),
+            Err(e) => return Ok(Some(Err(format!("it is {media}, and as JSON-LD: {e}")))),
+        }
+    };
+    // Flattened first, so a node said in pieces (one object per triple) is one node.
+    let flatten =
+        Request::new(Verb::Source, iri(FLATTEN)?).with_arg("content", ArgRef::Inline(bytes));
+    let flat = match inv.issue(flatten).await {
+        Ok(r) => r.bytes,
+        Err(e) => return Ok(Some(Err(format!("it does not flatten ({FLATTEN}): {e}")))),
+    };
+    let compact = Request::new(Verb::Source, iri(COMPACT)?)
+        .with_arg("content", ArgRef::Inline(flat))
+        .with_arg("context", ArgRef::Inline(SHAPE_CONTEXT.into()));
+    let compacted = match inv.issue(compact).await {
+        Ok(r) => r.bytes,
+        Err(e) => return Ok(Some(Err(format!("it does not compact ({COMPACT}): {e}")))),
+    };
+    Ok(Some(
+        serde_json::from_slice::<Json>(&compacted)
+            .map_err(|e| format!("its compaction is not JSON: {e}"))
+            .and_then(|j| shape_from(&j, class)),
+    ))
+}
+
+/// A note that `class`'s shape is bound and could not be read.
+fn unreadable(class: &str, why: &str) -> Node {
+    text(format!("The shape for {class} could not be read: {why}"))
 }
 
 /// The curated view for one of `classes`, `{iri}` filled in.
@@ -389,7 +521,7 @@ async fn table(
     };
     let mut layout = None;
     for class in types(&d) {
-        if let Some(s) = shape(inv, &class).await? {
+        if let Some(Ok(s)) = shape(inv, &class).await? {
             if s.table {
                 layout = s.properties;
                 break;
@@ -412,7 +544,7 @@ async fn table(
         let cells = match data(inv, r).await {
             Ok(Some(d)) => columns
                 .iter()
-                .map(|c| match d.get(&c.path) {
+                .map(|c| match get(&d, &c.path) {
                     Some(v) => match resource_of(v) {
                         Some(n) => link(&c.name, n),
                         None => text(nonempty(&scalar(v).unwrap_or_default(), "-")),
@@ -467,10 +599,15 @@ async fn generated(
 ) -> Result<Node, Error> {
     let meta = contract(inv, resource).await?;
     let mut shape_of = Shape::default();
+    let mut notes = Vec::new();
     for class in classes {
-        if let Some(s) = shape(inv, class).await? {
-            shape_of = s;
-            break;
+        match shape(inv, class).await? {
+            Some(Ok(s)) => {
+                shape_of = s;
+                break;
+            }
+            Some(Err(why)) => notes.push(unreadable(class, &why)),
+            None => {}
         }
     }
     let title = meta
@@ -511,6 +648,7 @@ async fn generated(
             children.push(node("list", vec![("label", t("Contract"))], facts));
         }
     }
+    children.extend(notes);
     walk.nodes += children.iter().map(count).sum::<usize>();
     if let Some(d) = &d {
         let shown: Vec<(String, String)> = match &shape_of.properties {
@@ -526,7 +664,7 @@ async fn generated(
         };
         let mut props = Vec::new();
         for (path, label) in shown {
-            if let Some(v) = d.get(&path) {
+            if let Some(v) = get(d, &path) {
                 props.push(value(inv, walk, label, v).await?);
             }
         }
@@ -606,18 +744,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_shape_orders_and_labels() {
-        let s = shape_from(&serde_json::json!({
-            "sh:property": [
-                {"sh:path": "b", "sh:name": "Bee", "sh:order": 2},
-                {"path": "a", "name": "Ay", "order": 1}
-            ],
-            "layout": "table"
-        }));
+    fn a_compacted_shape_orders_labels_and_resolves_its_graph() {
+        let s = shape_from(
+            &serde_json::json!({"@graph": [
+                {"@id": "_:p", "path": "urn:demo:b", "name": "Bee", "order": {"@value": "2"}},
+                {"@id": "urn:other", "targetClass": "urn:demo:Other", "property": []},
+                {"@id": "urn:s", "targetClass": "urn:demo:T", "layout": "table", "property": [
+                    {"@id": "_:p"},
+                    {"path": "urn:demo:a", "name": "Ay", "order": 1}
+                ]}
+            ]}),
+            "urn:demo:T",
+        )
+        .unwrap();
         assert!(s.table);
         let ps = s.properties.unwrap();
         assert_eq!(ps[0].name, "Ay");
-        assert_eq!(ps[1].path, "b");
+        assert_eq!(ps[1].path, "urn:demo:b");
+        assert_eq!(local(&ps[1].path), "b");
+        assert!(shape_from(&serde_json::json!([]), "urn:demo:T").is_err());
     }
 
     #[test]

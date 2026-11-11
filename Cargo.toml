@@ -93,6 +93,13 @@ tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
 # tests/screen.rs binds prefix tables with `DynamicSpace::refresh`, behind `declare` (ledger #3365).
 ikigai-core = { version = "0.3.0", features = ["declare"] }
 
+# tests/view.rs: a type's shape is read through the host's JSON-LD (ledger #3405): ikigai-rdf's
+# `urn:rdf:transrept` turns a Turtle shape into JSON-LD, and ikigai-jsonld's `urn:jsonld:compact`
+# compacts any JSON-LD shape against the view's own context. The library issues both, never
+# links them, so it stays free of an RDF parser. Both are the releases on ikigai-core 0.3.0.
+ikigai-rdf = "0.5.0"
+ikigai-jsonld = "0.4.0"
+
 [dev-dependencies.ikigai-lisp]
 # tests/sexpr.rs: a screen that is a Lisp program runs through the real `urn:lisp:eval`, which a
 # host binds (this crate issues it, never links it: the library carries no Lisp engine). 0.5.0
