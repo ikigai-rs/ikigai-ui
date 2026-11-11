@@ -21,6 +21,9 @@ futures = "0.3"
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders"] }
 unicode-segmentation = "1.12"
+# GPUI's zed-async-tar -> xattr 0.2 still uses Linux ENOATTR, removed in
+# libc 0.2.190. Keep that compatible until GPUI updates its tar dependency.
+libc = "=0.2.189"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ikigai-ui-demo = { path = "../demo" }

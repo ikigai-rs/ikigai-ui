@@ -99,7 +99,13 @@ impl Screen {
     fn install(&mut self, node: &Node, path: &str, cx: &mut Context<Self>) {
         match node.kind.as_str() {
             "field" => {
-                let value = text(node, "value").unwrap_or_default();
+                let value = text(node, "value").unwrap_or_else(|| {
+                    if text(node, "input") == Some("checkbox") {
+                        "false"
+                    } else {
+                        ""
+                    }
+                });
                 let input = cx.new(|cx| {
                     let mut input = TextInput::new(value, cx);
                     input.multiline = text(node, "input") == Some("textarea");
@@ -387,18 +393,31 @@ impl Screen {
                     body = body.child(description.to_string());
                 }
                 for (i, child) in node.children.iter().enumerate() {
-                    let element = self.walk(child, &format!("{path}/{i}"), form, cx);
                     if node.kind == "table" {
                         // A row's group children are laid out as native cells, not markup.
                         let mut row = div().flex().flex_row().gap_4().border_b_1();
                         for (j, cell) in child.children.iter().enumerate() {
-                            row = row.child(self.walk(cell, &format!("{path}/{i}/{j}"), form, cx));
+                            let mut cell_view = div().flex_1().child(self.walk(
+                                cell,
+                                &format!("{path}/{i}/{j}"),
+                                form,
+                                cx,
+                            ));
+                            if text(child, "header") == Some("column")
+                                || (j == 0 && text(child, "header") == Some("row"))
+                            {
+                                cell_view = cell_view.font_weight(gpui::FontWeight::BOLD);
+                            }
+                            row = row.child(cell_view);
                         }
                         body = body.child(row);
-                    } else if node.kind == "list" {
-                        body = body.child(div().flex().gap_2().child("•").child(element));
                     } else {
-                        body = body.child(element);
+                        let element = self.walk(child, &format!("{path}/{i}"), form, cx);
+                        if node.kind == "list" {
+                            body = body.child(div().flex().gap_2().child("•").child(element));
+                        } else {
+                            body = body.child(element);
+                        }
                     }
                 }
                 if node.kind == "form" {
@@ -492,6 +511,50 @@ mod tests {
         sync::{mpsc, Arc},
         time::Instant,
     };
+
+    #[gpui::test]
+    fn gallery_walks_every_native_kind_and_boolean_fields_toggle(cx: &mut TestAppContext) {
+        let root = Arc::new(Fallback::new(vec![
+            Arc::new(crate::descriptor_space()),
+            ikigai_ui_demo::root(Default::default()),
+        ]));
+        let worker = Worker::new(
+            Arc::new(ikigai_ui_demo::kernel(root)),
+            Capability::root(),
+            Scope::empty(),
+        );
+        let (screen, cx) = cx.add_window_view(|_, cx| Screen::new(worker, "gallery", cx));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if screen.update(cx, |s, cx| {
+                s.poll(cx);
+                s.loading.is_none()
+            }) {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        cx.run_until_parked(); // Draw the gallery, including tables, lists, links and options.
+        screen.update(cx, |s, _| assert!(s.snapshot.is_some(), "{}", s.message));
+        let snapshot = Snapshot::from_face(br#"{"kind":"field","properties":{"label":"Enabled","name":"enabled","input":"checkbox"}}"#).unwrap();
+        let focus = screen.update(cx, |s, cx| {
+            s.install(snapshot.root(), "/", cx);
+            s.snapshot = Some(snapshot);
+            let mut values = BTreeMap::new();
+            s.values(s.snapshot.as_ref().unwrap().root(), "/", cx, &mut values);
+            assert_eq!(values["enabled"], "false");
+            cx.notify();
+            s.focus["/"].clone()
+        });
+        cx.update(|window, _| window.focus(&focus));
+        cx.simulate_keystrokes("space");
+        screen.update(cx, |s, cx| {
+            let mut values = BTreeMap::new();
+            s.values(s.snapshot.as_ref().unwrap().root(), "/", cx, &mut values);
+            assert_eq!(values["enabled"], "true");
+        });
+    }
 
     #[gpui::test]
     fn window_accepts_native_text_during_a_five_second_composition(cx: &mut TestAppContext) {
