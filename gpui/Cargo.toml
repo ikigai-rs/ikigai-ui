@@ -1,0 +1,38 @@
+[package]
+name = "ikigai-ui-gpui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "Apache-2.0"
+description = "Native GPUI walker and off-thread snapshot loader for ikigai-ui"
+repository = "https://github.com/ikigai-rs/ikigai-ui"
+publish = false
+
+[dependencies]
+ikigai-ui = { path = ".." }
+ikigai-core = "0.3.0"
+serde_json = "1"
+
+# Resource work is independent of the window platform.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+futures = "0.3"
+
+# macOS windows, and Linux's system-library-free headless GPUI test backend.
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders"] }
+unicode-segmentation = "1.12"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ikigai-ui-demo = { path = "../demo" }
+tokio = { version = "1", features = ["rt", "net"] }
+ikigai-web = "0.5.0"
+
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dev-dependencies]
+gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "test-support"] }
+
+[dev-dependencies]
+ikigai-ui-demo = { path = "../demo" }
+
+[[bin]]
+name = "ikigai-ui-demo-native"
+path = "src/main.rs"

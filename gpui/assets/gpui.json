@@ -1,0 +1,11 @@
+{
+  "name": "gpui",
+  "capabilities": [
+    { "name": "hover", "version": "1.0" },
+    { "name": "multi-window", "version": "1.0" }
+  ],
+  "renders": ["heading", "text", "button", "link", "list", "status", "group", "field", "choice", "option", "form", "nav", "table"],
+  "fallback": { "image": "text", "visual": "text" },
+  "limits": {},
+  "hints": ["urn:iki:ui:hint:gpui:"]
+}
