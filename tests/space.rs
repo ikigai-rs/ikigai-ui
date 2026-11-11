@@ -560,3 +560,95 @@ fn an_outline_writes_a_reference_and_a_region() {
     assert_eq!(node.children[1].kind, "region");
     assert_eq!(node.children[1].children[0].kind, "text");
 }
+
+/// A host whose screen `outlined` is the outline `source`, not a model.
+fn outlined(source: &'static str, reached: Arc<AtomicU32>) -> Kernel {
+    let space = EndpointSpace::new()
+        .bind(Exact::new("urn:demo:card"), card(reached))
+        .bind(
+            Exact::new("urn:iki:ui:screen:name:outlined:source"),
+            FnEndpoint::new("outline", move |_: &Invocation<'_>| {
+                Ok(
+                    Representation::new(ReprType::new("text/plain"), source.as_bytes().to_vec())
+                        .cacheable(),
+                )
+            })
+            .with_description(
+                Description::new("outline")
+                    .title("An outline")
+                    .summary("A test outline.")
+                    .verb(Verb::Source)
+                    .verb(Verb::Meta)
+                    .output("text/plain"),
+            ),
+        );
+    common::host_with(
+        None,
+        vec![Arc::new(space), Arc::new(ikigai_ui::screen::screens())],
+    )
+}
+
+#[test]
+fn an_outline_reference_inside_a_region_does_not_read_outside_it() {
+    // A reference LINE is read when the outline compiles, in the screen's space and under the
+    // caller's whole grant. Inside a region it would splice what the region may not read.
+    let reached = Arc::new(AtomicU32::new(0));
+    let kernel = outlined(
+        "group label=\"Account\"\n  region label=\"Payment\" allow=\"urn:demo:greeting\"\n    urn:demo:card\n",
+        reached.clone(),
+    );
+    let wide = Capability::scoped([SCOPE]);
+    for capability in [&wide, &Capability::root()] {
+        let face = face(
+            &kernel,
+            "urn:iki:ui:face:target:html:screen:outlined",
+            capability,
+        );
+        if let Ok(rep) = &face {
+            assert!(
+                !String::from_utf8_lossy(&rep.bytes).contains(SECRET),
+                "the region's interior read the card outside it"
+            );
+        }
+        assert!(
+            matches!(face, Err(Error::InvalidArgument { .. })),
+            "{face:?}"
+        );
+    }
+    assert_eq!(
+        reached.load(Ordering::SeqCst),
+        0,
+        "the card was never entered"
+    );
+    // The s-expression front end compiles through the same step.
+    let datum = "(group :label \"Account\" (region :label \"Payment\" :allow \"urn:demo:greeting\" (urn:demo:card)))";
+    let request = Request::new(
+        Verb::Source,
+        Iri::parse(ikigai_ui::sexpr::COMPILER).unwrap(),
+    )
+    .with_arg(
+        "content",
+        ikigai_core::ArgRef::Inline(datum.as_bytes().to_vec()),
+    );
+    let err = block_on(kernel.issue(request, &Capability::root())).unwrap_err();
+    assert!(matches!(err, Error::InvalidArgument { .. }), "{err}");
+    assert_eq!(
+        reached.load(Ordering::SeqCst),
+        0,
+        "the card was never entered"
+    );
+
+    // Under scopes that do not grant the card, it is not read under the caller's grant either.
+    let kernel = outlined(
+        "group label=\"Account\"\n  region label=\"Payment\" allow=\"urn:demo:card\" scopes=\"urn:cap:demo:other\"\n    urn:demo:card\n",
+        Arc::default(),
+    );
+    let face = face(
+        &kernel,
+        "urn:iki:ui:face:target:html:screen:outlined",
+        &wide,
+    );
+    if let Ok(rep) = &face {
+        assert!(!String::from_utf8_lossy(&rep.bytes).contains(SECRET));
+    }
+}
