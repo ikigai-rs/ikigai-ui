@@ -331,6 +331,10 @@ pub fn validate(root: &Node) -> Result<(), Error> {
             push_children(&path, node, &mut stack);
             continue;
         }
+        if node.kind == crate::reference::KIND {
+            crate::reference::validate(node).map_err(|detail| refuse(&path, detail))?;
+            continue;
+        }
         let Some(k) = kind(&node.kind) else {
             return Err(refuse(&path, format!("`{}` is not a kind", node.kind)));
         };
