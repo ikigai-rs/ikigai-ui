@@ -63,12 +63,18 @@ Sink, field refusals, capability denial, and vocabulary rejection. A synchronous
 composition that sleeps for five seconds runs on a different OS thread while
 nonblocking polling continues.
 
-GPUI tests create test windows on macOS and Linux's headless backend, enter native text while
-that five-second composition is executing, and exercise contact form editing,
-multiline Unicode input, keyboard choice selection/submission, field refusals,
-retained values and focus traversal. The repository's Linux CI runs both the
-worker tests and these GPUI window tests without an X11/Wayland server or system
-window-library development packages. The same tests also run on macOS.
+On macOS, three GPUI tests create test windows, draw the entire gallery, exercise
+boolean controls, and enter native text while the five-second composition is
+executing. They also exercise contact form editing, multiline Unicode input,
+keyboard choice selection/submission, field refusals, retained values and focus
+traversal. These pass locally with the same test command.
+
+The repository's stock Linux CI compiles the native walker, runs the portable
+worker tests and existing repository tests, and checks MSRV, wasm, docs and HTML
+accessibility. Window tests stay on macOS: GPUI's `test-support` feature forces
+X11/Wayland link dependencies even when using its headless test platform, and
+those development libraries are absent from the stock runner. No shared CI
+workflow changes are needed.
 
 `src/input.rs` adapts GPUI 0.2.2's `examples/input.rs`, Copyright Zed Industries,
 under Apache-2.0. This crate is Apache-2.0 licensed; see `../LICENSE-APACHE`.

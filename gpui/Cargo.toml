@@ -17,7 +17,7 @@ serde_json = "1"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures = "0.3"
 
-# macOS windows, and Linux's system-library-free headless GPUI test backend.
+# macOS windows and a Linux build of the same walker (without window backends).
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders"] }
 unicode-segmentation = "1.12"
@@ -30,7 +30,10 @@ ikigai-ui-demo = { path = "../demo" }
 tokio = { version = "1", features = ["rt", "net"] }
 ikigai-web = "0.5.0"
 
-[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dev-dependencies]
+# GPUI test-support forces X11/Wayland link dependencies even for headless
+# tests. Keep actual test windows on macOS; stock Linux CI still compiles the
+# walker and exercises the background boundary against real faces and Sinks.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
 gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "test-support"] }
 
 [dev-dependencies]

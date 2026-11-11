@@ -1,4 +1,4 @@
-//! GPUI elements (macOS windows and Linux headless tests). Rendering never invokes a kernel or waits for a composition.
+//! GPUI elements (macOS windows; the same walker also compiles on Linux). Rendering never invokes a kernel or waits for a composition.
 use std::{collections::BTreeMap, time::Duration};
 
 use gpui::{div, prelude::*, px, rgb, App, Context, Entity, Focusable, Window};
@@ -499,7 +499,7 @@ impl Render for Screen {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
     use gpui::TestAppContext;
