@@ -10,8 +10,10 @@ resolver = "3"
 name = "ikigai-ui"
 version = "0.5.0"
 edition = "2021"
-# ikigai-core needs 1.87 (`usize::is_multiple_of`); the shared CI's msrv job holds it there.
-rust-version = "1.87"
+# ikigai-core needs 1.87 (`usize::is_multiple_of`); 1.88 since ledger #3367, for the
+# ikigai-lisp dev-dependency (`slice::as_chunks`, via Steel), which the shared CI's msrv job builds
+# with `--all-targets`.
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 description = "The shared UI path for ikigai hosts, as resources: vendored htmx, the token stylesheet, the shell script and the page shell, compiled in or overridden from a directory, plus the UI test kit."
 authors = ["Brian Sletten <brian.sletten@gmail.com>"]
@@ -54,6 +56,11 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 # A region's narrowed space is named by the SHA-256 of what it binds (ledger #3361).
 sha2 = "0.10"
+# Screens as s-expressions (ledger #3367): `ikigai_sexpr::parse`, the neutral datum every Lisp
+# adapts into, is the reader; `write` is the printer of a model's s-expression face. Default
+# features off: the code-graph codec (oxrdf) is not needed, and the library stays wasm-clean.
+# 0.4.0 is the release on ikigai-core 0.3.0; a caret on it is <0.5.0.
+ikigai-sexpr = { version = "0.4.0", default-features = false }
 # The test kit's `render`, which drives a kernel from a synchronous test.
 futures-executor = { version = "0.3", optional = true }
 
@@ -85,6 +92,12 @@ ikigai-web = "0.5.0"
 tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
 # tests/screen.rs binds prefix tables with `DynamicSpace::refresh`, behind `declare` (ledger #3365).
 ikigai-core = { version = "0.3.0", features = ["declare"] }
+
+[dev-dependencies.ikigai-lisp]
+# tests/sexpr.rs: a screen that is a Lisp program runs through the real `urn:lisp:eval`, which a
+# host binds (this crate issues it, never links it: the library carries no Lisp engine). 0.5.0
+# is the release on ikigai-core 0.3.0 and ikigai-sexpr 0.4.0; a caret on it is <0.6.0.
+version = "0.5.0"
 
 [package.metadata.docs.rs]
 # Document the test kit too.

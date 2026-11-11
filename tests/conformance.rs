@@ -94,6 +94,12 @@ fn conforms() {
             "content",
             "group label=Probe\n  urn:iki:ui:example:kind:heading content=Probed",
         ))
+        // The s-expression front end (ledger #3367): the same screen as a datum.
+        .fixture(Fixture::new("ui-sexpr-compile", Verb::Source).arg(
+            "content",
+            "(group :label \"Probe\" (urn:iki:ui:example:kind:heading :content \"Probed\"))",
+        ))
+        .cacheable("ui-sexpr-compile")
         .pure("ui-html-empty")
         .cacheable("ui-html-empty")
         .cacheable("ui-template-kind")
@@ -210,6 +216,26 @@ fn conforms() {
             "a test model of a form's resource: a form posts its fields as named arguments, \
              not one `content`; it is never a pipeline stage",
         )
+        // A screen program runs on the host's `urn:lisp:eval` (ikigai-lisp), which this module
+        // issues and never binds; tests/sexpr.rs runs it against the real eval.
+        .opt_out_check(
+            "ui-lisp-compile",
+            Check::Resolves,
+            "its program runs on urn:lisp:eval, the host's ikigai-lisp, which this module does \
+             not bind; tests/sexpr.rs resolves it against the real eval",
+        )
+        .opt_out_check(
+            "ui-lisp-compile",
+            Check::Required,
+            "its missing-input probe needs urn:lisp:eval, which the host binds \
+             (tests/sexpr.rs)",
+        )
+        .opt_out_check(
+            "ui-lisp-compile",
+            Check::Outputs,
+            "its output is probed only through urn:lisp:eval, which the host binds \
+             (tests/sexpr.rs)",
+        )
         .body_space(root)
         .run_blocking(&kernel);
     println!("{report}");
@@ -232,6 +258,8 @@ fn conforms() {
         "ui-context",
         "ui-screen-gallery",
         "ui-outline-compile",
+        "ui-sexpr-compile",
+        "ui-lisp-compile",
         "ui-prefixes",
         "ui-screen-gallery-source",
         "ui-form-resource",

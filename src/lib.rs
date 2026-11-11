@@ -23,6 +23,8 @@
 //! | `urn:iki:ui:form:openapi:{doc}:operation:{op}` | data | the same from an OpenAPI 3.1 document's operation ([`form`]) |
 //! | `urn:iki:ui:screen:name:{screen}` | composition | a screen compiled from its outline, `{screen}:source` ([`screen`]; [`screen::screens`], placed last) |
 //! | `urn:iki:ui:outline:compile` | transreptor | an outline to the model ([`screen::COMPILER`]) |
+//! | `urn:iki:ui:sexpr:compile` | transreptor | a screen s-expression to the model ([`sexpr::COMPILER`]) |
+//! | `urn:iki:ui:lisp:compile` | transreptor | a screen Lisp program, run by `urn:lisp:eval`, to the model ([`sexpr::PROGRAM`]) |
 //! | `urn:iki:ui:prefixes` | data | the default prefix table, `ui:` for `urn:iki:ui:` ([`screen::PREFIXES`]) |
 //! | `urn:iki:ui:setting:name:{name}` | data | a setting a screen runs under: `target`, `theme`, `locale`, `density`, `viewer`, the default here, a host's screen space ahead of it ([`setting`]) |
 //! | `urn:iki:ui:face:screen:{screen}` | composition | a screen through the target its screen space names ([`target::SCREEN_FACE`]) |
@@ -112,6 +114,7 @@ pub mod reference;
 pub mod region;
 pub mod screen;
 pub mod setting;
+pub mod sexpr;
 pub mod target;
 #[cfg(feature = "testkit")]
 pub mod testkit;
@@ -616,6 +619,8 @@ pub fn space() -> EndpointSpace {
         .bind(Exact::new(model::CONTEXT_IRI), context_endpoint())
         .bind(Exact::new(screen::PREFIXES), prefixes_endpoint())
         .bind(Exact::new(screen::COMPILER), screen::compiler_endpoint())
+        .bind(Exact::new(sexpr::COMPILER), sexpr::compiler_endpoint())
+        .bind(Exact::new(sexpr::PROGRAM), sexpr::program_endpoint())
         .bind(
             Exact::new(GALLERY),
             screen::screen_endpoint("ui-screen-gallery", false),
@@ -776,15 +781,26 @@ fn the_kind(inv: &Invocation<'_>) -> Result<&'static model::Kind, Error> {
     })
 }
 
-/// Whether the request asked for the JSON-LD face.
-fn wants_json_ld(inv: &Invocation<'_>) -> bool {
+/// Whether the request asked for the face `media_type`.
+fn wants(inv: &Invocation<'_>, media_type: &str) -> bool {
     inv.inline_str("as")
         .ok()
-        .is_some_and(|t| t.split(';').next().unwrap_or_default().trim() == model::JSON_LD)
+        .is_some_and(|t| t.split(';').next().unwrap_or_default().trim() == media_type)
+}
+
+/// Whether the request asked for the JSON-LD face.
+fn wants_json_ld(inv: &Invocation<'_>) -> bool {
+    wants(inv, model::JSON_LD)
 }
 
 /// A model in the face the request asked for.
 fn model_face(inv: &Invocation<'_>, node: &model::Node) -> Result<Representation, Error> {
+    if wants(inv, sexpr::MEDIA_TYPE) {
+        let text = sexpr::print(node)?;
+        return Ok(
+            Representation::new(ReprType::new(sexpr::MEDIA_TYPE), text.into_bytes()).cacheable(),
+        );
+    }
     let (media_type, bytes) = if wants_json_ld(inv) {
         (
             model::JSON_LD,

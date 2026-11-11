@@ -151,12 +151,33 @@ pub struct Outline {
     pub prefixes: Option<(usize, String)>,
     /// The root line.
     pub root: Line,
+    /// What a [`Line::number`] counts, for errors: `"line"` for an outline, `"form"` for an
+    /// s-expression ([`crate::sexpr`]), whose forms are numbered in reading order.
+    pub unit: &'static str,
 }
 
 fn at(screen: &str, line: usize, detail: impl std::fmt::Display) -> Error {
+    at_unit(screen, "line", line, detail)
+}
+
+pub(crate) fn at_unit(screen: &str, unit: &str, n: usize, detail: impl std::fmt::Display) -> Error {
     Error::InvalidArgument {
         name: "screen".into(),
-        detail: format!("{screen} line {line}: {detail}"),
+        detail: format!("{screen} {unit} {n}: {detail}"),
+    }
+}
+
+/// What a written name is: a core kind or structure, a custom element's IRI, or a reference
+/// (any other IRI). `None`: none of them. The one rule every front end reads a head by.
+pub(crate) fn head(name: &str) -> Option<Head> {
+    if let Some(k) = model::kind(name).or_else(|| model::structure(name)) {
+        Some(Head::Kind(k.name))
+    } else if model::is_element(name) {
+        Some(Head::Element(name.to_string()))
+    } else if name.contains(':') && Iri::parse(name).is_ok() {
+        Some(Head::Reference(name.to_string()))
+    } else {
+        None
     }
 }
 
@@ -204,13 +225,7 @@ fn word_ok(key: &str) -> bool {
 /// One line's head and properties.
 fn tokens(screen: &str, number: usize, text: &str) -> Result<(Head, Vec<(String, Raw)>), Error> {
     let (head, mut rest) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
-    let head = if let Some(k) = model::kind(head).or_else(|| model::structure(head)) {
-        Head::Kind(k.name)
-    } else if model::is_element(head) {
-        Head::Element(head.to_string())
-    } else if head.contains(':') && Iri::parse(head).is_ok() {
-        Head::Reference(head.to_string())
-    } else {
+    let Some(head) = self::head(head) else {
         return Err(at(
             screen,
             number,
@@ -388,7 +403,11 @@ pub fn parse(screen: &str, bytes: &[u8]) -> Result<Outline, Error> {
         }
     }
     let root = root.ok_or_else(|| at(screen, 0, "the outline has no node"))?;
-    Ok(Outline { prefixes, root })
+    Ok(Outline {
+        prefixes,
+        root,
+        unit: "line",
+    })
 }
 
 /// The dynamic-space name a prefix table's corridor carries: `ui-prefixes:{rest}` for the
@@ -468,6 +487,7 @@ fn coerce(t: Option<Type>, raw: &Raw) -> Result<Value, String> {
 
 struct Build<'a> {
     screen: &'a str,
+    unit: &'static str,
     references: &'a BTreeMap<String, (Node, usize)>,
     produced: usize,
 }
@@ -476,8 +496,9 @@ impl Build<'_> {
     fn count(&mut self, line: usize, n: usize) -> Result<(), Error> {
         self.produced += n;
         if self.produced > MAX_NODES {
-            return Err(at(
+            return Err(at_unit(
                 self.screen,
+                self.unit,
                 line,
                 format!("the screen produces more than {MAX_NODES} nodes"),
             ));
@@ -514,15 +535,17 @@ impl Build<'_> {
         for (key, raw) in &line.properties {
             let t = match kind {
                 Some(k) => Some(k.property(key).ok_or_else(|| {
-                    at(
+                    at_unit(
                         self.screen,
+                        self.unit,
                         line.number,
                         format!("a {} has no property `{key}`", k.name),
                     )
                 })?),
                 None => None,
             };
-            let value = coerce(t, raw).map_err(|e| at(self.screen, line.number, e))?;
+            let value =
+                coerce(t, raw).map_err(|e| at_unit(self.screen, self.unit, line.number, e))?;
             node.properties.insert(key.clone(), value);
         }
         for child in &line.children {
@@ -530,15 +553,17 @@ impl Build<'_> {
             if let Some(k) = kind {
                 match k.children {
                     Children::Leaf => {
-                        return Err(at(
+                        return Err(at_unit(
                             self.screen,
+                            self.unit,
                             line.number,
                             format!("a {} takes no children", k.name),
                         ))
                     }
                     Children::Only(only) if child.kind != only => {
-                        return Err(at(
+                        return Err(at_unit(
                             self.screen,
+                            self.unit,
                             line.number,
                             format!("a {} takes only {only} children", k.name),
                         ))
@@ -554,8 +579,9 @@ impl Build<'_> {
             ..node.clone()
         };
         model::validate(&shallow).map_err(|e| match e {
-            Error::InvalidArgument { detail, .. } => at(
+            Error::InvalidArgument { detail, .. } => at_unit(
                 self.screen,
+                self.unit,
                 line.number,
                 detail.strip_prefix("/: ").unwrap_or(&detail),
             ),
@@ -576,8 +602,9 @@ pub async fn compile(
 ) -> Result<Node, Error> {
     if let Some((line, table)) = &outline.prefixes {
         let id = space_id(table).ok_or_else(|| {
-            at(
+            at_unit(
                 screen,
+                outline.unit,
                 *line,
                 format!("`{table}` is not a prefix table's name (urn: and segments of [a-z0-9-])"),
             )
@@ -588,8 +615,9 @@ pub async fn compile(
             .iter()
             .any(|s| s.id().is_some_and(|i| i.as_str() == id));
         if !in_force {
-            return Err(at(
+            return Err(at_unit(
                 screen,
+                outline.unit,
                 *line,
                 format!(
                     "the prefix table `{table}` is not in force: the host injects its space \
@@ -614,15 +642,16 @@ pub async fn compile(
             continue;
         }
         if references.len() >= MAX_REFERENCES {
-            return Err(at(
+            return Err(at_unit(
                 screen,
+                outline.unit,
                 line,
                 format!("past {MAX_REFERENCES} references"),
             ));
         }
         let mut request = Request::new(
             Verb::Source,
-            Iri::parse(name).map_err(|e| at(screen, line, e))?,
+            Iri::parse(name).map_err(|e| at_unit(screen, outline.unit, line, e))?,
         );
         if let Some(other) = screen_of(name) {
             if other == this || open.iter().any(|o| o == other) {
@@ -631,15 +660,17 @@ pub async fn compile(
                     .map(String::as_str)
                     .chain([this, other])
                     .collect();
-                return Err(at(
+                return Err(at_unit(
                     screen,
+                    outline.unit,
                     line,
                     format!("a cycle of screens: {}", chain.join(" → ")),
                 ));
             }
             if open.len() + 1 >= MAX_DEPTH {
-                return Err(at(
+                return Err(at_unit(
                     screen,
+                    outline.unit,
                     line,
                     format!("screens nested past the bound of {MAX_DEPTH}"),
                 ));
@@ -649,13 +680,14 @@ pub async fn compile(
         }
         let rep = inv.issue(request).await.map_err(|e| match e {
             Error::InvalidArgument { name: n, detail } if n == "screen" => {
-                at(screen, line, format!("`{name}`: {detail}"))
+                at_unit(screen, outline.unit, line, format!("`{name}`: {detail}"))
             }
             other => other,
         })?;
         let node = model::parse(&rep.bytes).map_err(|e| {
-            at(
+            at_unit(
                 screen,
+                outline.unit,
                 line,
                 format!(
                     "`{name}` does not answer a UI node (an element is written by its full \
@@ -668,6 +700,7 @@ pub async fn compile(
     }
     let mut build = Build {
         screen,
+        unit: outline.unit,
         references: &references,
         produced: 0,
     };
@@ -736,8 +769,10 @@ pub(crate) fn screen_endpoint(id: &'static str, binding: bool) -> AsyncFnEndpoin
     let description = Description::new(id)
         .title("A UI screen")
         .summary(
-            "A screen compiled from its outline, urn:iki:ui:screen:name:{screen}:source: \
-             application/vnd.ikigai.ui+json, or JSON-LD with as=application/ld+json.",
+            "A screen compiled from its source, urn:iki:ui:screen:name:{screen}:source (an \
+             outline, an s-expression or a Lisp program): application/vnd.ikigai.ui+json, \
+             JSON-LD with as=application/ld+json, or the s-expression face with \
+             as=text/x-ikigai-ui-sexpr.",
         )
         .verb(Verb::Source)
         .verb(Verb::Meta)
@@ -748,7 +783,8 @@ pub(crate) fn screen_endpoint(id: &'static str, binding: bool) -> AsyncFnEndpoin
                 .optional(),
         )
         .output(model::MEDIA_TYPE)
-        .output(model::JSON_LD);
+        .output(model::JSON_LD)
+        .output(crate::sexpr::MEDIA_TYPE);
     let description = if binding {
         description.input(
             ArgSpec::new("screen")
@@ -766,7 +802,15 @@ pub(crate) fn screen_endpoint(id: &'static str, binding: bool) -> AsyncFnEndpoin
             let source = Iri::parse(format!("{screen}{SOURCE_SUFFIX}"))
                 .map_err(|e| Error::Endpoint(e.to_string()))?;
             let source = inv.issue(Request::new(Verb::Source, source)).await?;
-            let mut request = Request::new(Verb::Source, Iri::parse(COMPILER).expect("an IRI"))
+            // The front end by what the source is (ledger #3367): every one compiles through
+            // the same step ([`compile`]).
+            let source_expiry = source.expiry;
+            let compiler = match source.repr_type.media_type.as_str() {
+                crate::sexpr::MEDIA_TYPE => crate::sexpr::COMPILER,
+                crate::sexpr::LISP => crate::sexpr::PROGRAM,
+                _ => COMPILER,
+            };
+            let mut request = Request::new(Verb::Source, Iri::parse(compiler).expect("an IRI"))
                 .with_arg("as", ArgRef::Inline(model::MEDIA_TYPE.as_bytes().to_vec()))
                 .with_arg("content", ArgRef::Inline(source.bytes))
                 .with_arg("screen", ArgRef::Inline(screen.as_bytes().to_vec()));
@@ -776,7 +820,14 @@ pub(crate) fn screen_endpoint(id: &'static str, binding: bool) -> AsyncFnEndpoin
             let compiled = inv.issue(request).await?;
             let node: Node = serde_json::from_slice(&compiled.bytes)
                 .map_err(|e| Error::Endpoint(format!("the compiled model: {e}")))?;
-            crate::model_face(inv, &node)
+            // No fresher than its source and its compile (a program's eval is live unless it
+            // says otherwise, ledger #3367).
+            let mut face = crate::model_face(inv, &node)?;
+            face.expiry = face
+                .expiry
+                .most_restrictive(source_expiry)
+                .most_restrictive(compiled.expiry);
+            Ok(face)
         })
     })
     .with_description(description)
