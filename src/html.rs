@@ -340,6 +340,18 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                 let value = match (node.kind.as_str(), name) {
                     ("form", "submit") => submit(inv, node).await?,
                     ("form", "method") => Some(form_method(node)?),
+                    ("option", "selected") => {
+                        let selected = at
+                            .rsplit_once('.')
+                            .and_then(|(parent, _)| locate(&root, parent).ok())
+                            .is_some_and(|(parent, _)| {
+                                parent.kind == "choice"
+                                    && parent.properties.get("value")
+                                        == node.properties.get("value")
+                            });
+                        // A boolean HTML attribute: only these fixed strings enter markup.
+                        Some(if selected { " selected" } else { "" }.to_string())
+                    }
                     _ => property(node, name),
                 };
                 let value =
@@ -356,6 +368,7 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                  escaped. `fallback` is the kind's fallback text and `invalid` whether the node \
                  carries an error; a form's `submit` is its action, else its resource through \
                  the html descriptor's submit rule, and its `method` get or post from its verb; \
+                 an option's `selected` is a fixed attribute when its value is its choice's value; \
                  an absent property is NotFound unless the kind defaults it.",
             )
             .verb(Verb::Source)

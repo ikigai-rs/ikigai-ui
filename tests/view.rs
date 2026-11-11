@@ -430,6 +430,169 @@ fn a_curated_type_view_overrides_the_generated_one_and_can_start_from_it() {
     assert_eq!(plain.properties["label"], Value::Text("Thing b".into()));
 }
 
+#[test]
+fn curated_placeholders_are_filled_in_replacement_subtrees() {
+    let s = space().bind(
+        Exact::new("urn:iki:ui:view:type:urn:demo:Pal"),
+        fixed(
+            "pal-replacement",
+            model::MEDIA_TYPE,
+            serde_json::json!({
+                "kind": "visual", "properties": {"label": "View of {iri}"},
+                "replacement": {
+                    "kind": "group", "properties": {"label": "Replacement of {iri}"},
+                    "children": [{"kind": "text", "properties": {"content": "Child of {iri}"}}],
+                    "replacement": {"kind": "text", "properties": {"content": "Nested {iri}"}}
+                }
+            }),
+        ),
+    );
+    let kernel = common::host_with(None, vec![Arc::new(s)]);
+    let v = view(&kernel, "urn:demo:b", &Capability::root());
+    let bytes = serde_json::to_string(&v).unwrap();
+    assert!(!bytes.contains("{iri}"), "unfilled placeholder: {bytes}");
+    assert!(bytes.contains("Replacement of urn:demo:b"));
+    assert!(bytes.contains("Child of urn:demo:b"));
+    assert!(bytes.contains("Nested urn:demo:b"));
+}
+
+#[test]
+fn nested_curated_views_that_cross_the_node_budget_become_links() {
+    for replacements in [true, false] {
+        // Both variants have more than MAX_NODES nodes. The second hides half of its
+        // nodes in replacements, which must count just like ordinary children.
+        let children: Vec<_> = (0..if replacements { 140 } else { 280 })
+            .map(|_| {
+                let mut n = serde_json::json!({"kind": "text", "properties": {"content": "Expanded"}});
+                if replacements {
+                    n["replacement"] = serde_json::json!({"kind": "text", "properties": {"content": "Replacement"}});
+                }
+                n
+            })
+            .collect();
+        let s = EndpointSpace::new()
+            .bind(Exact::new("urn:demo:collection"), json("collection", serde_json::json!({
+                "rows": [{"@id": "urn:demo:large"}, {"@id": "urn:demo:large"}]
+            }), false))
+            .bind(Exact::new("urn:demo:large"), json("large", serde_json::json!({"@type": "urn:demo:Large"}), false))
+            .bind(Exact::new("urn:iki:ui:view:type:urn:demo:Large"), fixed("large-view", model::MEDIA_TYPE,
+                serde_json::json!({"kind": "group", "properties": {"label": "Large"}, "children": children})));
+        let kernel = common::host_with(None, vec![Arc::new(s)]);
+        let v = view(&kernel, "urn:demo:collection", &Capability::root());
+        assert!(
+            !texts(&v).iter().any(|s| s == "Expanded"),
+            "replacements={replacements}"
+        );
+        assert_eq!(kinds(&v, "link").len(), 2, "{v:?}");
+    }
+}
+
+#[test]
+fn empty_and_null_array_values_produce_valid_views() {
+    let s = EndpointSpace::new().bind(
+        Exact::new("urn:demo:empty-values"),
+        json(
+            "empty-values",
+            serde_json::json!({"values": ["", null, "present"]}),
+            false,
+        ),
+    );
+    let kernel = common::host_with(None, vec![Arc::new(s)]);
+    let v = view(&kernel, "urn:demo:empty-values", &Capability::root());
+    let lists = kinds(&v, "list");
+    let values = lists
+        .iter()
+        .find(|n| n.properties["label"] == Value::Text("values".into()))
+        .unwrap();
+    assert_eq!(values.children.len(), 3);
+    assert_eq!(
+        values.children[0].properties["content"],
+        Value::Text("-".into())
+    );
+    assert_eq!(
+        values.children[1].properties["content"],
+        Value::Text("-".into())
+    );
+    assert_eq!(
+        values.children[2].properties["content"],
+        Value::Text("present".into())
+    );
+}
+
+#[test]
+fn table_layout_does_not_replace_other_types_or_curated_views() {
+    for (case, items) in [
+        (
+            "curated",
+            serde_json::json!([{"@id": "urn:demo:curated-row"}]),
+        ),
+        (
+            "mixed",
+            serde_json::json!([{"@id": "urn:demo:row"}, {"@id": "urn:demo:b"}]),
+        ),
+    ] {
+        let s = space()
+            .bind(
+                Exact::new("urn:demo:collection"),
+                json("collection", serde_json::json!({"rows": items}), false),
+            )
+            .bind(
+                Exact::new("urn:demo:row"),
+                json(
+                    "row",
+                    serde_json::json!({"@type": "urn:demo:Row", "n": 1}),
+                    false,
+                ),
+            )
+            .bind(
+                Exact::new("urn:demo:curated-row"),
+                json(
+                    "curated-row",
+                    serde_json::json!({"@type": "urn:demo:CuratedRow", "n": 2}),
+                    false,
+                ),
+            );
+        let mut s = s;
+        for class in ["Row", "CuratedRow"] {
+            s = s.bind(
+                Exact::new(format!("urn:iki:ui:shape:type:urn:demo:{class}")),
+                shape_at(
+                    "table-shape",
+                    JSON_LD,
+                    serde_json::json!({
+                        "@context": {"sh": "http://www.w3.org/ns/shacl#"},
+                        "@id": format!("urn:demo:{class}Shape"),
+                        "sh:targetClass": {"@id": format!("urn:demo:{class}")},
+                        "urn:iki:ui:shape:layout": "table",
+                        "sh:property": [{"sh:path": {"@id": "urn:demo:n"}, "sh:name": "N"}]
+                    })
+                    .to_string(),
+                ),
+            );
+        }
+        s = s.bind(
+            Exact::new("urn:iki:ui:view:type:urn:demo:CuratedRow"),
+            fixed(
+                "curated-row-view",
+                model::MEDIA_TYPE,
+                serde_json::json!({
+                    "kind": "text", "properties": {"content": "Curated {iri}"}
+                }),
+            ),
+        );
+        let kernel = common::host_with(None, vec![Arc::new(s), json_ld()]);
+        let v = view(&kernel, "urn:demo:collection", &Capability::root());
+        assert!(kinds(&v, "table").is_empty(), "{case}: {v:?}");
+        let t = texts(&v);
+        let expected = if case == "mixed" {
+            "nick: Bravo"
+        } else {
+            "Curated urn:demo:curated-row"
+        };
+        assert!(t.iter().any(|s| s == expected), "{case}: {t:?}");
+    }
+}
+
 /// The Properties group's (kind, label or content) pairs, in order.
 fn properties(v: &Node) -> Vec<String> {
     let props = v
