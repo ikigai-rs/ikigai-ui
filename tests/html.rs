@@ -79,6 +79,23 @@ fn a_generated_form_renders_and_posts_to_its_action() {
 }
 
 #[test]
+fn a_generated_choice_selects_the_contracts_default() {
+    // The second option is the contract's default; the browser would choose the first
+    // option if the face dropped the choice's value.
+    let kernel = common::form_host(common::CONTACT);
+    let html = render::source(&kernel, "urn:iki:ui:html:screen:contact", &[]).unwrap();
+    assert!(
+        html.contains("<option value=\"support\" selected>support</option>"),
+        "{html}"
+    );
+    assert!(
+        html.contains("<option value=\"sales\">sales</option>"),
+        "{html}"
+    );
+    assert_eq!(html.matches(" selected").count(), 1, "{html}");
+}
+
+#[test]
 fn a_form_from_a_urn_contract_posts_to_the_door_url_for_its_resource() {
     // No action: the resource reaches the door through the html descriptor's submit rule.
     let kernel = common::form_host(common::CONTACT_URN);

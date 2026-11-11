@@ -134,6 +134,7 @@ fn link(label: &str, iri: &str) -> Node {
 
 fn count(n: &Node) -> usize {
     1 + n.children.iter().map(count).sum::<usize>()
+        + n.replacement.as_deref().map(count).unwrap_or(0)
 }
 
 fn iri(s: &str) -> Result<Iri, Error> {
@@ -301,6 +302,9 @@ fn substitute(n: &mut Node, iri: &str) {
     for c in &mut n.children {
         substitute(c, iri);
     }
+    if let Some(replacement) = &mut n.replacement {
+        substitute(replacement, iri);
+    }
 }
 
 /// One walk: the path (for cycles) and the nodes produced so far.
@@ -453,7 +457,14 @@ fn nested<'a, 'b: 'a>(
             walk.nodes += 1;
             return Ok(link(&label, &resource));
         }
+        let before = walk.nodes;
         match view(inv, walk, resource.clone(), true).await {
+            Ok(_) if walk.nodes > MAX_NODES => {
+                // Admission must account for the whole subtree, including curated views
+                // and replacements. A small DAG may repeat a large subtree many times.
+                walk.nodes = before + 1;
+                Ok(link(&label, &resource))
+            }
             Ok(n) => Ok(n),
             Err(Error::Denied(_)) => {
                 walk.nodes += 1;
@@ -489,7 +500,11 @@ fn value<'a, 'b: 'a>(
                     Some(r) => nested(inv, walk, r.to_string(), item_label).await?,
                     None => {
                         walk.nodes += 1;
-                        text(scalar(item).unwrap_or_default())
+                        text(
+                            scalar(item)
+                                .filter(|s| !s.is_empty())
+                                .unwrap_or_else(|| "-".into()),
+                        )
                     }
                 };
                 children.push(n);
@@ -519,9 +534,10 @@ async fn table(
     let Some(d) = data(inv, first).await.ok().flatten() else {
         return Ok(None);
     };
+    let classes = types(&d);
     let mut layout = None;
-    for class in types(&d) {
-        if let Some(Ok(s)) = shape(inv, &class).await? {
+    for class in &classes {
+        if let Some(Ok(s)) = shape(inv, class).await? {
             if s.table {
                 layout = s.properties;
                 break;
@@ -537,31 +553,41 @@ async fn table(
     if walk.nodes + size > MAX_NODES {
         return Ok(None);
     }
+    // A table is only a projection of this type's generated views. Other types and curated
+    // views must go through their own view rather than silently lose their properties.
+    let mut data_rows = Vec::new();
+    for item in items {
+        let Some(r) = resource_of(item) else {
+            return Ok(None);
+        };
+        let row = match data(inv, r).await {
+            Ok(Some(d)) => d,
+            Ok(None) | Err(Error::Denied(_)) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let row_classes = types(&row);
+        if row_classes != classes || curated(inv, &row_classes, r).await?.is_some() {
+            return Ok(None);
+        }
+        data_rows.push(row);
+    }
     let header = node(
         "group",
         vec![("label", t("Headers")), ("header", t("column"))],
         columns.iter().map(|c| text(&c.name)).collect(),
     );
     let mut rows = vec![header];
-    for (i, item) in items.iter().enumerate() {
-        let Some(r) = resource_of(item) else {
-            return Ok(None);
-        };
-        let cells = match data(inv, r).await {
-            Ok(Some(d)) => columns
-                .iter()
-                .map(|c| match get(&d, &c.path) {
-                    Some(v) => match resource_of(v) {
-                        Some(n) => link(&c.name, n),
-                        None => text(nonempty(&scalar(v).unwrap_or_default(), "-")),
-                    },
-                    None => text("-"),
-                })
-                .collect(),
-            Ok(None) => columns.iter().map(|_| text("-")).collect(),
-            Err(Error::Denied(_)) => columns.iter().map(|_| text("withheld")).collect(),
-            Err(e) => return Err(e),
-        };
+    for (i, d) in data_rows.iter().enumerate() {
+        let cells = columns
+            .iter()
+            .map(|c| match get(d, &c.path) {
+                Some(v) => match resource_of(v) {
+                    Some(n) => link(&c.name, n),
+                    None => text(nonempty(&scalar(v).unwrap_or_default(), "-")),
+                },
+                None => text("-"),
+            })
+            .collect();
         rows.push(node(
             "group",
             vec![("label", t(format!("Row {}", i + 1))), ("header", t("row"))],
