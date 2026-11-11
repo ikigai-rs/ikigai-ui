@@ -1,0 +1,44 @@
+[package]
+name = "ikigai-ui-gpui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "Apache-2.0"
+description = "Native GPUI walker and off-thread snapshot loader for ikigai-ui"
+repository = "https://github.com/ikigai-rs/ikigai-ui"
+publish = false
+
+[dependencies]
+ikigai-ui = { path = ".." }
+ikigai-core = "0.3.0"
+serde_json = "1"
+
+# Resource work is independent of the window platform.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+futures = "0.3"
+
+# macOS windows and a Linux build of the same walker (without window backends).
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders"] }
+unicode-segmentation = "1.12"
+# GPUI's zed-async-tar -> xattr 0.2 still uses Linux ENOATTR, removed in
+# libc 0.2.190. Keep that compatible until GPUI updates its tar dependency.
+libc = "=0.2.189"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ikigai-ui-demo = { path = "../demo" }
+tokio = { version = "1", features = ["rt", "net"] }
+ikigai-web = "0.5.0"
+
+# GPUI test-support forces X11/Wayland link dependencies even for headless
+# tests. Keep actual test windows on macOS; stock Linux CI still compiles the
+# walker and exercises the background boundary against real faces and Sinks.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "test-support"] }
+
+[dev-dependencies]
+ikigai-ui-demo = { path = "../demo" }
+
+[[bin]]
+name = "ikigai-ui-demo-native"
+path = "src/main.rs"
