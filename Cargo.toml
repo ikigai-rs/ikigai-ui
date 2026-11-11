@@ -80,6 +80,8 @@ ikigai-vocab = "0.3"
 # to the resource's Sink. 0.4.0 is the release on ikigai-core 0.3.0; <0.5.0.
 ikigai-web = "0.4.0"
 tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
+# tests/screen.rs binds prefix tables with `DynamicSpace::refresh`, behind `declare` (ledger #3365).
+ikigai-core = { version = "0.3.0", features = ["declare"] }
 
 [package.metadata.docs.rs]
 # Document the test kit too.

@@ -75,6 +75,11 @@ fn conforms() {
                 .binding("property", "label"),
         )
         .fixture(Fixture::new("ui-template-kind", Verb::Source).binding("kind", "table"))
+        // The outline compiler (ledger #3365): an outline of one kind and one reference.
+        .fixture(Fixture::new("ui-outline-compile", Verb::Source).arg(
+            "content",
+            "group label=Probe\n  urn:iki:ui:example:kind:heading content=Probed",
+        ))
         .pure("ui-html-empty")
         .cacheable("ui-html-empty")
         .cacheable("ui-template-kind")
@@ -97,6 +102,9 @@ fn conforms() {
         .cacheable("ui-context")
         .pure("ui-context")
         .cacheable("ui-screen-gallery")
+        .cacheable("ui-outline-compile")
+        .cacheable("ui-prefixes")
+        .pure("ui-prefixes")
         // Custom elements (ledger #3358): the definitions are file-backed artifacts and the
         // elements screen is compiled in; html and the face expand them through the kernel.
         .fixture(Fixture::new("ui-element-name", Verb::Source).binding("name", "rating"))
@@ -207,6 +215,9 @@ fn conforms() {
         "ui-example-kind",
         "ui-context",
         "ui-screen-gallery",
+        "ui-outline-compile",
+        "ui-prefixes",
+        "ui-screen-gallery-source",
         "ui-form-resource",
         "ui-form-openapi",
         "ui-kind-seal",

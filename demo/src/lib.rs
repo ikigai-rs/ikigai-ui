@@ -5,7 +5,10 @@
 //! | `urn:iki:uidemo:contact` | the service | a Sink: name, email, topic ([`TOPICS`]), message; validates, stores |
 //! | `urn:iki:uidemo:submission` | data | a Source: every stored submission, as JSON |
 //! | `urn:iki:uidemo:submission:id:{id}` | data | one submission, the demo's only stored state |
-//! | `urn:iki:ui:screen:name:contact` | alias | `urn:iki:ui:form:resource:urn:iki:uidemo:contact`: the form, generated from the contract |
+//! | `urn:iki:ui:screen:name:{screen}:source` | resource | a screen's outline ([`SCREENS`]): `contact` (the form, generated from the contract) and `write` (the same in short names) |
+//! | `urn:iki:ui:screen:name:{screen}` | composition | the outline compiled by ikigai-ui ([`ikigai_ui::screen`]) |
+//! | `urn:iki:uidemo:prefixes` | data | the demo's prefix table, `demo:` for `urn:iki:uidemo:` ([`PREFIXES`]) |
+//! | `urn:iki:uidemo:example:rating` | data | a rating element node, which `write` references as `demo:example:rating` |
 //! | `urn:iki:uidemo:page:{name}` | composition | the shell over a fragment ([`ikigai_ui::Pages`]): `gallery`, `contact`, `support` |
 //! | `urn:iki:uidemo:fragment:{name}` | composition | the page's body: a note and the screen it shows |
 //!
@@ -18,9 +21,9 @@
 use std::sync::{Arc, Mutex};
 
 use ikigai_core::{
-    ActionSpec, AliasTable, ArgRef, ArgSpec, AsyncFnEndpoint, Description, EndpointSpace, Error,
-    Exact, Fallback, FnEndpoint, Invocation, InvokeFuture, Iri, Kernel, ReprType, Representation,
-    Request, Space, UriTemplate, Verb,
+    ActionSpec, ArgRef, ArgSpec, AsyncFnEndpoint, Description, EndpointSpace, Error, Exact,
+    Fallback, FnEndpoint, Invocation, InvokeFuture, Iri, Kernel, ReprType, Representation, Request,
+    Space, UriTemplate, Verb,
 };
 use ikigai_fn::html::{form_pairs, html_text};
 #[cfg(not(target_arch = "wasm32"))]
@@ -386,17 +389,81 @@ pub fn site() -> EndpointSpace {
         )
 }
 
-/// The contact screen: the form ikigai-ui generates from [`CONTACT`]'s contract. An alias,
-/// read from the root.
-pub fn screen() -> ikigai_core::Alias {
-    let table = AliasTable::new().exact_at_root(
-        "urn:iki:ui:screen:name:contact",
-        format!("{}{CONTACT}", ikigai_ui::FORM_RESOURCE),
-    );
-    ikigai_core::Alias::new(Arc::new(table), Arc::new(EndpointSpace::new()))
+/// The demo's prefix table: `demo:` for `urn:iki:uidemo:`.
+pub const PREFIXES: &str = "urn:iki:uidemo:prefixes";
+/// Where the demo's screens and table are overridden from: a host binds its screens directory
+/// here (nothing is bound in this demo, so the compiled-in copies answer).
+pub const DIR: &str = "urn:iki:uidemo:dir:";
+
+/// The demo's screen outlines and its prefix table: files under [`DIR`], else compiled in.
+pub const SCREENS: [ikigai_ui::Artifact; 3] = [
+    ikigai_ui::Artifact {
+        iri: "urn:iki:ui:screen:name:contact:source",
+        id: "uidemo-screen-contact-source",
+        file: "screens/contact.outline",
+        media_type: "text/plain; charset=utf-8",
+        bytes: include_bytes!("../screens/contact.outline"),
+    },
+    ikigai_ui::Artifact {
+        iri: "urn:iki:ui:screen:name:write:source",
+        id: "uidemo-screen-write-source",
+        file: "screens/write.outline",
+        media_type: "text/plain; charset=utf-8",
+        bytes: include_bytes!("../screens/write.outline"),
+    },
+    ikigai_ui::Artifact {
+        iri: PREFIXES,
+        id: "uidemo-prefixes",
+        file: "prefixes.ttl",
+        media_type: "text/turtle",
+        bytes: include_bytes!("../assets/prefixes.ttl"),
+    },
+];
+
+/// The screens' sources, the prefix table and the rating node `write` references.
+pub fn screens() -> EndpointSpace {
+    let rating = ikigai_ui::element::EXAMPLES[0];
+    ikigai_ui::artifacts(&SCREENS, DIR)
+        .expect("the demo's screens are a valid set")
+        .bind(
+            Exact::new(format!("{BASE}example:rating")),
+            FnEndpoint::new("uidemo-example-rating", move |_: &Invocation<'_>| {
+                Ok(Representation::new(
+                    ReprType::new(ikigai_ui::model::MEDIA_TYPE),
+                    rating.as_bytes().to_vec(),
+                )
+                .cacheable())
+            })
+            .with_description(
+                Description::new("uidemo-example-rating")
+                    .title("A rating")
+                    .summary("A rating element node, unexpanded.")
+                    .verb(Verb::Source)
+                    .verb(Verb::Meta)
+                    .output(ikigai_ui::model::MEDIA_TYPE),
+            ),
+        )
 }
 
-/// The root space: ikigai-ui, the page family, the contact screen, the site and the service.
+/// The corridor the demo's short names resolve in: ikigai-ui's default table (`ui:`) and the
+/// demo's own ([`PREFIXES`], `demo:`), each an ikigai-fn prefix space read through `kernel` and
+/// checked by `prefix_check`. The host injects it with `Kernel::issue_in` around the requests
+/// that read a screen written in short names.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn prefixes(kernel: &Kernel) -> Result<ikigai_core::Scope, ikigai_core::DynamicRefusal> {
+    let mut scope = ikigai_core::Scope::empty();
+    for table in [ikigai_ui::screen::PREFIXES, PREFIXES] {
+        let space = ikigai_ui::screen::prefix_space(table);
+        space
+            .refresh(kernel, &ikigai_core::Capability::root())
+            .await?;
+        scope = scope.with(Arc::new(space));
+    }
+    Ok(scope)
+}
+
+/// The root space: ikigai-ui, the page family, the site, the service, the screens' sources,
+/// and last ikigai-ui's screens, each compiled from its source.
 pub fn root(store: Store) -> Arc<dyn Space> {
     let family = ikigai_ui::Pages::new("uidemo", BASE)
         .build()
@@ -404,9 +471,10 @@ pub fn root(store: Store) -> Arc<dyn Space> {
     Arc::new(Fallback::new(vec![
         Arc::new(ikigai_ui::space()),
         Arc::new(family),
-        Arc::new(screen()),
         Arc::new(site()),
         Arc::new(service(store)),
+        Arc::new(screens()),
+        Arc::new(ikigai_ui::screen::screens()),
     ]))
 }
 

@@ -1,0 +1,18 @@
+# The demo's prefix table (ledger #3365): `demo:` for `urn:iki:uidemo:`, an ikigai-fn prefix
+# table. It adds to ikigai-ui's default one (`ui:`).
+@prefix ik: <https://ikigai-rs.dev/ns#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+<urn:iki:uidemo:prefixes> a ik:Alias ;
+    ik:maxHops 8 ;
+    ik:rewrites <urn:iki:uidemo:prefixes:rule:1> ;
+    ik:space <urn:iki:uidemo:prefixes:space> .
+
+<urn:iki:uidemo:prefixes:rule:1> a ik:RewriteRule ;
+    ik:ruleKind "prefix" ;
+    ik:logical "demo:" ;
+    ik:canonical "urn:iki:uidemo:" ;
+    ik:resolveAt "root" .
+
+<urn:iki:uidemo:prefixes:space> a ik:EndpointSpace ;
+    ik:doors rdf:nil .

@@ -176,7 +176,9 @@ pub const KINDS: [Kind; 15] = [
 /// The list of kinds, Turtle: the node shape every node meets (`urn:iki:ui:kind`).
 pub const KIND_LIST: &str = include_str!("../assets/kind.ttl");
 
-/// The gallery's sections, data: `urn:iki:ui:screen:name:gallery` assembles it.
+/// The gallery's sections, data. `urn:iki:ui:screen:name:gallery` is compiled from its outline
+/// (`assets/screen/gallery.outline`, ledger #3365), which `tests/screen.rs` holds equal to the
+/// model these sections assemble.
 pub const GALLERY: &str = include_str!("../assets/gallery.json");
 
 /// The verbs a form's `verb` names.

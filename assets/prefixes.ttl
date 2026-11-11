@@ -1,0 +1,18 @@
+# The default prefix table (ledger #3365): `ui:` for `urn:iki:ui:`, an ikigai-fn prefix table
+# (`ikigai_fn::prefix_space`), checked by `prefix_check`. A screen's own table adds to it.
+@prefix ik: <https://ikigai-rs.dev/ns#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+<urn:iki:ui:prefixes> a ik:Alias ;
+    ik:maxHops 8 ;
+    ik:rewrites <urn:iki:ui:prefixes:rule:1> ;
+    ik:space <urn:iki:ui:prefixes:space> .
+
+<urn:iki:ui:prefixes:rule:1> a ik:RewriteRule ;
+    ik:ruleKind "prefix" ;
+    ik:logical "ui:" ;
+    ik:canonical "urn:iki:ui:" ;
+    ik:resolveAt "root" .
+
+<urn:iki:ui:prefixes:space> a ik:EndpointSpace ;
+    ik:doors rdf:nil .
