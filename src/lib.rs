@@ -104,6 +104,7 @@ pub mod form;
 pub mod html;
 pub mod model;
 pub mod palette;
+pub mod reference;
 pub mod screen;
 pub mod target;
 #[cfg(feature = "testkit")]

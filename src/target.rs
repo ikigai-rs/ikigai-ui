@@ -259,6 +259,11 @@ impl Descriptor {
     }
 
     fn project_kind(&self, source: &Node) -> Node {
+        // A reference the face did not resolve ([`crate::reference::resolve`] runs first)
+        // takes the withheld rung: its fallback text, never a value.
+        if source.kind == crate::reference::KIND {
+            return crate::reference::withheld(source);
+        }
         // 0. A custom element that reaches projection unexpanded ([`crate::element::expand`]
         // runs first): kept when claimed, else its declared fallback, else its fallback text.
         if model::is_element(&source.kind) {
@@ -562,6 +567,8 @@ pub(crate) fn face_endpoint() -> AsyncFnEndpoint {
                 .map_err(|e| Error::InvalidArgument { name: "screen".into(), detail: e.to_string() })?;
             let rep = inv.issue(Request::new(Verb::Source, iri)).await?;
             let node = model::parse(&rep.bytes)?;
+            // References first, under the caller's capability (ledger #3361).
+            let node = crate::reference::resolve(inv, &node).await?;
             let node = crate::element::expand(inv, &node, &descriptor).await?;
             crate::model_face(inv, &descriptor.apply(&node)?)
         })
