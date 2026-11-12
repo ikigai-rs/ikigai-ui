@@ -723,7 +723,13 @@ pub async fn of(inv: &Invocation<'_>, resource: &str, curate: bool) -> Result<No
         path: Vec::new(),
         nodes: 0,
     };
-    let n = view(inv, &mut walk, resource.to_string(), curate).await?;
+    let mut n = view(inv, &mut walk, resource.to_string(), curate).await?;
+    // A resource that declares lenses offers them (ledger #3531).
+    if n.kind == "group" {
+        if let Some(chooser) = crate::lens::chooser(inv, resource).await? {
+            n.children.push(chooser);
+        }
+    }
     model::validate(&n)?;
     Ok(n)
 }

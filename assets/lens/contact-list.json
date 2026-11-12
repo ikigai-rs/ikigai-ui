@@ -1,1 +1,1 @@
-{"renderer": "list", "bound": 10, "legend": "The contact service's parts, by type", "graphs": ["urn:iki:ui:example:graph:contact"]}
+{"renderer": "list", "bound": 10, "legend": "The contact service's parts, by type", "graphs": ["urn:iki:ui:example:graph:contact"], "facets": [{"name": "type", "label": "Only this type", "type": "uri", "values": ["http://schema.org/PropertyValueSpecification", "http://schema.org/Enumeration"]}]}

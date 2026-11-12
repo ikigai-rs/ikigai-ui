@@ -70,6 +70,11 @@ fn conforms() {
                 .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),
         )
         .fixture(
+            Fixture::new("ui-screen-lens", Verb::Source)
+                .binding("lens", "contact-list")
+                .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),
+        )
+        .fixture(
             Fixture::new("ui-view-lens", Verb::Source)
                 .binding("lens", "contact-table")
                 .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),

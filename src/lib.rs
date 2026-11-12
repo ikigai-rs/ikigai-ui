@@ -605,6 +605,7 @@ pub fn space() -> EndpointSpace {
         let file = Iri::parse(format!("{DIR}{}", a.file)).expect("a file name");
         space = space.bind(Exact::new(a.iri), artifact_endpoint(*a, file, DIR));
     }
+    let space = lens::bind_screens(space);
     space
         .bind(Exact::new(TOKENS_CSS), tokens_endpoint())
         .bind(template("urn:iki:ui:palette:{name}"), palette_endpoint())

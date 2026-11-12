@@ -186,7 +186,7 @@ pub(crate) fn empty_endpoint() -> FnEndpoint {
 
 /// The screen's model, read through the kernel so every view hangs from it.
 async fn screen(inv: &Invocation<'_>) -> Result<Node, Error> {
-    let name = inv.bindings.get("screen").unwrap_or_default();
+    let name = crate::lens::unescape_screen(inv.bindings.get("screen").unwrap_or_default());
     let iri = Iri::parse(format!("urn:iki:ui:screen:name:{name}")).map_err(|e| {
         Error::InvalidArgument {
             name: "screen".into(),
@@ -290,7 +290,14 @@ async fn view(
     composers: &BTreeMap<&'static str, ikigai_fn::ComposeOver>,
     at: &str,
 ) -> Result<Representation, Error> {
-    let root = screen(inv).await?;
+    // A lensed screen folds the browser's `lens=` and facet parameters into its name, so every
+    // node below is composed from the same, cacheable name (ledger #3531).
+    let given = inv.bindings.get("screen").unwrap_or_default().to_string();
+    let screen = crate::lens::fold(inv, &given)?;
+    let mut named = Bindings::new();
+    named.insert("screen", screen.as_str());
+    let inv = &inv.with_bindings(&named);
+    let root = self::screen(inv).await?;
     let (node, parent) = locate(&root, at)?;
     if !composers.contains_key(node.kind.as_str()) && node.kind != "option" {
         return Err(Error::NotFound(format!(
@@ -303,7 +310,6 @@ async fn view(
     } else {
         node.kind.as_str()
     };
-    let screen = inv.bindings.get("screen").unwrap_or_default().to_string();
     let mut vars = Bindings::new();
     vars.insert("screen", screen.as_str());
     vars.insert("node", at);
@@ -451,6 +457,17 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                     (DISCLOSURE, "open") => Some(
                         if node.properties.get("open") == Some(&Value::Bool(true)) {
                             " open"
+                        } else {
+                            ""
+                        }
+                        .to_string(),
+                    ),
+                    // A checkbox's initial state, from the html face's hint (ledger #3531).
+                    ("field", "checked") => Some(
+                        if node.hint.get(crate::lens::CHECKED)
+                            == Some(&model::Hint::Plain(Value::Text("checked".into())))
+                        {
+                            " checked"
                         } else {
                             ""
                         }
