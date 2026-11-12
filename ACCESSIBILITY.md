@@ -40,7 +40,9 @@ is the host's to keep accessible.
   region (`#status`, `role="status" aria-live="polite"`).
 - **One live region.** An in-place note has no role; its control points at it with
   `aria-describedby` (removed when the note goes), and `#status` says the sentence, naming the
-  control.
+  control. Empty, `#status` is visually hidden but stays in the accessibility tree (never
+  `display: none`), so a reader that announces only a region it already knew hears the first
+  sentence (ledger #3565).
 - **Focus after a swap.** A swap into `#main` focuses its first heading; a swap that took the
   focused element never leaves focus on `<body>`; on a page nobody has focused, a poll or a lazily
   loaded region leaves focus on `<body>` and the scroll where it was.
