@@ -1,34 +1,34 @@
 {
   "gallery-light.webp": {
-    "inputs": "8368254276e9640d180317231a977f94b0cb88457e05cbc34be1b9ff595f2543"
+    "inputs": "9efe4cce7393378a99505d1a4713d3a3d3cd1f22026a15b07496d6140b68f75d"
   },
   "gallery-dark.webp": {
-    "inputs": "8368254276e9640d180317231a977f94b0cb88457e05cbc34be1b9ff595f2543"
+    "inputs": "9efe4cce7393378a99505d1a4713d3a3d3cd1f22026a15b07496d6140b68f75d"
   },
   "elements-light.webp": {
-    "inputs": "a70e8a2d82e9c8810abd456bbabec21a73d9e556178f1a267b38cbff4e9fb7f3"
+    "inputs": "7a43fddc85d125bdfe773f8ed130c129d9e8c51c0aab14f0c87d74298e816f62"
   },
   "elements-dark.webp": {
-    "inputs": "a70e8a2d82e9c8810abd456bbabec21a73d9e556178f1a267b38cbff4e9fb7f3"
+    "inputs": "7a43fddc85d125bdfe773f8ed130c129d9e8c51c0aab14f0c87d74298e816f62"
   },
   "contact-refusal-light.webp": {
-    "inputs": "675cf6a4b6ade58f8693f6d45a988257cdfd5a1033cee91ff192cd645bb092fa"
+    "inputs": "53ff6d22fa76e57eb2bde837509255eb81ab82e45d92562ca7025115b8b6a10d"
   },
   "contact-refusal-dark.webp": {
-    "inputs": "675cf6a4b6ade58f8693f6d45a988257cdfd5a1033cee91ff192cd645bb092fa"
+    "inputs": "53ff6d22fa76e57eb2bde837509255eb81ab82e45d92562ca7025115b8b6a10d"
   },
   "support-light.webp": {
-    "inputs": "dc1a82306b93ae639efa7512f7230f948ab2d7d1a54d8890ece348bece51a226"
+    "inputs": "1d75fdf9a9debed5e232e34ac26b783033b8af0f349b5f190f4f67b98a0a5a22"
   },
   "support-dark.webp": {
-    "inputs": "dc1a82306b93ae639efa7512f7230f948ab2d7d1a54d8890ece348bece51a226"
+    "inputs": "1d75fdf9a9debed5e232e34ac26b783033b8af0f349b5f190f4f67b98a0a5a22"
   },
   "scene-light.webp": {
-    "inputs": "8368254276e9640d180317231a977f94b0cb88457e05cbc34be1b9ff595f2543",
+    "inputs": "9efe4cce7393378a99505d1a4713d3a3d3cd1f22026a15b07496d6140b68f75d",
     "webgpu": false
   },
   "scene-dark.webp": {
-    "inputs": "8368254276e9640d180317231a977f94b0cb88457e05cbc34be1b9ff595f2543",
+    "inputs": "9efe4cce7393378a99505d1a4713d3a3d3cd1f22026a15b07496d6140b68f75d",
     "webgpu": false
   }
 }
