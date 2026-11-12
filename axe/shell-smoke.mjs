@@ -329,6 +329,39 @@ const canvasHidden = async (page) => {
   if (await page.locator("canvas.ui-scene-canvas").isVisible()) return "the canvas shows with nothing drawn on it";
   if (await page.getAttribute("figure.ui-scene", "data-ui-scene-drawn") !== null) return "marked drawn";
 };
+// The renderer's one fetch stays on the page's origin whatever the page's attribute says
+// (ledger #3525): `/\\host` and `/<tab>/host` start with one `/`, but the URL parser reads both
+// as `//host`. A stand-in WebGPU (any adapter will do: the fetch comes before any drawing) makes
+// the renderer reach its fetch in a browser with none; the door CSP would block the request, so
+// the check watches for the attempt, as a request or as a CSP violation, not for a response.
+for (const steer of ["/\\evil.example/datum", "/\t/evil.example/datum"]) {
+  await check(`the scene renderer never fetches off-origin (data-ui-scene=${JSON.stringify(steer)})`, async (page) => {
+    await page.addInitScript(() => {
+      window.__offOrigin = [];
+      document.addEventListener("securitypolicyviolation", (e) => window.__offOrigin.push(e.blockedURI));
+      const gpu = {
+        requestAdapter: async () => ({ requestDevice: async () => ({}) }),
+        getPreferredCanvasFormat: () => "bgra8unorm",
+      };
+      Object.defineProperty(Navigator.prototype, "gpu", { configurable: true, get: () => gpu });
+    });
+    const requests = [];
+    page.on("request", (r) => { if (new URL(r.url()).host === "evil.example") requests.push(r.url()); });
+    await page.route("**/*", (route) => {
+      if (new URL(route.request().url()).host === "evil.example") return route.abort();
+      return route.continue();
+    });
+    await page.route(gallery, async (route) => {
+      const response = await route.fetch();
+      const body = (await response.text()).replace(/data-ui-scene="[^"]*"/, `data-ui-scene="${steer.replace("\t", "&#9;")}"`);
+      await route.fulfill({ response, body });
+    });
+    await page.goto(gallery);
+    await page.waitForTimeout(500);
+    const blocked = await page.evaluate(() => window.__offOrigin.filter((u) => u.includes("evil.example")));
+    if (requests.length || blocked.length) return `it reached for ${[...requests, ...blocked].join(", ")}`;
+  });
+}
 await check("a scene draws its canvas where WebGPU is, else its replacement is the scene", async (page) => {
   await page.goto(gallery);
   const gpu = await page.evaluate(async () => !!(navigator.gpu && (await navigator.gpu.requestAdapter())));
