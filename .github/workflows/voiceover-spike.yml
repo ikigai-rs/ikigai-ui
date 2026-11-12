@@ -35,13 +35,14 @@ jobs:
       - run: mkdir -p target && tar -xf axe-site.tar -C target
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: Allow VoiceOver to be driven (Guidepup's setup, exact version)
         run: npx -y --ignore-scripts=false @guidepup/setup@0.29.3 setup --ci
       - name: Install the spike's packages (exact pins)
         working-directory: spike/voiceover
         run: npm install --no-save --no-audit --no-fund
       - name: Install Guidepup's screen-reader assets and preferences (as its own CI does)
+        working-directory: spike/voiceover
         run: npx -y --ignore-scripts=false @guidepup/setup@0.29.3 install
       - name: Install WebKit
         working-directory: spike/voiceover
