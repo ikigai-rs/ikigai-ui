@@ -1,0 +1,4 @@
+# The feeds screen: the public feed layers the host's descriptor offers, each a link to its feed.
+group label="Feeds"
+  heading content="Public feeds" level=1
+  reference resource=urn:iki:reader:feeds fallback="The feeds could not be read."
