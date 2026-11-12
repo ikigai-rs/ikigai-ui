@@ -21,6 +21,11 @@ behavior, and the same tests.
 | `urn:iki:ui:support` | every target against every kind, plus capabilities, composed from descriptors; JSON by default, `as=text/html` for the support page |
 | `urn:iki:ui:face:target:{target}:screen:{screen}` | `urn:iki:ui:screen:name:{screen}` with the descriptor's fallbacks applied; model JSON by default, `as=application/ld+json` for named JSON-LD nodes |
 | `urn:iki:ui:element:name:{name}` | a custom element's definition (ledger #3358): its argument contract and its expansion, a model template over core kinds and other elements; a face renders an element natively when its descriptor claims it, else expands it (bounded by depth and nodes produced, a cycle refused), else its declared `replacement`, else its `fallback` text. `rating`, `card`, `key-value` and `tag-list` are this crate's, shown at `urn:iki:ui:screen:name:elements` (the demo's `/page/elements`) and expanded on every face |
+| `urn:iki:ui:scene:graph:{graph}` | an embedded 3D scene's DATUM (ledger #3514), `application/vnd.ikigai.ui.scene+json`: `{graph}`'s nodes (labels, types, positions), its edges (labels) and a camera; data, never code (no shaders, no scripts: the datum is closed). `{graph}` is read under the CALLER's capability, in its own face when that is JSON(-LD), else `as=application/ld+json` |
+| `urn:iki:ui:layout:graph:{graph}` | 3D positions for `{graph}`'s nodes: a force-directed layout from a fixed seed, fitted to the unit sphere; cacheable and golden-threaded from the graph, so an unchanged graph is laid out once and an edit to it cuts the layout |
+| `urn:iki:ui:shape:scene` | the scene datum's SHACL shape (Turtle); `ikigai_ui::scene::validate` says the same in Rust |
+| `urn:iki:ui:scene-renderer.js` | the html face's WebGPU renderer, a first-party script like shell.js: fixed shaders, reads only the datum its `scene` names (a same-origin path), orbit/zoom/select by mouse and keyboard, the selection said in `#status`. With no WebGPU, no adapter or no script the canvas stays hidden and the scene's replacement is the scene |
+| `scene` (a core kind) | `label` (its fallback text), `datum` (the scene datum's IRI) and a REQUIRED `replacement`, its accessible form (the same graph as text). The html face draws the canvas with the replacement beside it, linked from the caption; a face that does not claim `scene` (gpui in phase 1, or an html descriptor a host overrides) shows the replacement in its place, else the label. The gallery's is the demo's contact contract as triples, `urn:iki:ui:example:graph:contact`. The s-expression face spells a replacement `:replacement (…)` |
 | `artifacts(&[Artifact], dir)` | your own artifacts, with the same two deliveries: compiled in, or a file under your directory prefix |
 
 ```rust
@@ -167,7 +172,8 @@ The HTML contract covers every current kind for the HTMX and Web Components targ
 table bound of 1000 rows and 100 columns. Rows are the table's group children; columns count
 each row's children. Larger tables use caption text. GPUI currently keeps heading, text,
 button, link, list, status and group; table and nav become lists, while field, choice, option, form,
-image and visual use fallback text. This is the contract for a future GPUI renderer; the
+image, visual and scene use fallback text (a scene's replacement first, ledger #3514); html
+renders scene natively, its WebGPU canvas with the replacement beside it. This is the contract for a future GPUI renderer; the
 renderer itself is not part of this phase. The gallery's HTML face is unchanged, and its
 GPUI face differs exactly at those descriptor decisions. The JSON and HTML support matrix
 includes versioned capabilities and limits as well as kinds.

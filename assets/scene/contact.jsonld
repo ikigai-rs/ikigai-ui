@@ -1,0 +1,18 @@
+{
+  "@context": {
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "schema": "http://schema.org/", "ui": "urn:iki:ui:example:graph:contact:"
+  },
+  "@graph": [
+    { "@id": "urn:iki:uidemo:contact", "@type": "schema:Service", "rdfs:label": "contact",
+      "schema:hasPart": [ { "@id": "ui:name" }, { "@id": "ui:email" }, { "@id": "ui:topic" }, { "@id": "ui:message" } ] },
+    { "@id": "ui:name", "@type": "schema:PropertyValueSpecification", "rdfs:label": "name", "schema:valueRequired": "true" },
+    { "@id": "ui:email", "@type": "schema:PropertyValueSpecification", "rdfs:label": "email", "schema:valueRequired": "true" },
+    { "@id": "ui:message", "@type": "schema:PropertyValueSpecification", "rdfs:label": "message", "schema:valueRequired": "true" },
+    { "@id": "ui:topic", "@type": "schema:PropertyValueSpecification", "rdfs:label": "topic",
+      "schema:valueReference": [ { "@id": "ui:question" }, { "@id": "ui:bug" }, { "@id": "ui:other" } ] },
+    { "@id": "ui:question", "@type": "schema:Enumeration", "rdfs:label": "question" },
+    { "@id": "ui:bug", "@type": "schema:Enumeration", "rdfs:label": "bug" },
+    { "@id": "ui:other", "@type": "schema:Enumeration", "rdfs:label": "other" }
+  ]
+}

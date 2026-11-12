@@ -23,6 +23,7 @@
     "image": "urn:iki:ui:kind:name:image",
     "group": "urn:iki:ui:kind:name:group",
     "visual": "urn:iki:ui:kind:name:visual",
+    "scene": "urn:iki:ui:kind:name:scene",
     "reference": "urn:iki:ui:structure:name:reference",
     "region": "urn:iki:ui:structure:name:region",
     "allow": "urn:iki:ui:property:name:allow",
@@ -36,6 +37,7 @@
     "href": "urn:iki:ui:property:name:href",
     "input": "urn:iki:ui:property:name:input",
     "label": "urn:iki:ui:property:name:label",
+    "datum": "urn:iki:ui:property:name:datum",
     "level": {
       "@id": "urn:iki:ui:property:name:level",
       "@type": "http://www.w3.org/2001/XMLSchema#integer"

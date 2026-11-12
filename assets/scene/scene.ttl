@@ -1,0 +1,52 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# The scene datum (ledger #3514), `application/vnd.ikigai.ui.scene+json`: a renderer-neutral
+# scene, data only. No shader, no script, no URL to fetch: a renderer draws what is here.
+# `ikigai_ui::scene::validate` says the same in Rust.
+<urn:iki:ui:shape:scene> a sh:NodeShape ;
+  rdfs:label "A 3D scene datum" ;
+  sh:closed true ;
+  sh:property
+    <urn:iki:ui:shape:scene:property:graph> ,
+    <urn:iki:ui:shape:scene:property:node> ,
+    <urn:iki:ui:shape:scene:property:edge> ,
+    <urn:iki:ui:shape:scene:property:camera> .
+
+<urn:iki:ui:shape:scene:node> a sh:NodeShape ;
+  sh:closed true ;
+  sh:property
+    <urn:iki:ui:shape:scene:node:property:id> ,
+    <urn:iki:ui:shape:scene:node:property:label> ,
+    <urn:iki:ui:shape:scene:node:property:type> ,
+    <urn:iki:ui:shape:scene:node:property:position> .
+
+<urn:iki:ui:shape:scene:edge> a sh:NodeShape ;
+  sh:closed true ;
+  sh:property
+    <urn:iki:ui:shape:scene:edge:property:from> ,
+    <urn:iki:ui:shape:scene:edge:property:to> ,
+    <urn:iki:ui:shape:scene:edge:property:label> .
+
+<urn:iki:ui:shape:scene:camera> a sh:NodeShape ;
+  sh:closed true ;
+  sh:property
+    <urn:iki:ui:shape:scene:camera:property:position> ,
+    <urn:iki:ui:shape:scene:camera:property:target> ,
+    <urn:iki:ui:shape:scene:camera:property:fov> .
+
+<urn:iki:ui:shape:scene:property:graph> sh:path <urn:iki:ui:scene:property:graph> ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI .
+<urn:iki:ui:shape:scene:property:node> sh:path <urn:iki:ui:scene:property:node> ; sh:maxCount 512 ; sh:node <urn:iki:ui:shape:scene:node> .
+<urn:iki:ui:shape:scene:property:edge> sh:path <urn:iki:ui:scene:property:edge> ; sh:maxCount 4096 ; sh:node <urn:iki:ui:shape:scene:edge> .
+<urn:iki:ui:shape:scene:property:camera> sh:path <urn:iki:ui:scene:property:camera> ; sh:minCount 1 ; sh:maxCount 1 ; sh:node <urn:iki:ui:shape:scene:camera> .
+<urn:iki:ui:shape:scene:node:property:id> sh:path <urn:iki:ui:scene:property:id> ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI .
+<urn:iki:ui:shape:scene:node:property:label> sh:path <urn:iki:ui:scene:property:label> ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:shape:scene:node:property:type> sh:path <urn:iki:ui:scene:property:type> ; sh:maxCount 1 ; sh:nodeKind sh:IRI .
+<urn:iki:ui:shape:scene:node:property:position> sh:path <urn:iki:ui:scene:property:position> ; sh:minCount 3 ; sh:maxCount 3 ; sh:datatype xsd:double .
+<urn:iki:ui:shape:scene:edge:property:from> sh:path <urn:iki:ui:scene:property:from> ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI .
+<urn:iki:ui:shape:scene:edge:property:to> sh:path <urn:iki:ui:scene:property:to> ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI .
+<urn:iki:ui:shape:scene:edge:property:label> sh:path <urn:iki:ui:scene:property:label> ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:shape:scene:camera:property:position> sh:path <urn:iki:ui:scene:property:position> ; sh:minCount 3 ; sh:maxCount 3 ; sh:datatype xsd:double .
+<urn:iki:ui:shape:scene:camera:property:target> sh:path <urn:iki:ui:scene:property:target> ; sh:minCount 3 ; sh:maxCount 3 ; sh:datatype xsd:double .
+<urn:iki:ui:shape:scene:camera:property:fov> sh:path <urn:iki:ui:scene:property:fov> ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:double ; sh:minExclusive 0 ; sh:maxExclusive 180 .

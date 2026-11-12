@@ -1,0 +1,231 @@
+{
+  "kind": "scene",
+  "properties": {
+    "label": "The contact contract as a graph",
+    "datum": "urn:iki:ui:scene:graph:urn:iki:ui:example:graph:contact"
+  },
+  "replacement": {
+    "kind": "table",
+    "properties": {
+      "caption": "The contact contract as text: every edge of the graph"
+    },
+    "children": [
+      {
+        "kind": "group",
+        "properties": {
+          "label": "Headers",
+          "header": "column"
+        },
+        "children": [
+          {
+            "kind": "text",
+            "properties": {
+              "content": "From"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "Relation"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "To"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "group",
+        "properties": {
+          "label": "Edge 1",
+          "header": "row"
+        },
+        "children": [
+          {
+            "kind": "text",
+            "properties": {
+              "content": "contact"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "hasPart"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "name"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "group",
+        "properties": {
+          "label": "Edge 2",
+          "header": "row"
+        },
+        "children": [
+          {
+            "kind": "text",
+            "properties": {
+              "content": "contact"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "hasPart"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "email"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "group",
+        "properties": {
+          "label": "Edge 3",
+          "header": "row"
+        },
+        "children": [
+          {
+            "kind": "text",
+            "properties": {
+              "content": "contact"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "hasPart"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "topic"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "group",
+        "properties": {
+          "label": "Edge 4",
+          "header": "row"
+        },
+        "children": [
+          {
+            "kind": "text",
+            "properties": {
+              "content": "contact"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "hasPart"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "message"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "group",
+        "properties": {
+          "label": "Edge 5",
+          "header": "row"
+        },
+        "children": [
+          {
+            "kind": "text",
+            "properties": {
+              "content": "topic"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "valueReference"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "question"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "group",
+        "properties": {
+          "label": "Edge 6",
+          "header": "row"
+        },
+        "children": [
+          {
+            "kind": "text",
+            "properties": {
+              "content": "topic"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "valueReference"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "bug"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "group",
+        "properties": {
+          "label": "Edge 7",
+          "header": "row"
+        },
+        "children": [
+          {
+            "kind": "text",
+            "properties": {
+              "content": "topic"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "valueReference"
+            }
+          },
+          {
+            "kind": "text",
+            "properties": {
+              "content": "other"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -144,6 +144,9 @@ pub struct Line {
     pub properties: Vec<(String, Raw)>,
     /// The lines nested under it.
     pub children: Vec<Line>,
+    /// Its replacement subtree, when the source spells one (the s-expression front end's
+    /// `:replacement (…)`; an outline spells none).
+    pub replacement: Option<Box<Line>>,
 }
 
 /// A parsed outline.
@@ -364,6 +367,7 @@ pub fn parse(screen: &str, bytes: &[u8]) -> Result<Outline, Error> {
             head,
             properties,
             children: Vec::new(),
+            replacement: None,
         };
         // Close every open line at this indentation or deeper.
         let mut closed: Option<usize> = None;
@@ -575,6 +579,10 @@ impl Build<'_> {
             }
             node.children.push(child);
         }
+        if let Some(replacement) = &line.replacement {
+            let replacement = self.node(replacement)?;
+            node.replacement = Some(Box::new(replacement));
+        }
         // The children are valid already (built first), so a fault here is this line's own.
         let shallow = Node {
             children: Vec::new(),
@@ -650,6 +658,7 @@ pub async fn compile(
         }
         let in_region = in_region || line.head == Head::Kind(crate::region::KIND);
         stack.extend(line.children.iter().map(|c| (c, in_region)));
+        stack.extend(line.replacement.as_deref().map(|r| (r, in_region)));
     }
     wanted.sort();
     let mut references: BTreeMap<String, (Node, usize)> = BTreeMap::new();

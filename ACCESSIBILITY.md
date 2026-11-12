@@ -22,6 +22,8 @@ test, not a review.
 | WCAG 2.0/2.1/2.2 A and AA rules on every demo page, in light, dark and more-contrast media, under the door default CSP | `axe/check.mjs` in CI |
 | The native (GPUI) face draws only with the palettes, read as `urn:iki:ui:palette:{name}` through the kernel: light, dark and high contrast, `auto` following the window's light/dark appearance live; no color is written in `gpui/src`, and every pair it draws (`fg`, `muted`, `accent`, `danger` on `bg`; `accent-fg` on `accent`; `line`, `rule`, `focus` on `bg`) is one `PAIRS` holds | `gpui/src/native.rs` window tests (each theme's `bg`/`fg`, a host's palette override, `auto` on an appearance change), `gpui/tests/palette_source.rs`, `tests/palettes.rs` |
 | Custom elements (ledger #3358) reach assistive technology only as the core kinds they expand into, never as markup of their own: no face claims `card`, `key-value` or `tag-list` natively. HTML, expanded: a `card` is a `<section>` named by its title (`aria-label`) with a real heading at its `level`, its body a `<p>` and its links a named `<ul>` of `<a>`; a `key-value` is a `<table>` whose `<caption>` names it and whose terms are `<th scope="row">` row headers, so each value is announced with its term; a `tag-list` is a `<ul>` named by its label (`aria-label`), each tag a list item, a link when it has one. HTML, fallback text (no definition readable): one `<p>` of the element's `fallback` text, with no heading, table or list semantics and none of its links or children. GPUI, expanded: the same group, heading, table (drawn as rows of cells) and list, with no assistive-technology semantics (see the native face's limitations below) | `tests/element.rs` (the expanded and fallback HTML held to `tests/snapshots/elements-*.html`, the support matrix, a claiming face keeping each whole), `gpui/tests/worker.rs` (the native face receives only kinds it draws), `axe/check.mjs` over `/elements.html` in every theme |
+| An embedded 3D scene (ledger #3514) is never the only form of what it shows: a `scene` without a `replacement` is refused, and the replacement (the gallery's: a table with a row per edge of the graph, row headers on the subject) IS the accessible form. On the html face it is always on the page, after the canvas, and the caption links to it ("The same graph as text"); a face with no 3D, a browser with no WebGPU and a page with no script show it in the scene's place, and the canvas stays `hidden` (out of the accessibility tree) until it has drawn | `tests/scene.rs` (a scene with no replacement refused; snapshots of both paths; the gallery's replacement names every edge of the datum), `axe/shell-smoke.mjs` (WebGPU absent, script off, and drawn when an adapter exists) |
+| The drawn canvas is keyboard-operable and named: it is focusable (`tabindex="0"`, `role="application"`, `aria-roledescription="3D scene"`), its `aria-label` names the scene and its keys; arrow keys orbit, `+`/`-` zoom, `N`/`Shift+N` select the next/previous node, `Escape` clears; the mouse does the same (drag, wheel, click). The selection ("Selected topic (PropertyValueSpecification): 3 out, 1 in.") is said in `#status`, the page's one live region | `axe/shell-smoke.mjs` on a browser with a WebGPU adapter (`N` then `#status`) |
 
 Known limitation: on a page composed over the shell that FIXES its theme (a no-Rust host's
 names file, `theme=auto`), the chooser's no-script Apply asks for the page with `theme=`, and
@@ -35,6 +37,14 @@ dark only, not macOS "Increase contrast", so `auto` never picks high contrast th
 change a window's appearance (the test calls the appearance observer's handler) nor show the
 pixels a real window paints; they check the colors the window draws with, not a screenshot.
 Native windows are not checked by axe or any screen-reader test.
+
+Known limitations of the 3D scene: the canvas draws pixels only, so a screen reader hears the
+scene's name, its keys and what `#status` says, and reads the graph itself in the replacement
+(that is the design: the replacement is the accessible form, not a description of the
+picture). `prefers-reduced-motion` needs nothing: the scene moves only when the viewer moves it.
+CI's headless Chromium may have no WebGPU adapter; the smoke check says which path it took, and
+the drawn path is otherwise checked by hand in Safari and Chrome. The GPUI face shows the
+replacement (phase 2 is a research spike, see `gpui/README.md`).
 
 What a page puts inside the shell is the host's to keep accessible: name each `<nav>` with
 `aria-label` when there is more than one, label every control, and run the test kit and the axe

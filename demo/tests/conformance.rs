@@ -113,6 +113,17 @@ fn conforms() {
         .pure("ui-setting-name")
         .pure("ui-structure-name")
         .pure("ui-example-structure")
+        // The embedded 3D scene (ledger #3514), as ikigai-ui's tests/conformance.rs registers it.
+        .fixture(
+            Fixture::new("ui-layout-graph", Verb::Source)
+                .binding("graph", ikigai_ui::scene::EXAMPLE_GRAPH),
+        )
+        .fixture(
+            Fixture::new("ui-scene-graph", Verb::Source)
+                .binding("graph", ikigai_ui::scene::EXAMPLE_GRAPH),
+        )
+        .pure("ui-shape-scene")
+        .pure("ui-example-graph")
         // ikigai-ui's own vocabularies, as its tests/conformance.rs registers them.
         .namespace("urn:iki:ui:token:")
         .namespace("urn:iki:ui:kind:")

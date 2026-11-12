@@ -379,9 +379,19 @@ impl Descriptor {
                 .map(|child| self.project(child))
                 .collect()
         };
+        // A scene drawn natively keeps its replacement, projected: the accessible form a page
+        // shows beside the canvas, and in its place when the face cannot draw.
+        let replacement = if destination == "scene" {
+            source
+                .replacement
+                .as_ref()
+                .map(|r| Box::new(self.project(r)))
+        } else {
+            None
+        };
         let result = Node {
             kind: destination.into(),
-            replacement: None,
+            replacement,
             hint: Default::default(),
             properties,
             children,

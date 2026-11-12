@@ -63,9 +63,9 @@ macro_rules! template {
 }
 
 /// The compiled-in templates, one per kind of [`model::KINDS`].
-pub const TEMPLATES: [crate::Artifact; 15] = template!(
+pub const TEMPLATES: [crate::Artifact; 16] = template!(
     "heading", "text", "field", "choice", "option", "button", "link", "list", "table", "form",
-    "nav", "status", "image", "group", "visual"
+    "nav", "status", "image", "group", "visual", "scene"
 );
 
 fn argument(name: &str, summary: &str) -> ArgSpec {
@@ -144,7 +144,34 @@ async fn screen(inv: &Invocation<'_>) -> Result<Node, Error> {
     // elements down the ladder (the html face claims none natively, so each is expanded, falls
     // back or shows its fallback text) and write-only fields made their own forms.
     let descriptor = crate::target::read_descriptor(inv, "html").await?;
-    crate::target::compose(inv, &node, &descriptor).await
+    let node = crate::target::compose(inv, &node, &descriptor).await?;
+    // A descriptor that does not claim `scene` (a host serving no WebGPU renderer) takes the
+    // ladder's next rung for each one: its replacement, else its label as text (ledger #3514).
+    if descriptor.renders.iter().any(|k| k == "scene") {
+        return Ok(node);
+    }
+    Ok(without_scenes(node))
+}
+
+fn without_scenes(mut node: Node) -> Node {
+    if node.kind == "scene" {
+        return match node.replacement.take() {
+            Some(replacement) => without_scenes(*replacement),
+            None => Node {
+                kind: "text".into(),
+                hint: Default::default(),
+                replacement: None,
+                properties: node
+                    .properties
+                    .remove("label")
+                    .map(|label| [("content".to_string(), label)].into_iter().collect())
+                    .unwrap_or_default(),
+                children: Vec::new(),
+            },
+        };
+    }
+    node.children = node.children.into_iter().map(without_scenes).collect();
+    node
 }
 
 /// The node at `{node}` and its parent's kind.
@@ -156,6 +183,13 @@ fn locate<'a>(root: &'a Node, at: &str) -> Result<(&'a Node, Option<&'a str>), E
     }
     let (mut node, mut parent) = (root, None);
     for part in parts {
+        // `r` is the node's replacement: a scene's accessible form, drawn beside its canvas.
+        if part == "r" {
+            let replacement = node.replacement.as_deref().ok_or_else(missing)?;
+            parent = Some(node.kind.as_str());
+            node = replacement;
+            continue;
+        }
         let i: usize = part.parse().map_err(|_| missing())?;
         let child = node.children.get(i).ok_or_else(missing)?;
         parent = Some(node.kind.as_str());
@@ -340,6 +374,12 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                 let value = match (node.kind.as_str(), name) {
                     ("form", "submit") => submit(inv, node).await?,
                     ("form", "method") => Some(form_method(node)?),
+                    ("scene", "datum-url") => match text_of(node, "datum") {
+                        Some(datum) => crate::target::read_descriptor(inv, "html")
+                            .await?
+                            .submit_url(datum),
+                        None => None,
+                    },
                     ("option", "selected") => {
                         let selected = at
                             .rsplit_once('.')
@@ -397,6 +437,9 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
                         .map_err(|_| Error::Endpoint(format!("{path}: not UTF-8")))
                 };
                 let mut out = String::new();
+                if node.kind == "scene" && node.replacement.is_some() {
+                    out.push_str(&child_view(format!("{at}.r")).await?);
+                }
                 for (i, child) in node.children.iter().enumerate() {
                     let path = format!("{at}.{i}");
                     match node.kind.as_str() {

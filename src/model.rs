@@ -131,7 +131,7 @@ macro_rules! kind {
 }
 
 /// The closed node vocabulary. Sealed: nothing else is a kind.
-pub const KINDS: [Kind; 15] = [
+pub const KINDS: [Kind; 16] = [
     kind!("heading", "content", ["level": Level], [], Children::Leaf),
     kind!("text", "content", [], [], Children::Leaf),
     kind!(
@@ -178,6 +178,7 @@ pub const KINDS: [Kind; 15] = [
     kind!("image", "alt", ["src": Url], [], Children::Leaf),
     kind!("group", "label", [], ["header": Scope], Children::Any),
     kind!("visual", "label", [], ["description": Text], Children::Leaf),
+    kind!("scene", "label", ["datum": Iri], [], Children::Leaf),
 ];
 
 macro_rules! structure {
@@ -377,6 +378,14 @@ pub fn validate(root: &Node) -> Result<(), Error> {
         };
         if structural.is_some() && node.replacement.is_some() {
             return Err(refuse(&path, format!("a {} takes no replacement", k.name)));
+        }
+        // A scene is a picture a face may not draw (no GPU, no script, no 3D): its
+        // `replacement` is its accessible form, so it is required, not optional.
+        if k.name == "scene" && node.replacement.is_none() {
+            return Err(refuse(
+                &path,
+                "a scene needs a `replacement`, its accessible form".into(),
+            ));
         }
         if k.name == crate::region::KIND {
             crate::region::validate(node).map_err(|detail| refuse(&path, detail))?;

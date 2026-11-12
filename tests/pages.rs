@@ -67,8 +67,8 @@ fn the_shell_has_its_landmarks_and_one_status_region() {
     assert!(!page.contains("style="), "no inline style (D6)");
     assert_eq!(
         page.matches("<script").count(),
-        2,
-        "only the two scripts, both by URL"
+        3,
+        "only the three scripts (shell, scene renderer, htmx), all by URL"
     );
 }
 

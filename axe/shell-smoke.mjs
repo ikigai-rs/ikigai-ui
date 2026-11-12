@@ -313,6 +313,66 @@ await check("with no script, the chooser submits theme= and the page comes back 
 }, noScript);
 
 // ---- live views (D9): the push stream stand-in in serve.mjs -----------------------------------
+// The embedded 3D scene (ledger #3514) on the gallery. With WebGPU and an adapter the canvas
+// draws (shown, marked drawn, and not blank); with none, or with no script, the canvas stays
+// hidden and the replacement (every edge as text, linked from the caption) is what shows.
+// CI's headless Chromium may have no adapter: the check says which path it took.
+const gallery = site.base + "/gallery.html";
+const replacementShows = async (page) => {
+  const table = page.locator(".ui-scene-replacement table");
+  if (!(await table.isVisible())) return "the replacement table is not visible";
+  if ((await page.locator(".ui-scene-replacement tr").count()) !== 8) return "the replacement lacks a row per edge";
+  const href = await page.getAttribute(".ui-scene figcaption a.ui-scene-text", "href");
+  if (!href || !(await page.locator(href.replace(/\./g, "\\.")).isVisible())) return `the caption's link ${href} does not reach the replacement`;
+};
+const canvasHidden = async (page) => {
+  if (await page.locator("canvas.ui-scene-canvas").isVisible()) return "the canvas shows with nothing drawn on it";
+  if (await page.getAttribute("figure.ui-scene", "data-ui-scene-drawn") !== null) return "marked drawn";
+};
+await check("a scene draws its canvas where WebGPU is, else its replacement is the scene", async (page) => {
+  await page.goto(gallery);
+  const gpu = await page.evaluate(async () => !!(navigator.gpu && (await navigator.gpu.requestAdapter())));
+  if (!gpu) {
+    console.log("     (no WebGPU adapter in this browser: checked the absent path)");
+    await page.waitForTimeout(500);
+    return (await canvasHidden(page)) || (await replacementShows(page));
+  }
+  const drawn = await page
+    .waitForSelector("figure.ui-scene[data-ui-scene-drawn]", { timeout: 5000 })
+    .then(() => true, () => false);
+  if (!drawn) return "WebGPU is present but the scene was not drawn";
+  if (!(await page.locator("canvas.ui-scene-canvas").isVisible())) return "drawn, but the canvas is hidden";
+  // Not blank: copy the presented frame to a 2D canvas and look for a painted pixel.
+  const painted = await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => {
+    const src = document.querySelector("canvas.ui-scene-canvas");
+    const c = document.createElement("canvas");
+    c.width = src.width; c.height = src.height;
+    const g = c.getContext("2d");
+    g.drawImage(src, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] !== 0) return ok(true);
+    ok(false);
+  })));
+  if (!painted) return "the canvas is blank";
+  console.log("     (WebGPU adapter present: checked the drawn path)");
+  // The keyboard selects, and #status says it.
+  await page.focus("canvas.ui-scene-canvas");
+  await page.keyboard.press("n");
+  const said = await page.textContent("#status");
+  if (!/^Selected /.test(said || "")) return `#status says ${JSON.stringify(said)} after N`;
+  return replacementShows(page);
+});
+await check("with WebGPU absent, a scene's replacement is what shows", async (page) => {
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "gpu", { get: () => undefined }));
+  await page.goto(gallery);
+  await page.waitForTimeout(500);
+  return (await canvasHidden(page)) || (await replacementShows(page));
+});
+await check("with no script, a scene's replacement is what shows", async (page) => {
+  await page.goto(gallery);
+  return (await canvasHidden(page)) || (await replacementShows(page));
+}, { newContext: () => browser.newContext({ javaScriptEnabled: false }) });
+
 const live = site.base + "/live-auto.html";
 
 async function subscribed(paths) {

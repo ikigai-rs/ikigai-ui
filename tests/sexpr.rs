@@ -117,7 +117,8 @@ const GALLERY_SEXPR: &str = r#"
   (group :label "Media"
     (heading :content "Media" :level 2)
     (urn:iki:ui:example:kind:image)
-    (urn:iki:ui:example:kind:visual)))
+    (urn:iki:ui:example:kind:visual)
+    (urn:iki:ui:example:kind:scene)))
 "#;
 
 /// The gallery as a program: each section computed from its kinds' names.
@@ -131,7 +132,7 @@ const GALLERY_LISP: &str = r#"
         (section "Input" '("form" "field" "choice" "option" "button"))
         (section "Navigation" '("link" "nav"))
         (section "Structure" '("list" "table" "group"))
-        (section "Media" '("image" "visual"))))
+        (section "Media" '("image" "visual" "scene"))))
 "#;
 
 #[test]

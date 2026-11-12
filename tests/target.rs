@@ -42,9 +42,20 @@ fn model_at(kernel: &Kernel, iri: &str) -> Node {
 
 // Independent expectation for the shipped descriptors: table -> list and nav -> list
 // preserve their children; text fallbacks keep only the source kind's fallback property.
+// A node the descriptor does not render takes its replacement first (a scene's, ledger #3514);
+// a rendered scene keeps its replacement, projected, to show beside its canvas.
 fn expected(node: &Node, descriptor: &Descriptor) -> Node {
+    if let Some(replacement) = &node.replacement {
+        if !descriptor.renders.contains(&node.kind) {
+            return expected(replacement, descriptor);
+        }
+    }
     let Some(destination) = descriptor.fallback.get(&node.kind) else {
         let mut result = node.clone();
+        result.replacement = node
+            .replacement
+            .as_ref()
+            .map(|r| Box::new(expected(r, descriptor)));
         result.children = node
             .children
             .iter()

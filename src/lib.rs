@@ -114,6 +114,7 @@ pub mod model;
 pub mod palette;
 pub mod reference;
 pub mod region;
+pub mod scene;
 pub mod screen;
 pub mod setting;
 pub mod sexpr;
@@ -191,7 +192,8 @@ pub struct Artifact {
 
 /// The bundled shell artifacts a directory can override. The [`target`] descriptors have
 /// their own validated file-backed resources.
-pub const ARTIFACTS: [Artifact; 4] = [
+pub const ARTIFACTS: [Artifact; 5] = [
+    scene::RENDERER,
     Artifact {
         iri: "urn:iki:ui:htmx",
         id: "ui-htmx",
@@ -659,6 +661,26 @@ pub fn space() -> EndpointSpace {
             html::template_endpoint(),
         )
         .bind(Exact::new(html::EMPTY), html::empty_endpoint())
+        .bind(
+            template(&format!("{}{{graph}}", scene::LAYOUT_PREFIX)),
+            scene::layout_endpoint(),
+        )
+        .bind(
+            template(&format!("{}{{graph}}", scene::SCENE_PREFIX)),
+            scene::scene_endpoint(),
+        )
+        .bind(
+            Exact::new(scene::SHAPE_IRI),
+            scene::fixed_endpoint("ui-shape-scene", "text/turtle", scene::SCENE_SHAPE),
+        )
+        .bind(
+            Exact::new(scene::EXAMPLE_GRAPH),
+            scene::fixed_endpoint(
+                "ui-example-graph",
+                "application/ld+json",
+                scene::EXAMPLE_GRAPH_JSON_LD,
+            ),
+        )
         .bind(
             template("urn:iki:ui:html:screen:{screen}:node:{node}:property:{property}"),
             html::property_endpoint(),
