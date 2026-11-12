@@ -77,11 +77,19 @@
     return [x / w, y / w];
   }
 
-  // Only a same-origin path, and only a scene datum: never a URL from anywhere else.
+  // Only a same-origin path, and only a scene datum: never a URL from anywhere else. A leading
+  // `/` and no second one is not enough: the URL parser reads `/\host` and `/<tab>/host` as
+  // `//host` (ledger #3525), so the path is resolved and its origin compared.
   function datumUrl(figure) {
     var path = figure.getAttribute("data-ui-scene") || "";
     if (path.charAt(0) !== "/" || path.charAt(1) === "/") return null;
-    return path;
+    var url;
+    try {
+      url = new URL(path, window.location.href);
+    } catch (e) {
+      return null;
+    }
+    return url.origin === window.location.origin ? url.href : null;
   }
 
   async function draw(figure) {
