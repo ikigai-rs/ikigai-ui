@@ -270,9 +270,9 @@ pub fn layout(graph: &Graph) -> BTreeMap<String, [f64; 3]> {
                 let v = [p[i][0] - p[j][0], p[i][1] - p[j][1], p[i][2] - p[j][2]];
                 let dist = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-6);
                 let f = k * k / dist;
-                for a in 0..3 {
-                    d[i][a] += v[a] / dist * f;
-                    d[j][a] -= v[a] / dist * f;
+                for (a, va) in v.iter().enumerate() {
+                    d[i][a] += va / dist * f;
+                    d[j][a] -= va / dist * f;
                 }
             }
         }
@@ -280,9 +280,9 @@ pub fn layout(graph: &Graph) -> BTreeMap<String, [f64; 3]> {
             let v = [p[i][0] - p[j][0], p[i][1] - p[j][1], p[i][2] - p[j][2]];
             let dist = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-6);
             let f = dist * dist / k;
-            for a in 0..3 {
-                d[i][a] -= v[a] / dist * f;
-                d[j][a] += v[a] / dist * f;
+            for (a, va) in v.iter().enumerate() {
+                d[i][a] -= va / dist * f;
+                d[j][a] += va / dist * f;
             }
         }
         for i in 0..n {
@@ -381,7 +381,12 @@ pub fn validate(scene: &Scene) -> Result<(), Error> {
         }
     }
     let c = &scene.camera;
-    if !finite(&c.position) || !finite(&c.target) || !(c.fov > 0.0 && c.fov < 180.0) {
+    if !finite(&c.position)
+        || !finite(&c.target)
+        || c.fov.is_nan()
+        || c.fov <= 0.0
+        || c.fov >= 180.0
+    {
         return Err(bad(
             "/camera: needs finite places and a field of view in (0, 180)".into(),
         ));
