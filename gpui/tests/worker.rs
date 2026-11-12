@@ -245,3 +245,44 @@ fn submission_preserves_each_named_value_as_utf8_bytes() {
         values
     );
 }
+
+#[test]
+fn custom_elements_reach_the_native_face_expanded_into_kinds_it_draws() {
+    // card, key-value and tag-list (ledger #3511): GPUI claims none, so each arrives expanded,
+    // and only as kinds the native renderer draws (its key-value is a table, drawn as rows).
+    let (worker, _) = host();
+    let elements = wait(&worker.load("elements")).unwrap();
+    let root = elements.root();
+    let descriptor = Descriptor::parse(DESCRIPTOR, "gpui").unwrap();
+    fn every<'a>(node: &'a Node, out: &mut Vec<&'a Node>) {
+        out.push(node);
+        for child in &node.children {
+            every(child, out);
+        }
+    }
+    let mut nodes = Vec::new();
+    every(root, &mut nodes);
+    for node in &nodes {
+        assert!(
+            descriptor.renders.contains(&node.kind),
+            "{} is not drawn natively",
+            node.kind
+        );
+    }
+    let card = &root.children[2];
+    assert_eq!(card.kind, "group");
+    assert_eq!(text(card, "label"), Some("Field notes"));
+    assert_eq!(card.children[0].kind, "heading");
+    assert_eq!(
+        text(&card.children[1], "content").map(|s| s.starts_with("The weekly")),
+        Some(true)
+    );
+    let key_value = &root.children[3];
+    assert_eq!(key_value.kind, "table");
+    assert_eq!(text(key_value, "caption"), Some("Gauge 14"));
+    assert_eq!(key_value.children.len(), 3);
+    let tags = &root.children[4];
+    assert_eq!(tags.kind, "list");
+    assert_eq!(text(tags, "label"), Some("Topics"));
+    assert_eq!(text(&tags.children[0], "href"), Some("/topic/hydrology"));
+}

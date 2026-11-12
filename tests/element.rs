@@ -355,3 +355,143 @@ fn editing_a_definition_recomputes_the_screens_that_use_it() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+// --- card, key-value and tag-list (ledger #3511): how each translates -------------------------
+
+const NEW: [&str; 3] = ["card", "key-value", "tag-list"];
+
+/// The elements screen in a host that has none of `NEW`'s definitions (each NotFound), so each
+/// takes the ladder's last rung: its fallback text.
+fn host_without_definitions() -> ikigai_core::Kernel {
+    use ikigai_core::{EndpointSpace, Exact, Fallback, FnEndpoint, Invocation};
+    use std::sync::Arc;
+    let mut withheld = EndpointSpace::new();
+    for name in NEW {
+        withheld = withheld.bind(
+            Exact::new(format!("{}{name}", element::PREFIX)),
+            FnEndpoint::new("test-no-definition", |_: &Invocation<'_>| {
+                Err(Error::NotFound("no definition here".into()))
+            }),
+        );
+    }
+    common::kernel(Arc::new(Fallback::new(vec![
+        Arc::new(withheld),
+        common::root(None, Vec::new()),
+    ])))
+}
+
+fn example(name: &str) -> Node {
+    let i = element::ELEMENTS
+        .iter()
+        .position(|a| a.iri == format!("{}{name}", element::PREFIX))
+        .unwrap();
+    model::parse(element::EXAMPLES[i].as_bytes()).unwrap()
+}
+
+#[test]
+fn card_key_value_and_tag_list_are_compositions_of_core_kinds_on_the_elements_screen() {
+    let kernel = common::host(None);
+    let screen = common::source(&kernel, element::SCREEN).unwrap();
+    let screen = model::parse(&screen.bytes).unwrap();
+    let kinds: Vec<&str> = screen.children.iter().map(|c| c.kind.as_str()).collect();
+    for name in NEW {
+        let iri = format!("{}{name}", element::PREFIX);
+        assert!(
+            kinds.contains(&iri.as_str()),
+            "{iri} on the elements screen"
+        );
+        // Its definition reads, and its expansion names only core kinds: no element, no markup.
+        let def = common::source(&kernel, &iri).unwrap();
+        let def = Definition::parse(&def.bytes, &iri).unwrap();
+        let text = def.expansion.to_string();
+        assert!(!text.contains("urn:") && !text.contains('<'), "{text}");
+    }
+}
+
+#[test]
+fn the_new_elements_expand_into_core_kinds_on_both_faces() {
+    let kernel = common::host(None);
+    for target in ["html", "gpui"] {
+        let face = common::source(
+            &kernel,
+            &format!("urn:iki:ui:face:target:{target}:screen:elements"),
+        )
+        .unwrap();
+        let face = model::parse(&face.bytes).unwrap();
+        // [heading, rating, card, key-value, tag-list]
+        let card = &face.children[2];
+        assert_eq!(card.kind, "group", "{target}: a card is a named group");
+        assert_eq!(card.children[0].kind, "heading");
+        assert_eq!(
+            card.children[0].properties["level"],
+            model::Value::Number(3)
+        );
+        assert_eq!(card.children[1].kind, "text");
+        assert_eq!(
+            card.children[2].kind, "list",
+            "{target}: its links follow the body"
+        );
+        let kv = &face.children[3];
+        // HTML keeps the table; GPUI's descriptor takes a table to a list.
+        let expected = if target == "html" { "table" } else { "list" };
+        assert_eq!(kv.kind, expected, "{target}: a key-value list");
+        assert_eq!(kv.children.len(), 3);
+        let tags = &face.children[4];
+        assert_eq!(tags.kind, "list", "{target}: a tag list");
+        assert_eq!(tags.children[0].kind, "link");
+        assert_eq!(tags.children[1].kind, "text");
+    }
+    let support: serde_json::Value =
+        serde_json::from_slice(&common::source(&kernel, "urn:iki:ui:support").unwrap().bytes)
+            .unwrap();
+    let page = common::text(&kernel, "urn:iki:ui:support", &[("as", "text/html")]);
+    for name in NEW {
+        let iri = format!("{}{name}", element::PREFIX);
+        for target in ["html", "gpui"] {
+            assert_eq!(support[target]["element"][&iri], false, "{target} {iri}");
+        }
+        assert!(
+            page.contains(&format!(
+                "<tr><th scope=\"row\">{iri}</th><td>Expanded from its definition</td><td>Expanded from its definition</td></tr>"
+            )),
+            "{page}"
+        );
+    }
+}
+
+#[test]
+fn a_face_that_claims_one_keeps_it_whole_for_its_native_renderer() {
+    for name in NEW {
+        let iri = format!("{}{name}", element::PREFIX);
+        let node = example(name);
+        let mut face = html();
+        face.elements.push(iri.clone());
+        let kept = element::expand_with(&node, &face, &BTreeMap::new()).unwrap();
+        assert_eq!(kept, node, "{iri} kept, its children too");
+    }
+}
+
+#[test]
+fn the_elements_html_face_matches_its_snapshots_expanded_and_as_fallback_text() {
+    let expanded = common::text(&common::host(None), "urn:iki:ui:html:screen:elements", &[]);
+    let fallback = common::text(
+        &host_without_definitions(),
+        "urn:iki:ui:html:screen:elements",
+        &[],
+    );
+    for text in [
+        "<p>Field notes: weekly survey of the river gauges.</p>",
+        "<p>Gauge 14: Mill Lane, 2.31 m, read 2026-11-10.</p>",
+        "<p>Topics: hydrology, flooding, open data.</p>",
+    ] {
+        assert!(fallback.contains(text), "{fallback}");
+        assert!(!expanded.contains(text), "{expanded}");
+    }
+    ikigai_ui::testkit::snapshot::assert_snapshots(
+        &common::snapshots(),
+        vec![
+            ("elements-expanded.html".to_string(), expanded),
+            ("elements-fallback.html".to_string(), fallback),
+        ],
+    );
+}

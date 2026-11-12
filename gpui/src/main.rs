@@ -54,7 +54,7 @@ fn main() {
     let capability = Capability::root().attenuate([ikigai_ui_demo::CONTACT_WRITE]);
     let worker = Worker::new(kernel, capability, Scope::empty());
     Application::new().run(move |cx: &mut App| {
-        for screen in ["gallery", "contact"] {
+        for screen in ["gallery", "elements", "contact"] {
             let worker = worker.clone();
             let bounds = Bounds::centered(None, size(px(820.), px(760.)), cx);
             cx.open_window(

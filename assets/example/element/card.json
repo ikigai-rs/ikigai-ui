@@ -1,0 +1,33 @@
+{
+  "kind": "urn:iki:ui:element:name:card",
+  "properties": {
+    "fallback": "Field notes: weekly survey of the river gauges.",
+    "title": "Field notes",
+    "level": 3,
+    "body": "The weekly survey of the river gauges, with the readings each station sent."
+  },
+  "children": [
+    {
+      "kind": "list",
+      "properties": {
+        "label": "Field notes links"
+      },
+      "children": [
+        {
+          "kind": "link",
+          "properties": {
+            "label": "Read the survey",
+            "href": "/survey"
+          }
+        },
+        {
+          "kind": "link",
+          "properties": {
+            "label": "Station map",
+            "href": "/stations"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "arguments": [
+    {
+      "name": "title",
+      "summary": "the card's title, its heading and its group's name",
+      "required": true
+    },
+    {
+      "name": "level",
+      "summary": "the title's heading level, 1 to 6, a number",
+      "required": true
+    },
+    {
+      "name": "body",
+      "summary": "the card's body text",
+      "required": true
+    }
+  ],
+  "expansion": {
+    "kind": "group",
+    "properties": {
+      "label": "{title}"
+    },
+    "children": [
+      {
+        "kind": "heading",
+        "properties": {
+          "content": "{title}",
+          "level": "{level}"
+        }
+      },
+      {
+        "kind": "text",
+        "properties": {
+          "content": "{body}"
+        }
+      },
+      "{children}"
+    ]
+  }
+}

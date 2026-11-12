@@ -357,7 +357,7 @@ impl Screen {
     fn follow(&mut self, href: &str, cx: &mut Context<Self>) {
         if let Some(name) = href
             .strip_prefix("/page/")
-            .filter(|n| ["gallery", "contact"].contains(n))
+            .filter(|n| ["gallery", "elements", "contact"].contains(n))
         {
             self.load(name, cx);
         } else if href.starts_with("https://")
