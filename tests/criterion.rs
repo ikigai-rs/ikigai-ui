@@ -4,17 +4,24 @@
 //! probe on the html face is verified against the rendered HTML of every node of its kind or
 //! element on the gallery and elements screens, and the support matrix counts them. A SEE check
 //! with no probe is reported as not verified, never skipped; the gpui face's probes run in the
-//! window tests (`gpui/src/native.rs`).
+//! window tests (`gpui/src/native.rs`). The probes read the HTML with scraper (html5ever) and
+//! the stylesheets with cssparser, never with a reader of this test's own (ledger #3560).
 
 mod common;
 
 use std::sync::Arc;
 
+use cssparser::{
+    parse_important, AtRuleParser, CowRcStr, DeclarationParser, Delimiter, ParseError, Parser,
+    ParserState, QualifiedRuleParser, RuleBodyItemParser, RuleBodyParser, SourceLocation,
+    StyleSheetParser, Token,
+};
 use futures::executor::block_on;
 use ikigai_core::{ArgRef, Capability, Error, Iri, Kernel, Request, Verb};
 use ikigai_ui::criterion::{self, Check, Criterion, Mode, TARGETS};
 use ikigai_ui::model::{self, Node, Value, KINDS};
 use ikigai_ui::testkit::render;
+use scraper::{node::Element, ElementRef, Html};
 
 fn kernel() -> Kernel {
     Kernel::new(Arc::new(ikigai_ui::space()))
@@ -398,115 +405,63 @@ fn every_source_is_attributed_in_the_notice() {
 
 // --- the SEE checks against the gallery's rendered HTML ---------------------------------------
 
-/// A start tag: its name, its attributes, and where it starts and ends in the HTML.
-#[derive(Debug)]
-struct Tag {
-    name: String,
-    attributes: Vec<(String, String)>,
+/// An element of a node's HTML, as html5ever parsed it: its name, its attributes, and its place
+/// in document order.
+#[derive(Clone, Copy)]
+struct Tag<'a> {
+    element: ElementRef<'a>,
+    name: &'a str,
     start: usize,
-    end: usize,
 }
 
-impl Tag {
-    fn get(&self, name: &str) -> Option<&str> {
-        self.attributes
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, v)| v.as_str())
+impl<'a> Tag<'a> {
+    fn get(&self, name: &str) -> Option<&'a str> {
+        self.element.attr(name)
     }
 }
 
-/// The start tags of `html`, which a template writes: double-quoted values or bare names.
-fn tags(html: &str) -> Vec<Tag> {
-    let mut out = Vec::new();
-    let mut at = 0;
-    while let Some(i) = html[at..].find('<') {
-        let start = at + i;
-        let rest = &html[start + 1..];
-        if !rest.starts_with(|c: char| c.is_ascii_alphabetic()) {
-            at = start + 1;
-            continue;
-        }
-        let name_len = rest
-            .find(|c: char| !c.is_ascii_alphanumeric())
-            .unwrap_or(rest.len());
-        let name = rest[..name_len].to_ascii_lowercase();
-        let mut attributes = Vec::new();
-        let mut j = start + 1 + name_len;
-        loop {
-            let s = &html[j..];
-            let trimmed = s.trim_start();
-            j += s.len() - trimmed.len();
-            if trimmed.starts_with('>') || trimmed.is_empty() {
-                break;
+/// The elements of `html`, a node's HTML parsed as a fragment the way a browser parses one
+/// (scraper, html5ever underneath), in document order.
+fn tags(html: &Html) -> Vec<Tag<'_>> {
+    html.root_element()
+        .descendants()
+        .filter_map(ElementRef::wrap)
+        // The fragment's <html> root is the parser's, not the node's.
+        .skip(1)
+        .enumerate()
+        .map(|(start, element)| {
+            let value: &Element = element.value();
+            Tag {
+                element,
+                name: value.name(),
+                start,
             }
-            let n_len = trimmed
-                .find(|c: char| c == '=' || c == '>' || c.is_whitespace())
-                .unwrap_or(trimmed.len());
-            let attr = trimmed[..n_len].to_ascii_lowercase();
-            j += n_len;
-            if html[j..].starts_with("=\"") {
-                let close = html[j + 2..].find('"').expect("a closed attribute value");
-                attributes.push((attr, unescape(&html[j + 2..j + 2 + close])));
-                j += 2 + close + 1;
-            } else {
-                attributes.push((attr, String::new()));
-            }
-        }
-        out.push(Tag {
-            name,
-            attributes,
-            start,
-            end: j + 1,
-        });
-        at = j + 1;
-    }
-    out
+        })
+        .collect()
 }
 
-fn unescape(s: &str) -> String {
-    s.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&#x27;", "'")
-        .replace("&amp;", "&")
-}
-
-/// The text inside `tag`, up to its end tag, with any markup in it dropped.
-fn text_of(html: &str, tag: &Tag) -> String {
-    let close = format!("</{}>", tag.name);
-    let inner = &html[tag.end..tag.end + html[tag.end..].find(&close).expect("an end tag")];
-    let mut text = String::new();
-    let mut in_tag = false;
-    for c in inner.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            c if !in_tag => text.push(c),
-            _ => {}
-        }
-    }
-    unescape(text.trim())
+/// The text inside `tag`, its references decoded and any markup in it dropped.
+fn text_of(tag: &Tag) -> String {
+    tag.element.text().collect::<String>().trim().to_string()
 }
 
 /// What a `<div>` wrapper's label names: its control.
 const LABELLED: [&str; 5] = ["input", "select", "textarea", "meter", "button"];
 
 /// The node's subject: its HTML's outermost element, or the control in a `<div>` wrapper.
-fn subject(tags: &[Tag]) -> Option<&Tag> {
+fn subject<'a, 'b>(tags: &'b [Tag<'a>]) -> Option<&'b Tag<'a>> {
     let root = tags.first()?;
     if root.name != "div" {
         return Some(root);
     }
     tags.iter()
-        .find(|t| LABELLED.contains(&t.name.as_str()))
+        .find(|t| LABELLED.contains(&t.name))
         .or(Some(root))
 }
 
 /// Whether `tag` is in the tab order natively.
 fn natively_focusable(tag: &Tag) -> bool {
-    match tag.name.as_str() {
+    match tag.name {
         "a" => tag.get("href").is_some_and(|h| !h.is_empty()),
         "input" => tag.get("type") != Some("hidden"),
         "button" | "select" | "textarea" | "summary" => true,
@@ -514,7 +469,8 @@ fn natively_focusable(tag: &Tag) -> bool {
     }
 }
 
-/// `tag`, `tag[name]` or `tag[name=value]` matches `t`.
+/// `tag`, `tag[name]` or `tag[name=value]` matches `t`: a probe's argument, not CSS (`0` is no
+/// CSS attribute value).
 fn matches(selector: &str, t: &Tag) -> bool {
     let (name, attribute) = match selector.split_once('[') {
         Some((name, rest)) => (name, rest.strip_suffix(']')),
@@ -540,38 +496,293 @@ struct Stylesheets {
     css: Vec<(String, String)>,
 }
 
-/// The CSS rules of `css`: (selector, body), comments dropped, an at-rule's rules included.
-fn rules(css: &str) -> Vec<(String, String)> {
-    let css = ikigai_ui::testkit::lint::blank_comments(css);
-    let mut out = Vec::new();
-    let mut open: Vec<String> = Vec::new();
-    let mut pending = String::new();
-    for c in css.chars() {
-        match c {
-            '{' => {
-                let selector = pending.rsplit(';').next().unwrap_or_default().trim();
-                open.push(selector.to_string());
-                pending.clear();
-            }
-            '}' => {
-                let selector = open.pop().unwrap_or_default();
-                if !selector.starts_with('@') && pending.contains(':') {
-                    out.push((selector, pending.trim().to_string()));
-                }
-                pending.clear();
-            }
-            c => pending.push(c),
-        }
-    }
-    out
+/// A style rule as cssparser reads it: each selector of its list, nesting resolved, and its
+/// declarations, in order.
+struct Rule {
+    selectors: Vec<String>,
+    declarations: Vec<Declaration>,
 }
 
-/// The value of `property` in a rule's body.
-fn declaration<'a>(body: &'a str, property: &str) -> Option<&'a str> {
-    body.split(';').find_map(|d| {
-        let (p, v) = d.split_once(':')?;
-        (p.trim() == property).then_some(v.trim())
-    })
+impl Rule {
+    /// The declaration of `property` that wins in this rule: its last.
+    fn declaration(&self, property: &str) -> Option<&Declaration> {
+        self.declarations
+            .iter()
+            .rev()
+            .find(|d| d.property == property)
+    }
+}
+
+struct Declaration {
+    /// Lowercase, as CSS property names are ASCII case-insensitive.
+    property: String,
+    /// The value's source, without `!important`.
+    value: String,
+    /// The value's component values, a function's arguments after it.
+    atoms: Vec<Atom>,
+}
+
+/// A component value the probes read; units are lowercase.
+#[derive(Debug, PartialEq)]
+enum Atom {
+    Ident(String),
+    Number(f32),
+    Dimension(f32, String),
+    Function(String),
+}
+
+impl Declaration {
+    fn has_ident(&self, word: &str) -> bool {
+        self.atoms
+            .iter()
+            .any(|a| matches!(a, Atom::Ident(i) if i.eq_ignore_ascii_case(word)))
+    }
+
+    fn px(&self) -> impl Iterator<Item = f32> + '_ {
+        self.atoms.iter().filter_map(|a| match a {
+            Atom::Dimension(v, unit) if unit == "px" => Some(*v),
+            _ => None,
+        })
+    }
+}
+
+/// The component values of a declaration's value. A `{}` block is no value: it makes the
+/// declaration fail, so a nested rule such as `a:hover { … }` is read as a rule.
+fn atoms<'i>(input: &mut Parser<'i>) -> Result<Vec<Atom>, ParseError<()>> {
+    let mut out = Vec::new();
+    while let Ok(token) = input.next() {
+        let nested = match token {
+            Token::Ident(i) => {
+                out.push(Atom::Ident(i.to_string()));
+                false
+            }
+            Token::Number { value, .. } => {
+                out.push(Atom::Number(*value));
+                false
+            }
+            Token::Dimension { value, unit, .. } => {
+                out.push(Atom::Dimension(*value, unit.to_ascii_lowercase()));
+                false
+            }
+            Token::Function(name) => {
+                out.push(Atom::Function(name.to_ascii_lowercase()));
+                true
+            }
+            Token::ParenthesisBlock | Token::SquareBracketBlock => true,
+            Token::CurlyBracketBlock => return Err(ParseError::custom(())),
+            _ => false,
+        };
+        if nested {
+            out.extend(input.parse_nested_block(atoms)?);
+        }
+    }
+    Ok(out)
+}
+
+enum Item {
+    Declaration(Declaration),
+    Rule,
+}
+
+/// Reads a stylesheet into `rules`: style rules at any depth, inside at-rules or nested in
+/// another style rule (`parents`, whose selectors a nested `&` stands for).
+struct Reader<'a> {
+    parents: Vec<String>,
+    rules: &'a mut Vec<Rule>,
+    errors: &'a mut Vec<String>,
+}
+
+impl Reader<'_> {
+    /// A block's declarations, its nested rules read into `rules`.
+    fn body(&mut self, input: &mut Parser) -> Vec<Declaration> {
+        let mut declarations = Vec::new();
+        let mut items = RuleBodyParser::new(input, self);
+        let mut errors = Vec::new();
+        for item in &mut items {
+            match item {
+                Ok(Item::Declaration(d)) => declarations.push(d),
+                Ok(Item::Rule) => {}
+                Err((_, source, at)) => errors.push(unread(source, at)),
+            }
+        }
+        self.errors.extend(errors);
+        declarations
+    }
+}
+
+fn unread(source: &str, at: SourceLocation) -> String {
+    format!("{}:{}: cannot read {source:?}", at.line + 1, at.column)
+}
+
+impl<'i> DeclarationParser<'i> for Reader<'_> {
+    type Declaration = Item;
+    type Error = ();
+
+    fn parse_value(
+        &mut self,
+        name: CowRcStr<'i>,
+        input: &mut Parser<'i>,
+        _: &ParserState,
+    ) -> Result<Item, ParseError<()>> {
+        let start = input.position();
+        let atoms = input.parse_until_before(Delimiter::Bang, atoms)?;
+        let value = input.slice_from(start).trim().to_string();
+        // `!important` is no part of the value: `outline: none !important` is `none`.
+        let _ = input.try_parse(parse_important);
+        input.expect_exhausted()?;
+        let property = if name.starts_with("--") {
+            name.to_string()
+        } else {
+            name.to_ascii_lowercase()
+        };
+        Ok(Item::Declaration(Declaration {
+            property,
+            value,
+            atoms,
+        }))
+    }
+}
+
+impl<'i> QualifiedRuleParser<'i> for Reader<'_> {
+    type Prelude = Vec<String>;
+    type QualifiedRule = Item;
+    type Error = ();
+
+    fn parse_prelude(&mut self, input: &mut Parser<'i>) -> Result<Vec<String>, ParseError<()>> {
+        let selectors = input.parse_comma_separated(|input| {
+            let start = input.position();
+            while input.next().is_ok() {}
+            Ok(input.slice_from(start).trim().to_string())
+        })?;
+        if self.parents.is_empty() {
+            return Ok(selectors);
+        }
+        // CSS nesting: `&` is the parent, and a selector without one is its descendant.
+        Ok(self
+            .parents
+            .iter()
+            .flat_map(|parent| {
+                selectors.iter().map(move |s| {
+                    if s.contains('&') {
+                        s.replace('&', parent)
+                    } else {
+                        format!("{parent} {s}")
+                    }
+                })
+            })
+            .collect())
+    }
+
+    fn parse_block(
+        &mut self,
+        selectors: Vec<String>,
+        _: &ParserState,
+        input: &mut Parser<'i>,
+    ) -> Result<Item, ParseError<()>> {
+        let declarations = Reader {
+            parents: selectors.clone(),
+            rules: &mut *self.rules,
+            errors: &mut *self.errors,
+        }
+        .body(input);
+        self.rules.push(Rule {
+            selectors,
+            declarations,
+        });
+        Ok(Item::Rule)
+    }
+}
+
+impl<'i> AtRuleParser<'i> for Reader<'_> {
+    type Prelude = String;
+    type AtRule = Item;
+    type Error = ();
+
+    fn parse_prelude(
+        &mut self,
+        name: CowRcStr<'i>,
+        input: &mut Parser<'i>,
+    ) -> Result<String, ParseError<()>> {
+        while input.next().is_ok() {}
+        Ok(format!("@{name}"))
+    }
+
+    fn rule_without_block(&mut self, _: String, _: &ParserState) -> Result<Item, ()> {
+        Ok(Item::Rule)
+    }
+
+    /// An at-rule's block holds rules (`@media`), or declarations (`@font-face`, or a
+    /// conditional rule nested in a style rule, which apply to its parent).
+    fn parse_block(
+        &mut self,
+        name: String,
+        _: &ParserState,
+        input: &mut Parser<'i>,
+    ) -> Result<Item, ParseError<()>> {
+        let declarations = Reader {
+            parents: self.parents.clone(),
+            rules: &mut *self.rules,
+            errors: &mut *self.errors,
+        }
+        .body(input);
+        if !declarations.is_empty() && !self.parents.is_empty() {
+            self.rules.push(Rule {
+                selectors: self.parents.clone(),
+                declarations,
+            });
+        } else if !declarations.is_empty() {
+            self.rules.push(Rule {
+                selectors: vec![name],
+                declarations,
+            });
+        }
+        Ok(Item::Rule)
+    }
+}
+
+impl<'i> RuleBodyItemParser<'i, Item, ()> for Reader<'_> {
+    fn parse_declarations(&self) -> bool {
+        true
+    }
+
+    fn parse_qualified(&self) -> bool {
+        true
+    }
+}
+
+/// The style rules of `css`, read by cssparser (CSS Syntax Level 3): comments, strings, escapes,
+/// `!important` and nesting as a browser reads them. Anything it cannot read is an error.
+fn rules(css: &str) -> Result<Vec<Rule>, String> {
+    let mut input = Parser::new(css);
+    let mut rules = Vec::new();
+    let mut errors = Vec::new();
+    let mut reader = Reader {
+        parents: Vec::new(),
+        rules: &mut rules,
+        errors: &mut errors,
+    };
+    let mut unreadable = Vec::new();
+    for item in StyleSheetParser::new(&mut input, &mut reader) {
+        if let Err((_, source, at)) = item {
+            unreadable.push(unread(source, at));
+        }
+    }
+    errors.extend(unreadable);
+    if errors.is_empty() {
+        Ok(rules)
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+/// The rules of every sheet, each with its sheet's name.
+fn sheet_rules(sheets: &Stylesheets) -> Result<Vec<(&str, Rule)>, String> {
+    let mut out = Vec::new();
+    for (name, css) in &sheets.css {
+        let read = rules(css).map_err(|e| format!("{name}: {e}"))?;
+        out.extend(read.into_iter().map(|r| (name.as_str(), r)));
+    }
+    Ok(out)
 }
 
 /// Verify one SEE probe of `node`'s html face: `html` is its rendered HTML.
@@ -582,7 +793,8 @@ fn verify(
     html: &str,
     sheets: &Stylesheets,
 ) -> Result<(), String> {
-    let tags = tags(html);
+    let doc = Html::parse_fragment(html);
+    let tags = tags(&doc);
     let subject = subject(&tags).ok_or("no element")?;
     let control = if subject.name == "details" {
         tags.iter()
@@ -642,40 +854,49 @@ fn verify(
             }
         }
         "focus-visible" => {
-            let ring = sheets
-                .css
+            let rules = sheet_rules(sheets)?;
+            let ring = rules
                 .iter()
-                .flat_map(|(name, css)| rules(css).into_iter().map(move |r| (name, r)))
-                .find(|(_, (selector, body))| {
-                    selector.split(',').any(|s| s.trim() == ":focus-visible")
-                        && declaration(body, "outline").is_some()
+                .find_map(|(_, rule)| {
+                    rule.selectors
+                        .iter()
+                        .any(|s| s == ":focus-visible")
+                        .then(|| rule.declaration("outline"))
+                        .flatten()
                 })
                 .ok_or("no :focus-visible outline")?;
-            let outline = declaration(&ring.1 .1, "outline").unwrap();
-            let width: f64 = outline
-                .split_whitespace()
-                .find_map(|w| w.strip_suffix("px")?.parse().ok())
+            let outline = &ring.value;
+            let width = ring
+                .px()
+                .next()
                 .ok_or(format!("outline {outline} has no px width"))?;
-            if width < 2.0 || !outline.contains("var(--focus)") {
+            let focus = ring.atoms.windows(2).any(|w| {
+                w[0] == Atom::Function("var".into()) && w[1] == Atom::Ident("--focus".into())
+            });
+            if width < 2.0 || !focus {
                 return Err(format!("outline {outline} is not 2px or more in --focus"));
             }
-            // Nothing takes the ring away from the control.
-            for (name, css) in &sheets.css {
-                for (selector, body) in rules(css) {
-                    let off =
-                        declaration(&body, "outline").is_some_and(|v| v == "none" || v == "0");
-                    let hits = selector.split(',').any(|s| {
-                        let s = s.trim();
-                        s.starts_with(&control.name)
-                            && s[control.name.len()..]
-                                .chars()
-                                .next()
-                                .is_none_or(|c| !c.is_ascii_alphanumeric())
-                            || s.starts_with(":focus")
-                    });
-                    if off && hits {
-                        return Err(format!("{name}: {selector} turns the outline off"));
-                    }
+            // Nothing takes the ring away from the control: no outline, outline-style or
+            // outline-width that is none, hidden or zero.
+            for (name, rule) in &rules {
+                let off = rule.declarations.iter().any(|d| {
+                    ["outline", "outline-style", "outline-width"].contains(&d.property.as_str())
+                        && (d.has_ident("none")
+                            || d.has_ident("hidden")
+                            || d.atoms.iter().any(|a| {
+                                matches!(a, Atom::Number(v) | Atom::Dimension(v, _) if *v == 0.0)
+                            }))
+                });
+                let hits = rule.selectors.iter().find(|s| {
+                    s.starts_with(control.name)
+                        && s[control.name.len()..]
+                            .chars()
+                            .next()
+                            .is_none_or(|c| !c.is_ascii_alphanumeric())
+                        || s.starts_with(":focus")
+                });
+                if let (true, Some(selector)) = (off, hits) {
+                    return Err(format!("{name}: {selector} turns the outline off"));
                 }
             }
         }
@@ -683,7 +904,7 @@ fn verify(
             let want = property(node, "label")
                 .or_else(|| property(node, "content"))
                 .unwrap_or_default();
-            let text = text_of(html, control);
+            let text = text_of(control);
             if text != want {
                 return Err(format!("its text is {text:?}, its name {want:?}"));
             }
@@ -699,7 +920,7 @@ fn verify(
                 .iter()
                 .find(|t| t.name == "label" && t.get("for") == Some(id))
                 .ok_or(format!("no <label for=\"{id}\">"))?;
-            let text = text_of(html, tag);
+            let text = text_of(tag);
             if text != label {
                 return Err(format!("the label says {text:?}, the node {label:?}"));
             }
@@ -718,7 +939,7 @@ fn verify(
                 .iter()
                 .find(|t| t.get("id") == Some(id))
                 .ok_or(format!("no element {id}"))?;
-            let text = text_of(html, tag);
+            let text = text_of(tag);
             if text != label {
                 return Err(format!("{id} says {text:?}, the node {label:?}"));
             }
@@ -740,7 +961,7 @@ fn verify(
         }
         "content" => {
             let want = property(node, "content").unwrap_or_default();
-            let text = text_of(html, subject);
+            let text = text_of(subject);
             if text != want {
                 return Err(format!("its text is {text:?}, the content {want:?}"));
             }
@@ -751,7 +972,7 @@ fn verify(
                 .iter()
                 .find(|t| t.name == "caption")
                 .ok_or("no <caption>")?;
-            let text = text_of(html, caption);
+            let text = text_of(caption);
             if want.is_empty() || text != want {
                 return Err(format!("the caption says {text:?}, the node {want:?}"));
             }
@@ -880,7 +1101,7 @@ fn verify(
                 if tag.start < subject.start {
                     return Err(format!("{id} comes before the control"));
                 }
-                let text = text_of(html, tag);
+                let text = text_of(tag);
                 if text != want.clone().unwrap_or_default() {
                     return Err(format!("{id} says {text:?}, the node {want:?}"));
                 }
@@ -902,13 +1123,12 @@ fn verify(
             }
         }
         "text-scales" => {
-            for (name, css) in &sheets.css {
-                for (selector, body) in rules(css) {
-                    for p in ["font-size", "font"] {
-                        if let Some(v) = declaration(&body, p) {
-                            if v.contains("px") {
-                                return Err(format!("{name}: {selector} sets {p}: {v}"));
-                            }
+            for (name, rule) in sheet_rules(sheets)? {
+                for p in ["font-size", "font"] {
+                    if let Some(d) = rule.declaration(p) {
+                        if d.px().next().is_some() {
+                            let selector = rule.selectors.join(", ");
+                            return Err(format!("{name}: {selector} sets {p}: {}", d.value));
                         }
                     }
                 }
@@ -1221,7 +1441,7 @@ fn a_broken_face_fails_its_probes() {
     let good_details = r#"<details class="ui-disclosure" open><summary>How often?</summary><p>Daily.</p></details>"#;
     let good_meter = r#"<div class="ui-meter"><label for="m">Capacity</label> <meter id="m" value="82" min="0" max="100">82</meter> <span>82 of 100</span></div>"#;
     let good_scene = r##"<figure class="ui-scene"><figcaption>The graph <a href="#t">The same graph as text</a></figcaption><canvas tabindex="0" role="application" aria-label="The graph: arrow keys orbit" hidden></canvas><div id="t"><table></table></div></figure>"##;
-    let cases: [(&str, Option<&str>, &Node, &str, String); 20] = [
+    let cases: [(&str, Option<&str>, &Node, &str, String); 23] = [
         (
             "heading-level",
             None,
@@ -1298,6 +1518,33 @@ fn a_broken_face_fails_its_probes() {
             &form,
             good_form,
             good_form.replace("h3", "p"),
+        ),
+        // Markup in a comment is no element (ledger #3560: the hand-written reader read it).
+        (
+            "contains",
+            Some("h3"),
+            &form,
+            good_form,
+            good_form
+                .replace("<h3", "<!-- <h3")
+                .replace("</h3>", "</h3> -->"),
+        ),
+        (
+            "labelled-by",
+            None,
+            &form,
+            good_form,
+            good_form
+                .replace("<h3", "<!-- <h3")
+                .replace("</h3>", "</h3> -->"),
+        ),
+        // An unquoted value is an attribute value (the hand-written reader never returned).
+        (
+            "attribute",
+            Some("type=submit"),
+            &button,
+            "<button type=submit>Save</button>",
+            "<button type=button>Save</button>".into(),
         ),
         (
             "alt",
@@ -1380,10 +1627,28 @@ fn a_broken_face_fails_its_probes() {
             "{probe} is implemented"
         );
     }
-    // A stylesheet that sets text in px, or takes the ring away, fails its probe.
+    // A stylesheet that sets text in px, or takes the ring away, fails its probe, however the
+    // CSS spells it (ledger #3560: `!important`, an uppercase unit and nesting got past the
+    // hand-written reader).
     for (css, probe) in [
         ("p { font-size: 14px; }", "text-scales"),
+        ("p { font-size: 14PX; }", "text-scales"),
+        ("p { font: italic 12px/1.5 serif; }", "text-scales"),
+        (
+            "@media (min-width: 1px) { p { font-size: 14px } }",
+            "text-scales",
+        ),
         ("button:focus { outline: none; }", "focus-visible"),
+        (
+            "button:focus { outline: none !important; }",
+            "focus-visible",
+        ),
+        ("button:focus { outline: 0; }", "focus-visible"),
+        ("button:focus { outline-style: none; }", "focus-visible"),
+        ("button { &:focus { outline: none; } }", "focus-visible"),
+        (":focus { outline: none; }", "focus-visible"),
+        // A sheet the CSS parser cannot read is no proof of anything.
+        ("p { color: red; } }{ x", "text-scales"),
     ] {
         let mut broken = gallery_sheets(&kernel);
         broken.css.push(("broken.css".into(), css.into()));
