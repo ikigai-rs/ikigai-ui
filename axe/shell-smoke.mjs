@@ -5,7 +5,7 @@
 // Controls the demo pages do not carry are added with page.evaluate and handed to htmx with
 // htmx.process: the test driver is not the page, so the door CSP does not apply to it.
 import { chromium } from "playwright";
-import { serve } from "./serve.mjs";
+import { serve, CSP } from "./serve.mjs";
 
 const dir = process.argv[2];
 if (!dir) {
@@ -104,6 +104,39 @@ await check("a 403 disables the control, and markup in a refusal is text", async
   const note = await page.textContent("#deny + p.ui-note");
   if (!note.includes("urn:cap:example:403")) return `the note says ${JSON.stringify(note)}`;
   return oneRegion(page, "#deny + p.ui-note", "#deny", "Deny it: refused: needs urn:cap:example:403");
+});
+
+// htmx's eval and script evaluation are off in a SERVED page (ledger #3525): the shell's
+// htmx-config meta is what htmx read, not only what the HTML says. A swapped-in <script src> is
+// same-origin, so the CSP alone would let htmx run it: only allowScriptTags:false stops it. An
+// hx-vals js: expression fires htmx's evalDisallowedError only under allowEval:false (the CSP
+// would refuse the eval too, but silently, as a different error).
+await check("htmx eval and script tags are off in a served page", async (page) => {
+  await page.route("**/_probe/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/_probe/ran.js")
+      return route.fulfill({ status: 200, contentType: "text/javascript", headers: { "content-security-policy": CSP }, body: "window.__ran = true;" });
+    if (path === "/_probe/fragment")
+      return route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", headers: { "content-security-policy": CSP }, body: '<p id="landed">landed</p><script src="/_probe/ran.js"></script>' });
+    return route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", headers: { "content-security-policy": CSP }, body: '<p id="sent">sent</p>' });
+  });
+  await page.goto(home);
+  const config = await page.evaluate(() => ({ eval: window.htmx.config.allowEval, scripts: window.htmx.config.allowScriptTags }));
+  if (config.eval !== false || config.scripts !== false) return `htmx.config in force: ${JSON.stringify(config)}`;
+  await add(page, '<div id="probe-swap" hx-get="/_probe/fragment" hx-trigger="load"></div>');
+  await page.locator("#landed").waitFor();
+  await page.waitForTimeout(300);
+  if (await page.evaluate(() => window.__ran === true)) return "a swapped-in <script> ran";
+  await page.evaluate(() => {
+    window.__disallowed = 0;
+    document.addEventListener("htmx:evalDisallowedError", () => { window.__disallowed += 1; });
+  });
+  await add(page, '<button id="probe-eval" hx-get="/_probe/vals" hx-vals="js:{v: (window.__evaluated = 1)}" hx-target="this">Probe</button>');
+  await page.click("#probe-eval");
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => ({ evaluated: window.__evaluated === 1, disallowed: window.__disallowed }));
+  if (after.evaluated) return "an hx-vals js: expression was evaluated";
+  if (after.disallowed < 1) return "htmx did not refuse the js: expression as allowEval:false does";
 });
 
 await check("a control that swaps into itself gets the note in place, and loses the link when it goes", async (page) => {

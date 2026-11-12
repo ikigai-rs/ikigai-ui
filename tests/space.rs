@@ -770,3 +770,86 @@ fn a_nested_region_reads_only_what_the_outer_allows_under_both_scopes() {
     assert!(!text.contains(SECRET), "{text}");
     assert!(text.contains("Card number withheld"), "{text}");
 }
+
+/// FINDING (ledger #3525, part A), reported, not fixed: a region pre-reads each name it allows
+/// in the SCREEN's space, so a generated view it allows (`urn:iki:ui:view:resource:{iri}`)
+/// nests into every resource `{iri}`'s data links to, read there under the region's grant
+/// (the caller's whole grant when it names no scopes), whether the region allows it or not.
+/// Confining a composite name's own reads is a design change to the region's reach; this
+/// test is the reproduction, and fails today. Run it with `--ignored`.
+#[test]
+#[ignore = "ledger #3525 finding: a view a region allows reads linked resources outside it"]
+fn a_generated_view_inside_a_region_reads_no_linked_resource_the_region_does_not_allow() {
+    fn json(id: &'static str, body: serde_json::Value, gate: Option<&'static str>) -> FnEndpoint {
+        let bytes = serde_json::to_vec(&body).unwrap();
+        FnEndpoint::new(id, move |inv: &Invocation<'_>| {
+            if let Some(g) = gate {
+                if !inv.capability.allows(g) {
+                    return Err(Error::Denied(format!("{g} is needed")));
+                }
+            }
+            Ok(Representation::new(ReprType::new("application/json"), bytes.clone()).cacheable())
+        })
+        .with_description(
+            Description::new(id)
+                .title(id)
+                .summary("Test data.")
+                .verb(Verb::Source)
+                .verb(Verb::Meta)
+                .output("application/json"),
+        )
+    }
+    let body = serde_json::to_vec(&screen(vec![region(
+        "urn:iki:ui:view:resource:urn:demo:profile",
+        None,
+        vec![reference(
+            "urn:iki:ui:view:resource:urn:demo:profile",
+            "Profile withheld",
+        )],
+    )]))
+    .unwrap();
+    let space = EndpointSpace::new()
+        .bind(
+            Exact::new("urn:demo:profile"),
+            json(
+                "profile",
+                serde_json::json!({"name": "Ann", "card": {"@id": "urn:demo:wallet"}}),
+                None,
+            ),
+        )
+        .bind(
+            Exact::new("urn:demo:wallet"),
+            json("wallet", serde_json::json!({"number": SECRET}), Some(SCOPE)),
+        )
+        .bind(
+            Exact::new("urn:iki:ui:screen:name:linked"),
+            FnEndpoint::new("screen", move |_: &Invocation<'_>| {
+                Ok(Representation::new(
+                    ReprType::new(model::MEDIA_TYPE),
+                    body.clone(),
+                ))
+            })
+            .with_description(
+                Description::new("screen")
+                    .title("screen")
+                    .summary("A test model.")
+                    .verb(Verb::Source)
+                    .verb(Verb::Meta)
+                    .output(model::MEDIA_TYPE),
+            ),
+        );
+    let kernel = common::host_with(None, vec![Arc::new(space)]);
+    let rep = face(
+        &kernel,
+        "urn:iki:ui:face:target:html:screen:linked",
+        &Capability::scoped([SCOPE]),
+    );
+    let text = match &rep {
+        Ok(r) => String::from_utf8_lossy(&r.bytes).to_string(),
+        Err(e) => format!("ERR {e}"),
+    };
+    assert!(
+        !text.contains(SECRET),
+        "the region's view read urn:demo:wallet, which it does not allow"
+    );
+}
