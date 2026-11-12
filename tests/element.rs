@@ -817,8 +817,12 @@ fn support_cells(name: &str, drawn: &str) -> String {
         .iter()
         .map(|target| {
             let t = ikigai_ui::criterion::tally(name, target).unwrap();
+            let blocked = match t.see_blocked {
+                0 => String::new(),
+                n => format!(", {n} blocked by the toolkit"),
+            };
             format!(
-                "<td>{drawn}</td><td>SEE: {} of {} verified by a test; HEAR: {} untested</td>",
+                "<td>{drawn}</td><td>SEE: {} of {} verified by a test{blocked}; HEAR: {} untested</td>",
                 t.see_verified, t.see, t.hear_untested
             )
         })

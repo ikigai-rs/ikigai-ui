@@ -81,9 +81,10 @@ fn every_criterion_conforms_to_the_closed_shape() {
 #[test]
 fn the_shape_and_the_rust_validator_refuse_the_same() {
     let valid = criterion::turtle("button", button_html());
+    let gpui_valid = criterion::turtle("button", criterion::criterion("button", "gpui").unwrap());
     let html = r#""target": "html""#;
     let json = include_str!("../assets/criterion/button.json");
-    let cases: [(&str, String, String); 9] = [
+    let cases: [(&str, String, String); 12] = [
         (
             "a property the shape does not name",
             valid.replacen("  c:semantics ", "  c:color \"red\" ;\n  c:semantics ", 1),
@@ -132,15 +133,34 @@ fn the_shape_and_the_rust_validator_refuse_the_same() {
             ),
         ),
         (
-            "a source that is not a GitHub page",
+            "a source that is not an https page",
             valid.replacen(
                 "<https://github.com/tmobile",
-                "<https://example.com/tmobile",
+                "<http://github.com/tmobile",
+                1,
+            ),
+            json.replacen("https://github.com/tmobile", "http://github.com/tmobile", 1),
+        ),
+        (
+            "a blocker that is not one",
+            gpui_valid.replacen("c:blocked \"toolkit\"", "c:blocked \"mood\"", 1),
+            json.replacen(r#""blocked": "toolkit""#, r#""blocked": "mood""#, 1),
+        ),
+        (
+            "an announcement on a platform that is not one",
+            gpui_valid.replacen("c:platform \"linux\"", "c:platform \"beos\"", 1),
+            json.replacen(r#""platform": "linux""#, r#""platform": "beos""#, 1),
+        ),
+        (
+            "an announcement with no words",
+            gpui_valid.replacen(
+                "  c:says \"\\\"Send, button\\\"",
+                "  c:said \"\\\"Send, button\\\"",
                 1,
             ),
             json.replacen(
-                "https://github.com/tmobile",
-                "https://example.com/tmobile",
+                r#""says": "\"Send, button\"#,
+                r#""said": "\"Send, button\"#,
                 1,
             ),
         ),
@@ -154,7 +174,7 @@ fn the_shape_and_the_rust_validator_refuse_the_same() {
             json.replacen(r#""kind": "button""#, r#""kind": "widget""#, 1),
         ),
     ];
-    assert!(conforms(&valid));
+    assert!(conforms(&valid) && conforms(&gpui_valid));
     assert!(criterion::parse(json).is_ok());
     // An element's criterion names its element as its kind, and only one.
     let meter = criterion::turtle("meter", criterion::criterion("meter", "html").unwrap());
@@ -173,12 +193,16 @@ fn the_shape_and_the_rust_validator_refuse_the_same() {
         assert!(!conforms(&broken), "the shape refuses {broken}");
     }
     for (what, turtle, sheet) in cases {
-        assert_ne!(turtle, valid, "{what}: the Turtle case changed something");
+        assert!(
+            turtle != valid && turtle != gpui_valid,
+            "{what}: the Turtle case changed something"
+        );
         assert_ne!(sheet, json, "{what}: the sheet case changed something");
         assert!(!conforms(&turtle), "the shape refuses {what}");
         assert!(criterion::parse(&sheet).is_err(), "Rust refuses {what}");
     }
-    // What only Rust says: a HEAR check has no probe, a setting is SEE, the targets in order.
+    // What only Rust says: a HEAR check has no probe, a setting is SEE, the targets in order, a
+    // blocked check has no probe, an announcement per platform on gpui and none on html.
     for (what, sheet) in [
         (
             "a probe on a HEAR check",
@@ -203,6 +227,26 @@ fn the_shape_and_the_rust_validator_refuse_the_same() {
                 r#""target": "html""#,
                 2,
             ),
+        ),
+        (
+            "a probe on a blocked check",
+            json.replacen(
+                r#""mode": "hear", "statement": "WHEN I Tab to the button with VoiceOver"#,
+                r#""mode": "see", "probe": "focusable", "statement": "WHEN I Tab to the button with VoiceOver"#,
+                1,
+            ),
+        ),
+        (
+            "an announcement on the html face",
+            json.replacen(
+                r#""name": "The button's label, the same words as its visible text; its purpose"#,
+                r#""announce": [{"platform": "macos", "reader": "VoiceOver", "api": "AXButton", "says": "Send, button"}], "name": "The button's label, the same words as its visible text; its purpose"#,
+                1,
+            ),
+        ),
+        (
+            "a gpui face missing a platform's announcement",
+            json.replacen(r#"{"platform": "windows""#, r#"{"platform": "linux""#, 1),
         ),
         (
             "an element probe with no element",
@@ -333,11 +377,15 @@ fn every_source_is_attributed_in_the_notice() {
     let notice = include_str!("../NOTICE");
     for kind in criterion::kinds() {
         for target in TARGETS {
-            for source in &criterion::criterion(kind, target).unwrap().source {
+            let sources = &criterion::criterion(kind, target).unwrap().source;
+            // Wording seeded from a GitHub repository is attributed; a platform's guidance
+            // (the gpui face's sources) is drawn on, not copied.
+            for source in sources
+                .iter()
+                .filter(|s| s.starts_with("https://github.com/"))
                 // This repository's own ACCESSIBILITY.md (meter, scene) is no third party's.
-                if source.starts_with("https://github.com/ikigai-rs/ikigai-ui/") {
-                    continue;
-                }
+                .filter(|s| !s.starts_with("https://github.com/ikigai-rs/ikigai-ui/"))
+            {
                 let repo = source.split('/').take(5).collect::<Vec<_>>().join("/");
                 assert!(notice.contains(&repo), "{repo} in NOTICE");
                 let commit = source.split('/').nth(6).unwrap();
@@ -968,8 +1016,15 @@ fn every_see_check_holds_on_the_gallery_html() {
         let see = |c: &Check| c.mode == Mode::See;
         let gpui = criterion::criterion(kind, "gpui").unwrap();
         let unread = gpui.checks().filter(|(_, _, c)| see(c)).count();
+        let blocked = gpui
+            .checks()
+            .filter(|(_, _, c)| c.blocked.is_some())
+            .count();
         report.push(format!(
             "NOT VERIFIED HERE {kind} gpui: {unread} SEE checks, which this test cannot read from HTML"
+        ));
+        report.push(format!(
+            "BLOCKED {kind} gpui: {blocked} checks, by the toolkit (GPUI 0.2.2 has no accessibility tree)"
         ));
     }
     println!("{}", report.join("\n"));
@@ -1009,7 +1064,12 @@ fn the_support_matrix_counts_verified_see_and_untested_hear_checks() {
                 .filter(|(_, _, k)| k.mode == Mode::See && k.probe.is_some())
                 .count();
             let hear = c.checks().filter(|(_, _, k)| k.mode == Mode::Hear).count();
+            let blocked = c
+                .checks()
+                .filter(|(_, _, k)| k.mode == Mode::See && k.blocked.is_some())
+                .count();
             let tally = &support[target]["a11y"][kind];
+            assert_eq!(tally["see_blocked"], blocked, "{target} {kind}");
             assert_eq!(tally["see"], see, "{target} {kind}");
             assert_eq!(tally["see_verified"], probed, "{target} {kind}");
             assert_eq!(tally["hear_untested"], hear, "{target} {kind}");
@@ -1024,8 +1084,8 @@ fn the_support_matrix_counts_verified_see_and_untested_hear_checks() {
     }
     for (row, cells) in [
         // The targets in name order: gpui, then html.
-        ("heading", "<td>Renders</td><td>SEE: 1 of 4 verified by a test; HEAR: 1 untested</td><td>Renders</td><td>SEE: 4 of 5 verified by a test; HEAR: 3 untested</td>"),
-        ("urn:iki:ui:element:name:meter", "<td>Native</td><td>SEE: 1 of 4 verified by a test; HEAR: 1 untested</td><td>Native</td><td>SEE: 5 of 6 verified by a test; HEAR: 2 untested</td>"),
+        ("heading", "<td>Renders</td><td>SEE: 1 of 7 verified by a test, 2 blocked by the toolkit; HEAR: 1 untested</td><td>Renders</td><td>SEE: 4 of 5 verified by a test; HEAR: 3 untested</td>"),
+        ("urn:iki:ui:element:name:meter", "<td>Native</td><td>SEE: 1 of 7 verified by a test, 2 blocked by the toolkit; HEAR: 1 untested</td><td>Native</td><td>SEE: 5 of 6 verified by a test; HEAR: 2 untested</td>"),
         ("urn:iki:ui:element:name:rating", "<td>Expanded from its definition</td><td>No criteria</td><td>Expanded from its definition</td><td>No criteria</td>"),
     ] {
         let row = format!("<tr><th scope=\"row\">{row}</th>");
@@ -1330,6 +1390,72 @@ fn a_broken_face_fails_its_probes() {
         assert!(
             verify(probe, None, &button, "<button>Save</button>", &broken).is_err(),
             "{probe} refuses {css}"
+        );
+    }
+}
+
+// --- the gpui face: desktop criteria (ledger #3546) -------------------------------------------
+
+/// The gpui face's criteria are desktop-native ones, written from each platform's own guidance:
+/// magentaA11y and atomica11y-skills cover the web and iOS and Android, not macOS, Windows or
+/// Linux, so neither is a gpui source. Each says what each platform's screen reader should
+/// announce once there is a tree (macOS VoiceOver over NSAccessibility, Windows Narrator over
+/// UI Automation, Linux Orca over AT-SPI), and because GPUI 0.2.2 exposes no accessibility tree,
+/// every HEAR check is blocked by the toolkit, and so are the device settings GPUI does not
+/// report (the system text size, the platform's high contrast). The html face has no blocker.
+#[test]
+fn the_gpui_criteria_are_desktop_criteria_and_their_hear_checks_are_blocked_by_the_toolkit() {
+    for kind in criterion::kinds() {
+        let gpui = criterion::criterion(kind, "gpui").unwrap();
+        for s in &gpui.source {
+            assert!(
+                !s.contains("/magentaA11y/") && !s.contains("/atomica11y-skills/"),
+                "{kind} on gpui: {s} covers the web and mobile, not the desktop"
+            );
+        }
+        for host in ["developer.apple.com", "learn.microsoft.com", "docs.gtk.org"] {
+            assert!(
+                gpui.source.iter().any(|s| s.contains(host)),
+                "{kind} on gpui: a source on {host}"
+            );
+        }
+        let platforms: Vec<&str> = gpui.announce.iter().map(|a| a.platform.as_str()).collect();
+        assert_eq!(platforms, criterion::PLATFORMS, "{kind} on gpui");
+        for (a, reader) in gpui.announce.iter().zip(["VoiceOver", "Narrator", "Orca"]) {
+            assert!(
+                a.reader.contains(reader),
+                "{kind}: {} by {reader}",
+                a.platform
+            );
+        }
+        for (under, n, check) in gpui.checks() {
+            if check.mode == Mode::Hear {
+                assert_eq!(
+                    check.blocked.as_deref(),
+                    Some("toolkit"),
+                    "{kind} on gpui, {under} {n}: a HEAR check is blocked by the toolkit"
+                );
+            }
+        }
+        let blocked_setting = |words: &str| {
+            gpui.setting
+                .iter()
+                .any(|c| c.statement.contains(words) && c.blocked.as_deref() == Some("toolkit"))
+        };
+        for words in ["text size", "high contrast"] {
+            assert!(blocked_setting(words), "{kind} on gpui: {words}, blocked");
+        }
+        let html = criterion::criterion(kind, "html").unwrap();
+        assert!(html.checks().all(|(_, _, c)| c.blocked.is_none()));
+        // Blocked in words, in both faces.
+        let words = criterion::text(kind, gpui);
+        assert!(words.contains("[HEAR, blocked by the toolkit]"), "{words}");
+        assert!(words.contains("macOS (VoiceOver"), "{words}");
+        let data = criterion::turtle(kind, gpui);
+        assert!(data.contains("c:blocked \"toolkit\""), "{data}");
+        assert!(
+            data.contains(":announce:windows> a c:Announcement"),
+            "{data}"
         );
     }
 }

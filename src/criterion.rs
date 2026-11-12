@@ -10,20 +10,27 @@
 //! A criterion says what a face must do for keyboard and assistive-technology users: the element
 //! or role it emits (`semantics`), its keys and their outcomes (`keyboard`), what a screen reader
 //! announces as Name, Role, Group (hint, error and group name, read after the label) and State,
-//! its device-settings checks (`setting`: text at 200%, zoom) and its other checks (`check`).
-//! Every check is SEE (a face or a test can verify it, and its `probe` names how; see
+//! its device-settings checks (`setting`: text at 200%, zoom, high contrast) and its other checks
+//! (`check`). Every check is SEE (a face or a test can verify it, and its `probe` names how; see
 //! [`PROBES`] for the html face and [`GPUI_PROBES`] for the gpui face) or HEAR (it needs
 //! assistive technology, and has no probe). A SEE check with a probe is verified by a test; one
-//! without is reported as not verified ([`tally`], which the support matrix shows). A kind's
-//! descriptor (`urn:iki:ui:kind:name:{kind}`) links each of its criteria by
+//! without is reported as not verified ([`tally`], which the support matrix shows). A check that
+//! cannot pass today names what it is `blocked` by ([`BLOCKERS`]): on the gpui face, every HEAR
+//! check is blocked by the toolkit, because GPUI 0.2.2 exposes no accessibility tree (ledger
+//! #3546). A gpui criterion also says what each desktop platform's screen reader should announce
+//! once there is one (`announce`, one per [`PLATFORMS`]: the platform's API role and the reader's
+//! words). A kind's descriptor (`urn:iki:ui:kind:name:{kind}`) links each of its criteria by
 //! `urn:iki:ui:criterion:term:criterion`.
 //!
 //! The criteria are written as one closed JSON sheet per kind (`assets/criterion/{kind}.json`),
 //! because the library carries no RDF parser; the Turtle face is written from the parsed sheet
-//! and `tests/criterion.rs` holds it to [`SHAPE`]. The wording is seeded from magentaA11y and
-//! atomica11y-skills (Apache-2.0, see `NOTICE`), and each criterion names its sources. Neither
-//! covers a meter, and neither a 3D scene whose replacement is its accessible form, so those two
-//! are written from what this repository's `ACCESSIBILITY.md` promises, and name it.
+//! and `tests/criterion.rs` holds it to [`SHAPE`]. The html wording is seeded from magentaA11y
+//! and atomica11y-skills (Apache-2.0, see `NOTICE`). They cover the web, iOS and Android, not
+//! desktop-native apps, so the gpui criteria are our own, drawn from each platform's guidance
+//! (Apple's, Windows UI Automation's, AT-SPI's). Each criterion names its sources.
+//! Neither covers a meter, nor a 3D scene whose replacement is its accessible form, so the html
+//! criteria of those two are written from what this repository's `ACCESSIBILITY.md` promises,
+//! and name it.
 //!
 //! ```
 //! use ikigai_ui::criterion;
@@ -143,6 +150,14 @@ pub const PROBES: [&str; 26] = [
 ///   unchanged (the state is the window's).
 pub const GPUI_PROBES: [&str; 3] = ["tab-stop", "no-tab-stop", "toggles"];
 
+/// What a check can be blocked by. `toolkit`: the face's toolkit cannot do it yet (GPUI 0.2.2
+/// exposes no accessibility tree and reports no system text size or high contrast), so the
+/// check fails on that face until the toolkit can, whatever the face does.
+pub const BLOCKERS: [&str; 1] = ["toolkit"];
+
+/// The desktop platforms a gpui criterion says the announcement on, in this order.
+pub const PLATFORMS: [&str; 3] = ["macos", "windows", "linux"];
+
 /// The probes that take an argument.
 const PROBES_WITH_ARGUMENT: [&str; 3] = ["element", "attribute", "contains"];
 
@@ -230,6 +245,10 @@ pub struct Criterion {
     pub setting: Vec<Check>,
     /// The other checks.
     pub check: Vec<Check>,
+    /// What each desktop platform's screen reader should announce, one per [`PLATFORMS`] on
+    /// the gpui face; none on the html face, whose announcement is the browser's.
+    #[serde(default)]
+    pub announce: Vec<Announcement>,
     /// A known gap between the face and this criterion.
     #[serde(default)]
     pub note: Option<String>,
@@ -243,6 +262,20 @@ pub struct Keystroke {
     pub key: String,
     /// What it does.
     pub outcome: String,
+}
+
+/// What one desktop platform's screen reader should announce for the face's control.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Announcement {
+    /// One of [`PLATFORMS`].
+    pub platform: String,
+    /// The screen reader, and the accessibility API it reads.
+    pub reader: String,
+    /// The role and properties the control must expose in that API.
+    pub api: String,
+    /// What the reader says on reaching it, in its words.
+    pub says: String,
 }
 
 /// SEE or HEAR.
@@ -279,6 +312,9 @@ pub struct Check {
     /// The probe's argument.
     #[serde(default)]
     pub argument: Option<String>,
+    /// What keeps it from passing today ([`BLOCKERS`]).
+    #[serde(default)]
+    pub blocked: Option<String>,
 }
 
 impl Criterion {
@@ -308,7 +344,8 @@ pub fn parse(json: &str) -> Result<Sheet, String> {
 
 /// What [`SHAPE`] says of a sheet's criteria, plus what a shape cannot say: one criterion per
 /// target in [`TARGETS`] order, every setting a SEE check, a probe only on a SEE check and one
-/// of its target's, and an argument exactly when its probe takes one.
+/// of its target's, an argument exactly when its probe takes one, no probe on a blocked check,
+/// and an announcement per [`PLATFORMS`], in order, on the gpui face and none on the html face.
 pub fn validate(sheet: &Sheet) -> Result<(), String> {
     let kind = &sheet.kind;
     if crate::model::kind(kind).is_none() && !ELEMENTS.contains(&kind.as_str()) {
@@ -341,8 +378,8 @@ pub fn validate(sheet: &Sheet) -> Result<(), String> {
             return Err(format!("{at}: no source"));
         }
         for s in &c.source {
-            if !s.starts_with("https://github.com/") || s.contains(['<', '>', '"', ' ']) {
-                return Err(format!("{at}: source {s} is not a GitHub page"));
+            if !s.starts_with("https://") || s.contains(['<', '>', '"', ' ']) {
+                return Err(format!("{at}: source {s} is not an https page"));
             }
         }
         if c.keyboard.is_empty() {
@@ -351,6 +388,18 @@ pub fn validate(sheet: &Sheet) -> Result<(), String> {
         for k in &c.keyboard {
             nonempty("a key", &k.key)?;
             nonempty("a key's outcome", &k.outcome)?;
+        }
+        let platforms: Vec<&str> = c.announce.iter().map(|a| a.platform.as_str()).collect();
+        let want: &[&str] = if c.target == "gpui" { &PLATFORMS } else { &[] };
+        if platforms != want {
+            return Err(format!(
+                "{at}: an announcement per platform, in the order {want:?}, not {platforms:?}"
+            ));
+        }
+        for a in &c.announce {
+            nonempty("a reader", &a.reader)?;
+            nonempty("an API role", &a.api)?;
+            nonempty("an announcement", &a.says)?;
         }
         if c.setting.is_empty() || c.check.is_empty() {
             return Err(format!("{at}: a setting and a check, at least one each"));
@@ -373,6 +422,15 @@ pub fn validate(sheet: &Sheet) -> Result<(), String> {
                         c.target,
                         probes(&c.target)
                     ))
+                }
+                _ => {}
+            }
+            match (&check.blocked, &check.probe) {
+                (Some(b), _) if !BLOCKERS.contains(&b.as_str()) => {
+                    return Err(format!("{at}: {b} is not a blocker ({BLOCKERS:?})"))
+                }
+                (Some(_), Some(_)) => {
+                    return Err(format!("{at}: a blocked check has no probe to pass"))
                 }
                 _ => {}
             }
@@ -441,6 +499,8 @@ pub struct Tally {
     pub see: usize,
     /// … of which a test verifies (those with a probe).
     pub see_verified: usize,
+    /// … of which cannot pass today, whatever the face does ([`BLOCKERS`]).
+    pub see_blocked: usize,
     /// Its HEAR checks, none of which a test verifies: each needs a person with a screen
     /// reader.
     pub hear_untested: usize,
@@ -453,6 +513,7 @@ pub fn tally(kind: &str, target: &str) -> Option<Tally> {
     Some(Tally {
         see: see().count(),
         see_verified: see().filter(|(_, _, k)| k.probe.is_some()).count(),
+        see_blocked: see().filter(|(_, _, k)| k.blocked.is_some()).count(),
         hear_untested: c.checks().filter(|(_, _, k)| k.mode == Mode::Hear).count(),
     })
 }
@@ -550,6 +611,9 @@ pub fn turtle(kind: &str, c: &Criterion) -> String {
     for (under, n, _) in c.checks() {
         let _ = writeln!(out, "  c:{under} <{me}:{under}:{n}> ;");
     }
+    for a in &c.announce {
+        let _ = writeln!(out, "  c:announce <{me}:announce:{}> ;", a.platform);
+    }
     out.truncate(out.len() - 2);
     out.push_str(".\n");
     for (i, k) in c.keyboard.iter().enumerate() {
@@ -574,7 +638,21 @@ pub fn turtle(kind: &str, c: &Criterion) -> String {
         if let Some(a) = &check.argument {
             let _ = write!(out, " ;\n  c:argument {}", literal(a));
         }
+        if let Some(b) = &check.blocked {
+            let _ = write!(out, " ;\n  c:blocked {}", literal(b));
+        }
         out.push_str(" .\n");
+    }
+    for a in &c.announce {
+        let _ = write!(
+            out,
+            "\n<{me}:announce:{}> a c:Announcement ;\n  c:platform {} ;\n  c:reader {} ;\n  c:api {} ;\n  c:says {} .\n",
+            a.platform,
+            literal(&a.platform),
+            literal(&a.reader),
+            literal(&a.api),
+            literal(&a.says)
+        );
     }
     out
 }
@@ -603,13 +681,29 @@ pub fn text(kind: &str, c: &Criterion) -> String {
         let _ = writeln!(out, "\n{title}");
         for check in list {
             let mode = check.mode.as_str().to_uppercase();
-            let _ = writeln!(out, "  [{mode}] {}", check.statement);
+            let blocked = match &check.blocked {
+                Some(b) => format!(", blocked by the {b}"),
+                None => String::new(),
+            };
+            let _ = writeln!(out, "  [{mode}{blocked}] {}", check.statement);
+        }
+    }
+    if !c.announce.is_empty() {
+        out.push_str("\nOnce there is an accessibility tree, each platform's screen reader\n");
+        for a in &c.announce {
+            let platform = match a.platform.as_str() {
+                "macos" => "macOS",
+                "windows" => "Windows",
+                _ => "Linux",
+            };
+            let _ = writeln!(out, "  {platform} ({}): {}", a.reader, a.says);
+            let _ = writeln!(out, "    exposes {}", a.api);
         }
     }
     if let Some(note) = &c.note {
         let _ = writeln!(out, "\nKnown gap\n  {note}");
     }
-    out.push_str("\nSeeded from (Apache-2.0)\n");
+    out.push_str("\nSources\n");
     for s in &c.source {
         let _ = writeln!(out, "  {s}");
     }

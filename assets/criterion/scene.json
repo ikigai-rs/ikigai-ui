@@ -36,25 +36,42 @@
     {
       "target": "gpui",
       "source": [
-        "https://github.com/ikigai-rs/ikigai-ui/blob/77f00b7a49724f6b95a2cc6e8304739f10d5a627/ACCESSIBILITY.md"
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility",
+        "https://developer.apple.com/documentation/appkit/nsaccessibility/role",
+        "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supportimagecontroltype",
+        "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supporttablecontroltype",
+        "https://docs.gtk.org/atspi2/enum.Role.html",
+        "https://docs.gtk.org/atspi2/enum.StateType.html",
+        "https://developer.gnome.org/hig/guidelines/keyboard.html",
+        "https://docs.rs/accesskit/latest/accesskit/enum.Role.html"
       ],
-      "semantics": "Without the scene feature, the window draws the replacement in the scene's place; with it, the scene as an image, focusable, beside its replacement. GPUI exposes no accessibility tree, so neither reaches assistive technology.",
+      "semantics": "Without the scene feature, the window draws the replacement in the scene's place; with it, the scene as an image, focusable, beside its replacement. The replacement, a table with a row per edge, is the accessible form. Once GPUI exposes a tree: the scene an AccessKit Image named by its label and keys, the replacement a Table.",
       "keyboard": [
         { "key": "Tab", "outcome": "With the scene feature, focus moves to the scene; the replacement's links and controls follow." },
+        { "key": "Shift+Tab", "outcome": "Focus moves back, wrapping to the last." },
         { "key": "Arrow keys, + and -, N and Shift+N, Escape", "outcome": "With the scene feature, orbit, zoom, select and clear, as on the html face." }
       ],
       "name": "The scene's label.",
-      "role": "Image, then its replacement.",
+      "role": "Image, then its replacement table.",
       "setting": [
-        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the replacement grow with it, with no loss of information." },
-        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the replacement whole." }
+        { "mode": "see", "statement": "WHEN I set the system text size to 200% (Windows' Accessibility, Text size; GNOME's Large Text or text scaling factor) I SEE the replacement grow with it, with no loss of information.", "blocked": "toolkit" },
+        { "mode": "see", "statement": "WHEN I raise the display scale (macOS' Displays, Larger Text; Windows' Scale at 150% or 200%; GNOME's Scale at 200%) I SEE the replacement drawn sharp and larger, whole and without overlapping." },
+        { "mode": "see", "statement": "WHEN I turn on the platform's high contrast (macOS' Increase contrast, a Windows contrast theme, the desktop portal's contrast) I SEE the window switch to the high-contrast palette by itself, the replacement at 7:1.", "blocked": "toolkit" },
+        { "mode": "see", "statement": "WHEN I choose the high-contrast theme for the window I SEE the replacement drawn in the high-contrast palette, every pair at 7:1." },
+        { "mode": "see", "statement": "WHEN I magnify the screen (macOS Zoom, Windows Magnifier, GNOME's Zoom) with focus following I SEE the magnifier follow the keyboard focus to the replacement.", "blocked": "toolkit" }
       ],
       "check": [
         { "mode": "see", "statement": "I SEE the replacement, every edge of the graph, whether the scene draws or not." },
         { "mode": "see", "statement": "WHEN I select a node with N I SEE the selection said in words." },
-        { "mode": "hear", "statement": "WHEN I reach the scene with a screen reader (VoiceOver, Orca, Narrator) I HEAR its replacement, every edge." }
+        { "mode": "hear", "statement": "WHEN I reach the scene with VoiceOver (macOS), Narrator (Windows) or Orca (Linux) I HEAR its name and keys, and its replacement, every edge with its headers.", "blocked": "toolkit" },
+        { "mode": "hear", "statement": "WHEN I press N on the scene I HEAR the selected node and its edges, said once.", "blocked": "toolkit" }
       ],
-      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
+      "announce": [
+        { "platform": "macos", "reader": "VoiceOver, over NSAccessibility", "api": "AXImage named by the scene's label and keys, then an AXTable (AccessKit Role::Image, Table).", "says": "\"The contact contract as a graph, image\", then the table." },
+        { "platform": "windows", "reader": "Narrator (and NVDA), over UI Automation", "api": "ControlType Image, its label and keys as the Name; the replacement a Table.", "says": "\"The contact contract as a graph, image\"." },
+        { "platform": "linux", "reader": "Orca, over AT-SPI", "api": "ATSPI_ROLE_IMAGE, then ATSPI_ROLE_TABLE.", "says": "\"The contact contract as a graph, image\"." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit, NSAccessibility, UI Automation or AT-SPI provider), so every HEAR check is blocked by the toolkit, and so are the system text size and the platform's high contrast, which it does not report. GPUI's main branch has AccessKit (zed-industries/zed#56065), not yet released (gpui/README.md, \"Accessibility tree\"). Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs, every_gpui_see_check_with_a_probe_holds), which no CI job runs yet; the rest are reported as not verified."
     }
   ]
 }

@@ -488,10 +488,16 @@ struct Support<'a> {
 /// A kind's or element's accessibility tally on a target, in words, for the support page.
 fn a11y_words(tally: Option<&crate::criterion::Tally>) -> String {
     match tally {
-        Some(t) => format!(
-            "SEE: {} of {} verified by a test; HEAR: {} untested",
-            t.see_verified, t.see, t.hear_untested
-        ),
+        Some(t) => {
+            let blocked = match t.see_blocked {
+                0 => String::new(),
+                n => format!(", {n} blocked by the toolkit"),
+            };
+            format!(
+                "SEE: {} of {} verified by a test{blocked}; HEAR: {} untested",
+                t.see_verified, t.see, t.hear_untested
+            )
+        }
         None => "No criteria".into(),
     }
 }
@@ -515,7 +521,7 @@ pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
             if inv.inline_str("as").ok().is_some_and(|as_type| {
                 as_type.split(';').next().unwrap_or_default().trim() == "text/html"
             }) {
-                let mut html = String::from("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>UI target support</title></head><body><h1>UI target support</h1><p>What each target's descriptor says it renders. Where it does not, the fallback names the kind it renders instead; text is the kind's required fallback text.</p><p>Each target's accessibility column counts its face's acceptance criterion (urn:iki:ui:criterion:): the SEE checks a test verifies, of all of them, and the HEAR checks, which need a person with a screen reader and no test verifies. The html face's are verified against the rendered HTML in CI; the gpui face's run on GPUI's test platform, which CI does not run yet.</p><table><caption>Every target against every kind</caption><thead><tr><th scope=\"col\">Kind</th>");
+                let mut html = String::from("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>UI target support</title></head><body><h1>UI target support</h1><p>What each target's descriptor says it renders. Where it does not, the fallback names the kind it renders instead; text is the kind's required fallback text.</p><p>Each target's accessibility column counts its face's acceptance criterion (urn:iki:ui:criterion:): the SEE checks a test verifies, of all of them, those blocked by the face's toolkit (they cannot pass today, whatever the face does), and the HEAR checks, which need a person with a screen reader and no test verifies. The html face's are verified against the rendered HTML in CI; the gpui face's run on GPUI's test platform, which CI does not run yet.</p><table><caption>Every target against every kind</caption><thead><tr><th scope=\"col\">Kind</th>");
                 for name in matrix.keys() {
                     let name = ikigai_fn::html::html_text(name);
                     html.push_str(&format!("<th scope=\"col\">{name}</th><th scope=\"col\">{name} accessibility</th>"));
