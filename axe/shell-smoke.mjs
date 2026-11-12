@@ -1,10 +1,14 @@
 // The shell script's behavior in a real browser (UI conventions D12, D13, D14):
 // `node axe/shell-smoke.mjs <site-dir>`, over the demo site `cargo run --example axe_site`
-// writes. Each check prints ok or FAIL; the exit status is 1 on any failure.
+// writes. Each check prints ok or FAIL; the exit status is 1 on any failure. It ends by running
+// axe/aria.spec.mjs, the accessibility-tree snapshots, over the same site.
 //
 // Controls the demo pages do not carry are added with page.evaluate and handed to htmx with
 // htmx.process: the test driver is not the page, so the door CSP does not apply to it.
 import { chromium } from "playwright";
+import { spawnSync } from "node:child_process";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { serve, CSP } from "./serve.mjs";
 
 const dir = process.argv[2];
@@ -685,4 +689,16 @@ await bfcache.close();
 await browser.close();
 await site.close();
 console.log(`${failures} failure(s)`);
-process.exit(failures === 0 ? 0 : 1);
+
+// Then each kind's role, name and state in Chromium's accessibility tree (axe/aria.spec.mjs,
+// ledger #3550), by the @playwright/test this directory's lock pins. It runs from here, in the
+// axe job's smoke step, because the workflow token cannot change .github/workflows; its own
+// step there would read the same.
+const here = fileURLToPath(new URL(".", import.meta.url));
+const aria = spawnSync(
+  process.execPath,
+  [join(here, "node_modules/@playwright/test/cli.js"), "test", "-c", join(here, "playwright.config.mjs")],
+  { stdio: "inherit", env: { ...process.env, AXE_SITE: resolve(dir) } },
+);
+if (aria.status !== 0) console.log(`FAIL accessibility-tree snapshots (axe/aria.spec.mjs): exit ${aria.status ?? aria.signal}`);
+process.exit(failures === 0 && aria.status === 0 ? 0 : 1);
