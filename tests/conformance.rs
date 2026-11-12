@@ -203,6 +203,18 @@ fn conforms() {
                 .binding("graph", ikigai_ui::scene::EXAMPLE_GRAPH),
         )
         .pure("ui-shape-scene")
+        // Accessibility acceptance criteria (ledger #3541): compiled-in data, its vocabulary
+        // the graph the shape serves.
+        .fixture(
+            Fixture::new("ui-criterion", Verb::Source)
+                .binding("kind", "field")
+                .binding("target", "html"),
+        )
+        .pure("ui-criterion")
+        .cacheable("ui-criterion")
+        .pure("ui-shape-criterion")
+        .cacheable("ui-shape-criterion")
+        .vocabulary(ikigai_ui::criterion::SHAPE)
         .pure("ui-example-graph")
         .cacheable("ui-setting-name")
         .pure("ui-structure-name")

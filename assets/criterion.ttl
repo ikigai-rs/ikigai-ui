@@ -1,0 +1,86 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix c: <urn:iki:ui:criterion:term:> .
+
+# A node kind's accessibility acceptance criteria on one target (ledger #3541), served at
+# urn:iki:ui:criterion:kind:{kind}:target:{target} and linked from the kind's descriptor by
+# c:criterion. The vocabulary and its closed shapes: a property not named here is refused. A
+# closed set of values is a pattern, so the graph has no blank nodes (no RDF lists).
+# `ikigai_ui::criterion::validate` says the same in Rust.
+
+c:criterion a rdf:Property ;
+  rdfs:label "criterion" ;
+  rdfs:comment "On a kind's descriptor: its acceptance criteria on one target." ;
+  rdfs:range c:Criterion .
+
+# --- a criterion ----------------------------------------------------------------------------
+
+c:Criterion a sh:NodeShape, rdfs:Class ;
+  rdfs:label "Criterion" ;
+  rdfs:comment "What a target's face of one node kind must do for assistive technology and keyboard users, and the checks that say whether it does." ;
+  sh:targetClass c:Criterion ;
+  sh:closed true ;
+  sh:property c:Criterion-type, c:Criterion-kind, c:Criterion-target, c:Criterion-source, c:Criterion-semantics, c:Criterion-keyboard, c:Criterion-name, c:Criterion-role, c:Criterion-group, c:Criterion-state, c:Criterion-setting, c:Criterion-check, c:Criterion-note .
+
+c:kind a rdf:Property ; rdfs:label "kind" ; rdfs:comment "The node kind the criterion is for." .
+c:target a rdf:Property ; rdfs:label "target" ; rdfs:comment "The target whose face the criterion is for: html or gpui." .
+c:source a rdf:Property ; rdfs:label "source" ; rdfs:comment "A page the wording was seeded from (Apache-2.0, see NOTICE)." .
+c:semantics a rdf:Property ; rdfs:label "semantics" ; rdfs:comment "The element or role the face emits." .
+c:keyboard a rdf:Property ; rdfs:label "keyboard" ; rdfs:comment "A key and what it does." ; rdfs:range c:Keystroke .
+c:name a rdf:Property ; rdfs:label "name" ; rdfs:comment "What a screen reader announces as the name." .
+c:role a rdf:Property ; rdfs:label "role" ; rdfs:comment "What a screen reader announces as the role." .
+c:group a rdf:Property ; rdfs:label "group" ; rdfs:comment "What a screen reader reads after the label: hint, error and group name." .
+c:state a rdf:Property ; rdfs:label "state" ; rdfs:comment "The states a screen reader announces." .
+c:setting a rdf:Property ; rdfs:label "setting" ; rdfs:comment "A device-settings check (text at 200%, zoom), always SEE." ; rdfs:range c:Check .
+c:check a rdf:Property ; rdfs:label "check" ; rdfs:comment "A check of the semantics, keyboard or announcement." ; rdfs:range c:Check .
+c:note a rdf:Property ; rdfs:label "note" ; rdfs:comment "A known gap between the face and its criterion." .
+
+c:Criterion-type sh:path rdf:type ; sh:hasValue c:Criterion ; sh:maxCount 1 .
+c:Criterion-kind sh:path c:kind ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:pattern "^urn:iki:ui:kind:name:[a-z]+$" .
+c:Criterion-target sh:path c:target ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:pattern "^urn:iki:ui:target:name:(html|gpui)$" .
+c:Criterion-source sh:path c:source ; sh:minCount 1 ; sh:nodeKind sh:IRI ; sh:pattern "^https://github[.]com/" .
+c:Criterion-semantics sh:path c:semantics ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+c:Criterion-keyboard sh:path c:keyboard ; sh:minCount 1 ; sh:class c:Keystroke ; sh:node c:Keystroke .
+c:Criterion-name sh:path c:name ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+c:Criterion-role sh:path c:role ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+c:Criterion-group sh:path c:group ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+c:Criterion-state sh:path c:state ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+c:Criterion-setting sh:path c:setting ; sh:minCount 1 ; sh:class c:Check ; sh:node c:Check .
+c:Criterion-check sh:path c:check ; sh:minCount 1 ; sh:class c:Check ; sh:node c:Check .
+c:Criterion-note sh:path c:note ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+
+# --- a key and what it does ------------------------------------------------------------------
+
+c:Keystroke a sh:NodeShape, rdfs:Class ;
+  rdfs:label "Keystroke" ;
+  rdfs:comment "A key (or gesture) and its outcome on the face." ;
+  sh:closed true ;
+  sh:property c:Keystroke-type, c:Keystroke-key, c:Keystroke-outcome .
+
+c:key a rdf:Property ; rdfs:label "key" ; rdfs:comment "The key, as a user names it: Tab, Shift+Tab, Enter, Space." .
+c:outcome a rdf:Property ; rdfs:label "outcome" ; rdfs:comment "What the key does." .
+
+c:Keystroke-type sh:path rdf:type ; sh:hasValue c:Keystroke ; sh:maxCount 1 .
+c:Keystroke-key sh:path c:key ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+c:Keystroke-outcome sh:path c:outcome ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+
+# --- a check ---------------------------------------------------------------------------------
+
+c:Check a sh:NodeShape, rdfs:Class ;
+  rdfs:label "Check" ;
+  rdfs:comment "One acceptance check. SEE: a face or a test can verify it, and a probe names how. HEAR: it needs assistive technology, so it has no probe." ;
+  sh:closed true ;
+  sh:property c:Check-type, c:Check-mode, c:Check-statement, c:Check-probe, c:Check-argument .
+
+c:mode a rdf:Property ; rdfs:label "mode" ; rdfs:comment "see or hear." .
+c:statement a rdf:Property ; rdfs:label "statement" ; rdfs:comment "The check in words: WHEN I do this, I SEE (or HEAR) that." .
+c:probe a rdf:Property ; rdfs:label "probe" ; rdfs:comment "How a test verifies a SEE check on the html face; ikigai_ui::criterion::PROBES lists them. A SEE check with none is reported as not verified." .
+c:argument a rdf:Property ; rdfs:label "argument" ; rdfs:comment "The probe's argument: an element name, or an attribute as name=value." .
+
+c:Check-type sh:path rdf:type ; sh:hasValue c:Check ; sh:maxCount 1 .
+c:Check-mode sh:path c:mode ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^(see|hear)$" .
+c:Check-statement sh:path c:statement ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+c:Check-probe sh:path c:probe ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^(element|attribute|focusable|focus-visible|name-from-content|name-from-label|href|described-by|required|invalid|text-scales)$" .
+c:Check-argument sh:path c:argument ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .

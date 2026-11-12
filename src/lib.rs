@@ -113,6 +113,7 @@ use ikigai_core::{
     Representation, Request, UriTemplate, Verb,
 };
 
+pub mod criterion;
 pub mod element;
 pub mod form;
 pub mod html;
@@ -704,6 +705,17 @@ pub fn space() -> EndpointSpace {
         .bind(
             template(&format!("{CHOOSER}{{family}}:{{theme}}")),
             chooser_endpoint(),
+        )
+        .bind(
+            template(&format!(
+                "{}kind:{{kind}}:target:{{target}}",
+                criterion::PREFIX
+            )),
+            criterion::endpoint(),
+        )
+        .bind(
+            Exact::new(criterion::SHAPE_IRI),
+            criterion::shape_endpoint(),
         )
         .bind(Exact::new(KIND), kind_list_endpoint())
         .bind(template(&format!("{KIND}:name:{{kind}}")), kind_endpoint())
