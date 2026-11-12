@@ -18,6 +18,9 @@ ikigai-fn = "0.10.0"
 serde_json = "1.0"
 # The Meta renderer, so a contract reads as `application/json` and the form is generated from it.
 ikigai-vocab = "0.3"
+# Lenses (ledger #3518): `urn:sparql:select`/`construct` over the demo's own data, so the
+# example lenses answer. 0.5.0 is the release on ikigai-core 0.3.0.
+ikigai-sparql = "0.5.0"
 # The door is a socket server: not on wasm32, where CI's wasm32 lib job lints the workspace
 # (the service and the site still build there).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

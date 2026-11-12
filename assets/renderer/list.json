@@ -1,0 +1,6 @@
+{"kind": "list", "properties": {"label": "{legend}"}, "children": [
+  {"repeat": "rows", "group": "group", "each": {"kind": "list", "properties": {"label": "{?group}"}, "children": [
+    {"repeat": "group", "each": {"kind": "link", "properties": {"label": "{?label}", "href": "{home:?item}"}}}
+  ]}},
+  {"past": "Showing the first {shown} of more rows; the lens's bound is {bound}."}
+]}

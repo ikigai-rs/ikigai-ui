@@ -517,6 +517,9 @@ pub fn root(store: Store) -> Arc<dyn Space> {
         Arc::new(site()),
         Arc::new(service(store)),
         Arc::new(screens()),
+        // The example lenses over the contact graph, and the SPARQL store they run on (#3518).
+        Arc::new(ikigai_ui::lens::examples()),
+        Arc::new(ikigai_sparql::space()),
         Arc::new(ikigai_ui::screen::screens()),
     ]))
 }

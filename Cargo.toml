@@ -99,6 +99,9 @@ ikigai-core = { version = "0.3.0", features = ["declare"] }
 # links them, so it stays free of an RDF parser. Both are the releases on ikigai-core 0.3.0.
 ikigai-rdf = "0.5.0"
 ikigai-jsonld = "0.4.0"
+# Lenses (ledger #3518): a lens's query runs on a real `urn:sparql:select`, over the contact
+# graph resolved through the kernel. 0.5.0 is the release on ikigai-core 0.3.0 and ikigai-rdf 0.5.
+ikigai-sparql = "0.5.0"
 
 [dev-dependencies.ikigai-lisp]
 # tests/sexpr.rs: a screen that is a Lisp program runs through the real `urn:lisp:eval`, which a

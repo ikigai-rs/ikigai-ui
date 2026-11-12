@@ -25,8 +25,55 @@ fn conforms() {
     let root = common::root(None, vec![Arc::new(common::form_models())]);
     let kernel = common::kernel(root.clone());
     let pages = Arc::new(common::demo_pages());
-    let report = Suite::new()
+    let mut suite = Suite::new();
+    // The lenses' data is compiled in: pure, cacheable constants (ledger #3518).
+    for id in [
+        "ui-lens-graph",
+        "ui-lens-graph-query",
+        "ui-lens-contact-graph",
+        "ui-lens-contact-graph-query",
+        "ui-lens-contact-table",
+        "ui-lens-contact-table-query",
+        "ui-lens-contact-list",
+        "ui-lens-contact-list-query",
+        "ui-lens-instance-contact",
+    ] {
+        suite = suite.pure(id);
+    }
+    // ikigai-sparql's endpoints, bound so the lenses run on a real store: a query each over the
+    // contact graph, so the answer's golden thread hangs on its source.
+    for (id, query) in [
+        ("sparql-select", "SELECT * WHERE { ?s ?p ?o } LIMIT 1"),
+        ("sparql-ask", "ASK { ?s ?p ?o }"),
+        (
+            "sparql-construct",
+            "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o } LIMIT 1",
+        ),
+        ("sparql-describe", "DESCRIBE <urn:iki:uidemo:contact>"),
+    ] {
+        suite = suite.fixture(
+            Fixture::new(id, Verb::Source)
+                .arg("query", query)
+                .arg("graph", ikigai_ui::scene::EXAMPLE_GRAPH),
+        );
+    }
+    let report = suite
         .fixture(Fixture::new("ui-palette", Verb::Source).binding("name", "light"))
+        .fixture(Fixture::new("ui-renderer", Verb::Source).binding("name", "table"))
+        .fixture(Fixture::new("ui-home", Verb::Source).binding("iri", common::CONTACT))
+        .fixture(Fixture::new("ui-lens-resource", Verb::Source).binding("iri", common::CONTACT))
+        // Lenses (ledger #3518): the example lenses run on a real urn:sparql:select over the
+        // contact graph (ikigai-sparql, bound in tests/common).
+        .fixture(
+            Fixture::new("ui-lens-result", Verb::Source)
+                .binding("lens", "contact-table")
+                .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),
+        )
+        .fixture(
+            Fixture::new("ui-view-lens", Verb::Source)
+                .binding("lens", "contact-table")
+                .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),
+        )
         .fixture(Fixture::new("ui-theme-chooser", Verb::Source).binding("theme", "dark"))
         .fixture(
             Fixture::new("ui-chooser", Verb::Source)
@@ -47,6 +94,7 @@ fn conforms() {
         .cacheable("ui-form-resource")
         .cacheable("ui-form-openapi")
         .pure("demo-openapi")
+        .pure("ui-renderer")
         .pure("demo-contact")
         .cacheable("demo-contact")
         .cacheable("demo-openapi")
