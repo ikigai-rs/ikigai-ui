@@ -85,6 +85,12 @@ fn conforms() {
             "content",
             "group label=Probe\n  urn:iki:ui:example:kind:heading content=Probed",
         ))
+        // A lens query as a resource (ledger #3530): the preparer is pure over its `content`.
+        .fixture(Fixture::new("ui-lens-prepare", Verb::Source).arg(
+            "content",
+            "SELECT ?focus ?s WHERE { GRAPH ?focus { ?s ?p ?o } }",
+        ))
+        .fixture(Fixture::new("ui-lens-prepared", Verb::Source).binding("lens", "contact-table"))
         .fixture(Fixture::new("ui-sexpr-compile", Verb::Source).arg(
             "content",
             "(group :label \"Probe\" (urn:iki:ui:example:kind:heading :content \"Probed\"))",
@@ -136,6 +142,7 @@ fn conforms() {
             Check::Names,
             "a root view's id is its IRI, set by ikigai-core (ledger #2513)",
         )
+        .pure("ui-lens-prepare")
         .pure("ui-palette")
         .pure("ui-theme-chooser")
         .pure("ui-kind")

@@ -79,6 +79,16 @@ fn conforms() {
                 .binding("lens", "contact-table")
                 .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),
         )
+        // A lens query as a resource (ledger #3530): the preparer is pure over its `content`,
+        // and a lens's prepared form is cached, threaded from its query's source.
+        .fixture(Fixture::new("ui-lens-prepare", Verb::Source).arg(
+            "content",
+            "SELECT ?focus ?s WHERE { GRAPH ?focus { ?s ?p ?o } }",
+        ))
+        .pure("ui-lens-prepare")
+        .cacheable("ui-lens-prepare")
+        .fixture(Fixture::new("ui-lens-prepared", Verb::Source).binding("lens", "contact-table"))
+        .cacheable("ui-lens-prepared")
         .fixture(Fixture::new("ui-theme-chooser", Verb::Source).binding("theme", "dark"))
         .fixture(
             Fixture::new("ui-chooser", Verb::Source)

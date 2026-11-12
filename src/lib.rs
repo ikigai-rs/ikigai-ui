@@ -22,7 +22,8 @@
 //! | `urn:iki:ui:form:resource:{iri}` | data | a `form` node generated from `{iri}`'s contract, its Sink's inputs ([`form`]) |
 //! | `urn:iki:ui:form:openapi:{doc}:operation:{op}` | data | the same from an OpenAPI 3.1 document's operation ([`form`]) |
 //! | `urn:iki:ui:view:resource:{iri}` | data | `{iri}`'s view: curated for its type, else generated from its own model, recursively ([`view`]) |
-//! | `urn:iki:ui:lens:name:{lens}:focus:{iri}`, `urn:iki:ui:lens:resource:{iri}`, `urn:iki:ui:renderer:name:{name}`, `urn:iki:ui:home:resource:{iri}`, `urn:iki:ui:view:lens:{lens}:resource:{iri}` | data | lenses: a read-only SPARQL query per view, rendered by a named template ([`lens`]) |
+//! | `urn:iki:ui:lens:name:{lens}:focus:{iri}`, `urn:iki:ui:lens:name:{lens}:prepared`, `urn:iki:ui:lens:resource:{iri}`, `urn:iki:ui:renderer:name:{name}`, `urn:iki:ui:home:resource:{iri}`, `urn:iki:ui:view:lens:{lens}:resource:{iri}` | data | lenses: a read-only SPARQL query per view, rendered by a named template ([`lens`]) |
+//! | `urn:iki:ui:lens:prepare` | transreptor | a lens query (`application/sparql-query`) to its prepared form ([`lens::PREPARED`]) |
 //! | `urn:iki:ui:view:generated:{iri}` | data | always the generated view ([`view`]) |
 //! | `urn:iki:ui:screen:name:{screen}` | composition | a screen compiled from its outline, `{screen}:source` ([`screen`]; [`screen::screens`], placed last) |
 //! | `urn:iki:ui:outline:compile` | transreptor | an outline to the model ([`screen::COMPILER`]) |
@@ -654,6 +655,11 @@ pub fn space() -> EndpointSpace {
             template(&format!("{}{{lens}}:focus:{{iri}}", lens::NAME)),
             lens::result_endpoint(),
         )
+        .bind(
+            template(&format!("{}{{lens}}{}", lens::NAME, lens::PREPARED_SUFFIX)),
+            lens::prepared_endpoint(),
+        )
+        .bind(Exact::new(lens::PREPARE), lens::prepare_endpoint())
         .bind(
             template(&format!("{}{{iri}}", lens::RESOURCE)),
             lens::resource_endpoint(),

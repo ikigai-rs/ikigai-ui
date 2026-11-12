@@ -5,7 +5,9 @@
 //! |---|---|---|
 //! | `urn:iki:ui:lens:name:{lens}` | data (a module's or host's) | the lens, [`Lens`] as JSON: its query IRI, renderer, focus variable, bound, legend |
 //! | `urn:iki:ui:lens:name:{lens}:query` | data (a module's or host's) | the lens's query, SPARQL text, its default query IRI |
-//! | `urn:iki:ui:lens:name:{lens}:focus:{iri}` | data | the lens's result for `{iri}`: the query checked read-only ([`read_only`]), `{iri}` bound to the focus variable as a TERM through `urn:sparql:*`'s `bindings=` (never spliced), run under the CALLER's capability |
+//! | `urn:iki:ui:lens:prepare` | transreptor | a query (`content`, [`QUERY`]) to its prepared form, [`PREPARED`]: its words read, checked read-only, every SERVICE resolved to an IRI ([`prepare`]); pure, so the same text is prepared once |
+//! | `urn:iki:ui:lens:name:{lens}:prepared` | data | the lens's query source prepared by `urn:iki:ui:lens:prepare` and its SERVICEs checked against the lens's list: CODE AS A RESOURCE, cached and golden-threaded from the source, so an edit to the query (a Sink to it) re-prepares exactly the lenses over it and cuts the results over them (ledger #3530) |
+//! | `urn:iki:ui:lens:name:{lens}:focus:{iri}` | data | the lens's result for `{iri}`: the lens's PREPARED query ([`Prepared`]), `{iri}` bound to the focus variable as a TERM through `urn:sparql:*`'s `bindings=` (never spliced), run under the CALLER's capability |
 //! | `urn:iki:ui:lens:type:{class}` | data (a module's or host's) | a JSON list of lens names for a type |
 //! | `urn:iki:ui:lens:instance:{iri}` | data (a host's) | a JSON list of lens names for one resource |
 //! | `urn:iki:ui:lens:dataset` | data (a host's) | a JSON list of lens names for the whole dataset |
@@ -55,8 +57,9 @@ use ikigai_core::{
     ArgRef, AsyncFnEndpoint, Description, EndpointSpace, Error, Exact, FnEndpoint, Invocation,
     InvokeFuture, Iri, ReprType, Representation, Request, Verb,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::model::{self, Node};
 
@@ -84,6 +87,14 @@ pub const DEFAULT: &str = "graph";
 pub const MAX_BOUND: usize = 1000;
 /// The largest lens or query read, in bytes.
 pub const MAX_BYTES: usize = 64 * 1024;
+/// A lens's prepared query is its name plus this.
+pub const PREPARED_SUFFIX: &str = ":prepared";
+/// The lens query preparer, a transreptor from [`QUERY`] to [`PREPARED`].
+pub const PREPARE: &str = "urn:iki:ui:lens:prepare";
+/// A lens query's source media type.
+pub const QUERY: &str = "application/sparql-query";
+/// A prepared lens query's media type, [`Prepared`] as JSON.
+pub const PREPARED: &str = "application/vnd.ikigai.ui.lens-query+json";
 /// The SPARQL result media type.
 pub const RESULTS: &str = "application/sparql-results+json";
 /// A CONSTRUCT lens's result media type: the result graph, as node objects.
@@ -312,7 +323,8 @@ impl Lens {
 }
 
 /// A read-only query's form.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Form {
     /// SELECT.
     Select,
@@ -405,18 +417,51 @@ fn words(q: &str) -> Vec<String> {
     out
 }
 
-/// `query`'s form when it is read-only: SELECT, CONSTRUCT or ASK, no update keyword, and no
-/// SERVICE but those `services` lists. Anything else is `InvalidArgument`.
-pub fn read_only(query: &str, services: &[String]) -> Result<Form, Error> {
+/// A lens query, prepared ([`prepare`]): what [`PREPARE`] answers, as [`PREPARED`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Prepared {
+    /// SELECT, CONSTRUCT or ASK.
+    pub form: Form,
+    /// The query's text, as written.
+    pub query: String,
+    /// Every SERVICE it names, resolved to a full IRI (a prefixed name through the query's own
+    /// PREFIX), in the order written, each once.
+    pub services: Vec<String>,
+    /// Whether it states its own LIMIT.
+    pub limit: bool,
+}
+
+static PREPARED_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// How many times [`PREPARE`] has prepared a query in this process: the prepared form is cached
+/// and golden-threaded from the query's source, so an unchanged query is prepared once.
+pub fn prepared_count() -> usize {
+    PREPARED_COUNT.load(Ordering::SeqCst)
+}
+
+/// `query` prepared, when it is read-only: SELECT, CONSTRUCT or ASK, no update keyword, every
+/// SERVICE naming an IRI (written `<…>` or as a prefixed name the query declares). Anything
+/// else is `InvalidArgument`. Which SERVICEs a lens may name is the lens's ([`Prepared::services`]
+/// checked against [`Lens::services`]).
+pub fn prepare(query: &str) -> Result<Prepared, Error> {
     if query.len() > MAX_BYTES {
         return Err(refuse("query", "the lens query is too large"));
     }
     let w = words(query);
     let mut i = 0;
     let mut form = None;
+    let mut prefixes: BTreeMap<String, String> = BTreeMap::new();
     while i < w.len() {
         match w[i].to_ascii_uppercase().as_str() {
-            "PREFIX" => i += 3,
+            "PREFIX" => {
+                if let (Some(p), Some(ns)) = (w.get(i + 1), w.get(i + 2)) {
+                    if let Some(ns) = ns.strip_prefix('<').and_then(|n| n.strip_suffix('>')) {
+                        prefixes.insert(p.clone(), ns.to_string());
+                    }
+                }
+                i += 3
+            }
             "BASE" => i += 2,
             "SELECT" => {
                 form = Some(Form::Select);
@@ -439,6 +484,8 @@ pub fn read_only(query: &str, services: &[String]) -> Result<Form, Error> {
         }
     }
     let form = form.ok_or_else(|| refuse("query", "a lens query is SELECT, CONSTRUCT or ASK"))?;
+    let mut services: Vec<String> = Vec::new();
+    let mut limit = false;
     for (j, word) in w.iter().enumerate() {
         let up = word.to_ascii_uppercase();
         if UPDATE.contains(&up.as_str()) {
@@ -447,26 +494,61 @@ pub fn read_only(query: &str, services: &[String]) -> Result<Form, Error> {
                 format!("a lens query is read-only: `{up}` is an update"),
             ));
         }
+        if up == "LIMIT" {
+            limit = true;
+        }
         if up == "SERVICE" {
             let mut k = j + 1;
             if w.get(k).is_some_and(|s| s.eq_ignore_ascii_case("SILENT")) {
                 k += 1;
             }
-            let named = w
-                .get(k)
-                .map(|s| s.trim_start_matches('<').trim_end_matches('>'));
-            if !named.is_some_and(|s| services.iter().any(|l| l == s)) {
+            let named = w.get(k).map(String::as_str).unwrap_or("(none)");
+            let resolved =
+                if let Some(i) = named.strip_prefix('<').and_then(|n| n.strip_suffix('>')) {
+                    Some(i.to_string())
+                } else {
+                    named.find(':').and_then(|at| {
+                        prefixes
+                            .get(&named[..=at])
+                            .map(|ns| format!("{ns}{}", &named[at + 1..]))
+                    })
+                };
+            let Some(resolved) = resolved else {
                 return Err(refuse(
                     "query",
-                    format!(
-                        "SERVICE {} is not one the lens lists",
-                        named.unwrap_or("(none)")
-                    ),
+                    format!("SERVICE {named} names no IRI a lens may list"),
                 ));
+            };
+            if !services.contains(&resolved) {
+                services.push(resolved);
             }
         }
     }
-    Ok(form)
+    Ok(Prepared {
+        form,
+        query: query.to_string(),
+        services,
+        limit,
+    })
+}
+
+impl Prepared {
+    /// Its form, when every SERVICE it names is one `allowed` lists; else `InvalidArgument`.
+    pub fn check(&self, allowed: &[String]) -> Result<Form, Error> {
+        if let Some(s) = self.services.iter().find(|s| !allowed.contains(s)) {
+            return Err(refuse(
+                "query",
+                format!("SERVICE {s} is not one the lens lists"),
+            ));
+        }
+        Ok(self.form)
+    }
+}
+
+/// `query`'s form when it is read-only ([`prepare`]) and names no SERVICE but those `services`
+/// lists. Anything else is `InvalidArgument`.
+pub fn read_only(query: &str, services: &[String]) -> Result<Form, Error> {
+    prepare(query)?.check(services)
 }
 
 /// One result row: variable → value.
@@ -834,25 +916,16 @@ async fn result(
     resource: &str,
     chosen: &Selection,
 ) -> Result<Representation, Error> {
-    let query_at = lens
-        .query
-        .clone()
-        .unwrap_or_else(|| format!("{NAME}{name}:query"));
-    let q = inv
-        .issue(Request::new(Verb::Source, iri(&query_at)?))
-        .await?;
-    let text = String::from_utf8(q.bytes)
-        .map_err(|_| refuse("query", format!("{query_at} is not UTF-8")))?;
-    let form = read_only(&text, &lens.services)?;
+    let prepared = read_prepared(inv, name).await?;
+    let form = prepared.form;
     // The lens asks for one row past its bound, so it knows it is past it. The store REFUSES an
     // answer past `max_rows=` rather than cutting it, so the bound is a LIMIT the lens appends to
     // its own query (a query with its own LIMIT keeps it, inside the store's answer budget).
-    let text =
-        if form == Form::Select && !words(&text).iter().any(|w| w.eq_ignore_ascii_case("LIMIT")) {
-            format!("{text}\nLIMIT {}", lens.bound + 1)
-        } else {
-            text
-        };
+    let text = if form == Form::Select && !prepared.limit {
+        format!("{}\nLIMIT {}", prepared.query, lens.bound + 1)
+    } else {
+        prepared.query
+    };
     let mut bindings = json!({ lens.focus.clone(): {"type": "uri", "value": resource} });
     // Each chosen facet value is a TERM bound to its variable, never text in the query.
     for f in &lens.facets {
@@ -890,6 +963,13 @@ async fn result(
         request = request.with_arg("graph", ArgRef::Inline(graphs.join(" ").into_bytes()));
     }
     inv.issue(request).await
+}
+
+async fn read_prepared(inv: &Invocation<'_>, name: &str) -> Result<Prepared, Error> {
+    let at = format!("{NAME}{name}{PREPARED_SUFFIX}");
+    let rep = inv.issue(Request::new(Verb::Source, iri(&at)?)).await?;
+    serde_json::from_slice(&rep.bytes)
+        .map_err(|e| Error::Endpoint(format!("{at}: not a prepared query: {e}")))
 }
 
 /// A CONSTRUCT's result graph as rows: its nodes (`?node`, `?label`), by label, the first
@@ -1277,6 +1357,105 @@ pub(crate) fn result_endpoint() -> AsyncFnEndpoint {
             .summary("The lens's read-only query run for the resource, bound as a term to its focus variable, under the caller's capability. A SELECT or ASK answers with SPARQL results JSON; a CONSTRUCT with its result graph as JSON-LD (application/ld+json), the face the graph renderer's scene reads.")
             .verb(Verb::Source)
             .output(RESULTS),
+    )
+}
+
+/// [`PREPARE`]: a lens query (`content`, SPARQL) to its prepared form, [`PREPARED`].
+pub(crate) fn prepare_endpoint() -> AsyncFnEndpoint {
+    AsyncFnEndpoint::new(
+        "ui-lens-prepare",
+        |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let text = std::str::from_utf8(inv.inline_arg("content")?)
+                    .map_err(|_| refuse("content", "a lens query is UTF-8"))?;
+                let prepared = prepare(text)?;
+                PREPARED_COUNT.fetch_add(1, Ordering::SeqCst);
+                Ok(data(
+                    serde_json::to_vec(&prepared).expect("a prepared query"),
+                    PREPARED,
+                ))
+            })
+        },
+    )
+    .with_description(
+        Description::new("ui-lens-prepare")
+            .title("The lens query preparer")
+            .summary(
+                "A lens's SPARQL query prepared: its words read, checked read-only (SELECT, \
+                 CONSTRUCT or ASK, no update keyword), and every SERVICE it names resolved to \
+                 an IRI. Pure: the same text is prepared once and cached.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .transreptor([QUERY], [PREPARED])
+            .lossy()
+            .input(
+                ikigai_core::ArgSpec::new("content")
+                    .summary("the query, SPARQL text")
+                    .class("http://www.w3.org/2001/XMLSchema#string"),
+            )
+            .output(PREPARED),
+    )
+}
+
+/// `urn:iki:ui:lens:name:{lens}:prepared`.
+pub(crate) fn prepared_endpoint() -> AsyncFnEndpoint {
+    AsyncFnEndpoint::new("ui-lens-prepared", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+        Box::pin(async move {
+            let name = inv.bindings.get("lens").unwrap_or_default().to_string();
+            if name.is_empty() || name.contains(':') {
+                return Err(Error::NotFound(inv.request.target.as_str().to_string()));
+            }
+            let lens = read_lens(inv, &name).await?;
+            let query_at = lens
+                .query
+                .clone()
+                .unwrap_or_else(|| format!("{NAME}{name}:query"));
+            let source = inv
+                .issue(Request::new(Verb::Source, iri(&query_at)?))
+                .await?;
+            let source_expiry = source.expiry;
+            if source.bytes.len() > MAX_BYTES {
+                return Err(refuse("query", format!("{query_at}: the lens query is too large")));
+            }
+            let prepared = inv
+                .issue(
+                    Request::new(Verb::Source, iri(PREPARE)?)
+                        .with_arg("as", ArgRef::Inline(PREPARED.into()))
+                        .with_arg("content", ArgRef::Inline(source.bytes)),
+                )
+                .await
+                .map_err(|e| match e {
+                    Error::InvalidArgument { name: n, detail } => {
+                        refuse(&n, format!("{query_at}: {detail}"))
+                    }
+                    other => other,
+                })?;
+            let p: Prepared = serde_json::from_slice(&prepared.bytes)
+                .map_err(|e| Error::Endpoint(format!("{PREPARE}: {e}")))?;
+            p.check(&lens.services)
+                .map_err(|e| match e {
+                    Error::InvalidArgument { name: n, detail } => {
+                        refuse(&n, format!("{query_at}: {detail}"))
+                    }
+                    other => other,
+                })?;
+            let mut rep = data(prepared.bytes, PREPARED);
+            // No fresher than its source and its preparation.
+            rep.expiry = rep
+                .expiry
+                .most_restrictive(source_expiry)
+                .most_restrictive(prepared.expiry);
+            Ok(rep)
+        })
+    })
+    .with_description(
+        Description::new("ui-lens-prepared")
+            .input(ikigai_core::ArgSpec::new("lens").summary("the lens's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("graph"))
+            .title("A lens's query, prepared")
+            .summary("The lens's query source (urn:iki:ui:lens:name:{lens}:query, or the IRI its query names) prepared by urn:iki:ui:lens:prepare, its SERVICEs checked against the lens's list. Cached and golden-threaded from the source: an edit to the query re-prepares exactly the lenses over it.")
+            .verb(Verb::Source)
+            .output(PREPARED),
     )
 }
 
