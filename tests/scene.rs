@@ -284,3 +284,27 @@ fn the_scenes_html_paths_match_their_snapshots() {
         ],
     );
 }
+
+#[test]
+fn a_typed_property_is_a_type_and_a_result_set_is_its_nodes() {
+    use ikigai_ui::scene::read_graph;
+    // A store's JSON-LD writes `rdf:type` as a property: the node's type, never an edge.
+    let g = read_graph(
+        br#"[{"@id": "urn:a", "http://www.w3.org/1999/02/22-rdf-syntax-ns#type": [{"@id": "urn:T"}],
+              "urn:p": [{"@id": "urn:b"}]}]"#,
+    )
+    .unwrap();
+    assert_eq!(g.nodes["urn:a"].1.as_deref(), Some("urn:T"));
+    assert_eq!(g.edges, [("urn:a".into(), "urn:p".into(), "urn:b".into())]);
+    assert!(!g.nodes.contains_key("urn:T"));
+    // A SELECT result is its rows' `?node`s that are IRIs, labeled by `?label`.
+    let g = read_graph(
+        br#"{"head": {"vars": ["node", "label"]}, "results": {"bindings": [
+              {"node": {"type": "uri", "value": "urn:a"}, "label": {"type": "literal", "value": "A"}},
+              {"node": {"type": "literal", "value": "not a node"}}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(g.nodes.len(), 1);
+    assert_eq!(g.nodes["urn:a"].0, "A");
+    assert!(g.edges.is_empty());
+}

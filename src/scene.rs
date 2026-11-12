@@ -17,7 +17,14 @@
 //! when that face is not JSON (so a refused `as=` never leaves the layout uncacheable), and read as JSON-LD node objects (a top-level array, an `@graph`,
 //! or one object): every object with an `@id` is a node, its first `@type` its type, its
 //! `rdfs:label` (or `label`, `name`, `title`) its label, and every property whose value is
-//! `{"@id": …}` an edge labelled by the property. Bounded by [`MAX_NODES`] and [`MAX_EDGES`].
+//! `{"@id": …}` an edge labeled by the property (`rdf:type` written as a property is the
+//! node's type, not an edge). Bounded by [`MAX_NODES`] and [`MAX_EDGES`].
+//!
+//! **A lens's result is a graph too** (ledger #3532). `{graph}` may be a lens's result,
+//! `urn:iki:ui:lens:name:{lens}:focus:{iri}`: a CONSTRUCT's is JSON-LD, read as above; a SELECT's
+//! is its rows' `?node`s, labeled by `?label`, with no edges. So the `graph` renderer's scene,
+//! `urn:iki:ui:scene:graph:urn:iki:ui:lens:name:{lens}:focus:{iri}`, is exactly what the lens
+//! returned, laid out once per result.
 //!
 //! **Sealed.** The datum names nothing for a renderer to fetch: it is the whole scene. The
 //! renderer reads only the datum the page's `scene` node names, with fixed shaders.
@@ -106,6 +113,8 @@ pub const SEED: u64 = 0x1c_16a1_3514;
 pub const ITERATIONS: usize = 200;
 
 const JSON_LD: &str = "application/ld+json";
+/// `rdf:type`, written as a property (as a store's JSON-LD writes it): a node's type, not an edge.
+const RDF_TYPE: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 const LABELS: [&str; 5] = [
     "http://www.w3.org/2000/01/rdf-schema#label",
     "rdfs:label",
@@ -183,7 +192,8 @@ fn refuse(detail: impl Into<String>) -> Error {
     }
 }
 
-fn short(iri: &str) -> String {
+/// An IRI's last segment: a label for a node or an edge that has none.
+pub(crate) fn short(iri: &str) -> String {
     iri.rsplit(['#', '/', ':'])
         .find(|s| !s.is_empty())
         .unwrap_or(iri)
@@ -210,11 +220,39 @@ fn ids(v: &Json) -> Vec<String> {
     }
 }
 
-/// A graph from JSON-LD node objects, bounded.
+/// A SPARQL results document's nodes: each row's `?node` that is an IRI, labeled by its
+/// `?label` (a SELECT lens drawn by the `graph` renderer, [`crate::lens`]). No edges: a result
+/// set names none.
+fn result_nodes(doc: &Json) -> Result<Graph, Error> {
+    let mut graph = Graph::default();
+    for row in doc["results"]["bindings"].as_array().into_iter().flatten() {
+        if row["node"]["type"] != "uri" {
+            continue;
+        }
+        let Some(id) = row["node"]["value"].as_str() else {
+            continue;
+        };
+        let label = row["label"]["value"]
+            .as_str()
+            .filter(|l| !l.is_empty())
+            .map_or_else(|| short(id), String::from);
+        graph.nodes.entry(id.to_string()).or_insert((label, None));
+        if graph.nodes.len() > MAX_NODES {
+            return Err(refuse(format!("more than {MAX_NODES} nodes")));
+        }
+    }
+    Ok(graph)
+}
+
+/// A graph from JSON-LD node objects, bounded. A SPARQL results document (a lens's SELECT
+/// result) is its rows' `?node`s.
 pub fn read_graph(bytes: &[u8]) -> Result<Graph, Error> {
     crate::model::bound(bytes)?;
     let doc: Json =
         serde_json::from_slice(bytes).map_err(|e| refuse(format!("not JSON-LD: {e}")))?;
+    if doc["head"].is_object() && doc["results"]["bindings"].is_array() {
+        return result_nodes(&doc);
+    }
     let objects: Vec<&Json> = match &doc {
         Json::Array(a) => a.iter().collect(),
         Json::Object(o) => match o.get("@graph") {
@@ -237,10 +275,11 @@ pub fn read_graph(bytes: &[u8]) -> Result<Graph, Error> {
             Some(Json::String(t)) => Some(t.clone()),
             Some(Json::Array(a)) => a.iter().find_map(|t| t.as_str().map(String::from)),
             _ => None,
-        };
+        }
+        .or_else(|| o.get(RDF_TYPE).and_then(|t| ids(t).into_iter().next()));
         graph.nodes.insert(id.clone(), (label, r#type));
         for (key, value) in o {
-            if key.starts_with('@') {
+            if key.starts_with('@') || key == RDF_TYPE {
                 continue;
             }
             for to in ids(value) {

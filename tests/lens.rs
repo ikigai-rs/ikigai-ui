@@ -261,3 +261,81 @@ fn an_update_is_refused_before_it_runs() {
     let e = view(&host(), "writer", EXAMPLE_GRAPH, &Capability::root()).unwrap_err();
     assert!(matches!(e, Error::InvalidArgument { .. }), "{e:?}");
 }
+
+/// The scene a lensed view's `scene` node names, read as the page would read it.
+fn scene_of(kernel: &ikigai_core::Kernel, n: &Node) -> ikigai_ui::scene::Scene {
+    let scene = of(n, "scene")[0];
+    let datum = text(&scene.properties["datum"]);
+    let r = block_on(kernel.issue(
+        Request::new(Verb::Source, Iri::parse(datum).unwrap()),
+        &Capability::root(),
+    ))
+    .unwrap();
+    let s: ikigai_ui::scene::Scene = serde_json::from_slice(&r.bytes).unwrap();
+    ikigai_ui::scene::validate(&s).unwrap();
+    s
+}
+
+const TOPICS: &str = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX schema: <http://schema.org/>
+CONSTRUCT { ?field schema:valueReference ?topic . ?field rdfs:label ?f . ?topic rdfs:label ?t }
+WHERE { GRAPH ?focus { ?field schema:valueReference ?topic . ?field rdfs:label ?f . ?topic rdfs:label ?t } }";
+
+#[test]
+fn a_construct_lens_draws_exactly_its_result() {
+    let host = common::host_with(
+        None,
+        vec![Arc::new(lens(
+            EndpointSpace::new(),
+            "topics",
+            r#"{"renderer": "graph", "bound": 10, "legend": "The topics", "graphs": ["urn:iki:ui:example:graph:contact"]}"#,
+            TOPICS,
+        )) as Arc<dyn Space>],
+    );
+    let n = view(&host, "topics", EXAMPLE_GRAPH, &Capability::root()).unwrap();
+    let scene = scene_of(&host, &n);
+    // The scene is the lens's result: the topic field and its three topics, no more.
+    let ids: Vec<&str> = scene.nodes.iter().map(|n| n.id.as_str()).collect();
+    let c = |s: &str| format!("urn:iki:ui:example:graph:contact:{s}");
+    assert_eq!(
+        ids,
+        [c("bug"), c("other"), c("question"), c("topic")],
+        "{scene:?}"
+    );
+    let labels: Vec<&str> = scene.nodes.iter().map(|n| n.label.as_str()).collect();
+    assert_eq!(labels, ["bug", "other", "question", "topic"]);
+    assert_eq!(scene.edges.len(), 3, "{:?}", scene.edges);
+    assert!(scene
+        .edges
+        .iter()
+        .all(|e| e.from == c("topic") && e.label == "valueReference"));
+    // The selection is the same nodes, as links.
+    let selection = of(&n, "list");
+    let links: Vec<String> = of(selection[0], "link")
+        .iter()
+        .map(|l| text(&l.properties["label"]))
+        .collect();
+    assert_eq!(links, ["bug", "other", "question", "topic"]);
+    // The replacement names every edge of it: from, edge, to.
+    let replacement = of(&n, "scene")[0].replacement.as_deref().unwrap();
+    let rows: Vec<Vec<String>> = of(replacement, "group")
+        .iter()
+        .filter(|g| g.children.len() == 3)
+        .map(|g| {
+            of(g, "text")
+                .iter()
+                .map(|t| text(&t.properties["content"]))
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ["From", "Edge", "To"],
+            ["topic", "valueReference", "bug"],
+            ["topic", "valueReference", "other"],
+            ["topic", "valueReference", "question"],
+        ],
+        "{replacement:?}"
+    );
+}

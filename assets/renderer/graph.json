@@ -1,6 +1,20 @@
 {"kind": "group", "properties": {"label": "{legend}"}, "children": [
-  {"kind": "scene", "properties": {"label": "{legend}", "datum": "urn:iki:ui:scene:graph:{focus}"},
-   "replacement": {"kind": "text", "properties": {"content": "The graph of {focus} as a picture; the selection beside it is the same nodes as links."}}},
+  {"kind": "scene", "properties": {"label": "{legend}", "datum": "urn:iki:ui:scene:graph:urn:iki:ui:lens:name:{lens}:focus:{focus}"},
+   "replacement": {"kind": "group", "properties": {"label": "{legend}, in words"}, "children": [
+     {"kind": "text", "properties": {"content": "The lens's result as a picture: the selection beside it is its nodes as links, and this table is every edge."}},
+     {"kind": "table", "properties": {"caption": "{legend}: every edge"}, "children": [
+       {"kind": "group", "properties": {"label": "Columns", "header": "column"}, "children": [
+         {"kind": "text", "properties": {"content": "From"}},
+         {"kind": "text", "properties": {"content": "Edge"}},
+         {"kind": "text", "properties": {"content": "To"}}
+       ]},
+       {"repeat": "edges", "each": {"kind": "group", "properties": {"label": "Edge"}, "children": [
+         {"kind": "text", "properties": {"content": "{?from}"}},
+         {"kind": "text", "properties": {"content": "{?edge}"}},
+         {"kind": "text", "properties": {"content": "{?to}"}}
+       ]}}
+     ]}
+   ]}},
   {"kind": "list", "properties": {"label": "Selection"}, "children": [
     {"repeat": "rows", "each": {"kind": "link", "properties": {"label": "{?label}", "href": "{home:?node}"}}}
   ]},

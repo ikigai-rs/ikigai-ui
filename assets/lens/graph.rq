@@ -1,7 +1,2 @@
-# The default lens: every subject of the focus graph, labeled where it says how.
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT DISTINCT ?focus ?node ?label WHERE {
-  GRAPH ?focus { ?node ?p ?o . OPTIONAL { ?node rdfs:label ?l } }
-  BIND(COALESCE(?l, STR(?node)) AS ?label)
-}
-ORDER BY ?label
+# The default lens: the focus graph itself, every triple. The `graph` renderer draws this result.
+CONSTRUCT { ?s ?p ?o } WHERE { GRAPH ?focus { ?s ?p ?o } }
