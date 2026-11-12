@@ -106,6 +106,12 @@ pub struct Screen {
     /// Each disclosure's open state, by node path: the window's, not the model's. The model
     /// carries only the initial state (`open`), read once when the snapshot is installed.
     open: BTreeMap<String, bool>,
+    /// The screen's own focus, held when no control is focused (a window just opened, or a
+    /// screen just loaded and took the focused control with it), so Tab still reaches the
+    /// first control from the keyboard.
+    root_focus: gpui::FocusHandle,
+    /// Take `root_focus` at the next draw (a screen was loaded).
+    refocus: bool,
     theme: Theme,
     dark: bool,
     /// The palette drawn with now, and the colors read from it.
@@ -152,6 +158,8 @@ impl Screen {
         })
         .detach();
         let loading = Some(worker.load(screen));
+        let root_focus = cx.focus_handle();
+        window.focus(&root_focus);
         Self {
             worker,
             snapshot: None,
@@ -163,6 +171,8 @@ impl Screen {
             focus: BTreeMap::new(),
             tab_order: Vec::new(),
             open: BTreeMap::new(),
+            root_focus,
+            refocus: false,
             theme,
             dark,
             palette,
@@ -224,7 +234,24 @@ impl Screen {
         cx.notify();
     }
 
-    fn poll(&mut self, cx: &mut Context<Self>) {
+    /// The snapshot this window draws now, once one has been read.
+    pub fn snapshot(&self) -> Option<&Snapshot> {
+        self.snapshot.as_ref()
+    }
+
+    /// What the window says now: "Loading…", a refusal, or nothing.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// Whether the screen and its palette have both been read (nothing is in flight).
+    pub fn settled(&self) -> bool {
+        self.loading.is_none() && self.palette_loading.is_none()
+    }
+
+    /// Take what the worker has finished. The window's timer calls this every frame; a test
+    /// on GPUI's test platform calls it to settle a screen.
+    pub fn poll(&mut self, cx: &mut Context<Self>) {
         if let Some((name, result)) = self
             .palette_loading
             .as_ref()
@@ -260,6 +287,7 @@ impl Screen {
                     self.install(snapshot.root(), "/", cx);
                     self.snapshot = Some(snapshot);
                     self.message.clear();
+                    self.refocus = true;
                 }
                 Err(error) => self.message = error.to_string(),
             }
@@ -385,12 +413,23 @@ impl Screen {
         cx.notify();
     }
 
-    fn follow(&mut self, href: &str, cx: &mut Context<Self>) {
-        if let Some(name) = href
-            .strip_prefix("/page/")
-            .filter(|n| ["gallery", "elements", "contact"].contains(n))
-        {
-            self.load(name, cx);
+    /// Follow a link: `/page/{name}` loads the screen `{name}` through the host's kernel (the
+    /// names the HTML face routes), so any app's screens navigate natively. A name that is not
+    /// a screen name is refused here; one the kernel has no screen for is refused by the worker,
+    /// and either way the window keeps the screen it shows and says why. `https:`, `http:` and
+    /// `mailto:` open in the system's handler; anything else is refused.
+    pub fn follow(&mut self, href: &str, cx: &mut Context<Self>) {
+        if let Some(name) = href.strip_prefix("/page/") {
+            if !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            {
+                self.load(name, cx);
+            } else {
+                self.message = format!("No native route for {href}");
+                cx.notify();
+            }
         } else if href.starts_with("https://")
             || href.starts_with("http://")
             || href.starts_with("mailto:")
@@ -715,9 +754,15 @@ impl Screen {
 }
 
 impl Render for Screen {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.refocus)
+            && !self.tab_order.iter().any(|(_, f)| f.is_focused(window))
+        {
+            window.focus(&self.root_focus);
+        }
         let mut body = div()
             .id("screen")
+            .track_focus(&self.root_focus)
             .size_full()
             .overflow_y_scroll()
             .p_6()
@@ -1319,5 +1364,59 @@ mod tests {
         cx.simulate_keystrokes("tab");
         cx.update(|window, cx| assert!(input.focus_handle(cx).is_focused(window)));
         cx.update(|_, cx| assert!(screen.read(cx).forms[&form_path].feedback.fields.is_empty()));
+    }
+
+    /// The heading a snapshot opens with, to tell screens apart.
+    fn first_heading(node: &Node) -> Option<String> {
+        if node.kind == "heading" {
+            return text(node, "content").map(str::to_string);
+        }
+        node.children.iter().find_map(first_heading)
+    }
+
+    #[gpui::test]
+    fn a_page_link_loads_any_screen_the_kernel_names_and_refuses_the_rest(cx: &mut TestAppContext) {
+        // A host's own screen, which no list in this crate names.
+        let host = EndpointSpace::new().bind(
+            Exact::new("urn:iki:ui:screen:name:a-hosts-own:source"),
+            FnEndpoint::new("host-screen", |_: &Invocation<'_>| {
+                Ok(Representation::new(
+                    ReprType::new(ikigai_ui::screen::OUTLINE),
+                    b"group label=\"Own\"\n  heading content=\"A host's own screen\" level=1\n"
+                        .to_vec(),
+                ))
+            }),
+        );
+        let worker = demo_worker(Some(host));
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "gallery", Theme::Light, window, cx));
+        settle(&screen, cx);
+        let gallery = screen.read_with(cx, |s, _| first_heading(s.snapshot().unwrap().root()));
+        // The old fixed list (gallery, elements, contact) never routed it: the route is now the
+        // kernel's, not a list.
+        screen.update(cx, |s, cx| s.follow("/page/a-hosts-own", cx));
+        settle(&screen, cx);
+        let elements = screen.read_with(cx, |s, _| {
+            assert!(s.message().is_empty(), "{}", s.message());
+            first_heading(s.snapshot().unwrap().root())
+        });
+        assert_ne!(elements, gallery);
+        assert_eq!(elements.as_deref(), Some("A host's own screen"));
+        // Not a screen name: refused before the worker sees it, and the screen stays.
+        for href in ["/page/../secret", "/page/", "/page/a:b", "/elsewhere"] {
+            screen.update(cx, |s, cx| s.follow(href, cx));
+            settle(&screen, cx);
+            screen.read_with(cx, |s, _| {
+                assert_eq!(s.message(), format!("No native route for {href}"));
+                assert_eq!(first_heading(s.snapshot().unwrap().root()), elements);
+            });
+        }
+        // A screen name the kernel has no screen for: the kernel's refusal, the screen stays.
+        screen.update(cx, |s, cx| s.follow("/page/no-such-screen", cx));
+        settle(&screen, cx);
+        screen.read_with(cx, |s, _| {
+            assert!(!s.message().is_empty() && !s.message().starts_with("Loading"));
+            assert_eq!(first_heading(s.snapshot().unwrap().root()), elements);
+        });
     }
 }

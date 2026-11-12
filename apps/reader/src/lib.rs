@@ -8,7 +8,9 @@
 //! | `urn:iki:ui:screen:name:feeds:source` | the feeds screen's outline |
 //! | `urn:iki:ui:screen:name:feed-{layer}:source` | one feed's screen, an outline referencing it |
 //! | `urn:iki:reader:feeds` | a UI node: the descriptor's public feeds, each a link to its screen |
-//! | `urn:iki:reader:feed:{layer}` | a UI node: the feed's entries, newest first, Markdown as text kinds |
+//! | `urn:iki:reader:feed:{layer}` | a UI node: the feed's entries, newest first, each a link to its screen |
+//! | `urn:iki:ui:screen:name:entry-{layer}-{seq}:source` | one entry's screen, an outline referencing it |
+//! | `urn:iki:reader:entry:{layer}:{seq}` | a UI node: one entry, its Markdown as text kinds |
 //!
 //! The app is a STRANGER to the host: its [`Identity`] is its own fresh client certificate,
 //! kept in its config home with owner-only permissions; it joins the public feeds through the
@@ -381,7 +383,7 @@ impl Reader {
                 })
             })
             .collect();
-        entries.sort_by(|a, b| b.seq.cmp(&a.seq));
+        entries.sort_by_key(|e| std::cmp::Reverse(e.seq));
         Ok(entries)
     }
 }
@@ -557,9 +559,11 @@ pub fn feed_node(reader: &Reader, layer: &str) -> Result<Value, Error> {
             if let Some(created) = &e.created {
                 children.push(node("text", json!({ "content": created }), vec![]));
             }
-            if let Some(body) = &e.body {
-                children.extend(markdown(body));
-            }
+            children.push(node(
+                "link",
+                json!({ "label": format!("Read {title}"), "href": format!("/page/{}", entry_screen(layer, e.seq)) }),
+                vec![],
+            ));
             node("group", json!({ "label": title }), children)
         })
         .collect();
@@ -568,6 +572,44 @@ pub fn feed_node(reader: &Reader, layer: &str) -> Result<Value, Error> {
         json!({ "label": "Entries, newest first" }),
         groups,
     ))
+}
+
+/// The screen name of one entry: `entry-{layer}-{seq}`. A seq has no `-`, so it is the text
+/// after the last `-`, whatever `-`s the layer's name holds.
+pub fn entry_screen(layer: &str, seq: u64) -> String {
+    format!("entry-{layer}-{seq}")
+}
+
+/// `entry-{layer}-{seq}`'s layer and seq, if it names one.
+fn parse_entry(key: &str) -> Option<(&str, u64)> {
+    let (layer, seq) = key.rsplit_once('-')?;
+    Some((layer, seq.parse().ok()?))
+}
+
+/// The UI node `urn:iki:reader:entry:{layer}:{seq}` answers: the entry's title, when the host
+/// stamped it, and its Markdown as text kinds.
+pub fn entry_node(reader: &Reader, layer: &str, seq: u64) -> Result<Value, Error> {
+    let e = reader
+        .entries(layer)?
+        .into_iter()
+        .find(|e| e.seq == seq)
+        .ok_or_else(|| Error::NotFound(format!("urn:layer:{layer} entry {seq}")))?;
+    let title = e
+        .title
+        .clone()
+        .unwrap_or_else(|| format!("Entry {}", e.seq));
+    let mut children = vec![node(
+        "heading",
+        json!({ "content": title, "level": 1 }),
+        vec![],
+    )];
+    if let Some(created) = &e.created {
+        children.push(node("text", json!({ "content": created }), vec![]));
+    }
+    if let Some(body) = &e.body {
+        children.extend(markdown(body));
+    }
+    Ok(node("group", json!({ "label": title }), children))
 }
 
 fn model(value: &Value) -> Representation {
@@ -586,6 +628,8 @@ fn text_repr(text: String) -> Representation {
 pub fn space(reader: Arc<Reader>) -> EndpointSpace {
     let feeds = reader.clone();
     let feed = reader.clone();
+    let entry = reader.clone();
+    let entry_source = reader.clone();
     let source = reader;
     EndpointSpace::new()
         .bind(
@@ -603,6 +647,32 @@ pub fn space(reader: Arc<Reader>) -> EndpointSpace {
             FnEndpoint::new("reader-feed", move |inv: &Invocation<'_>| {
                 let layer = inv.bindings.get("layer").unwrap_or_default();
                 Ok(model(&feed_node(&feed, layer)?))
+            }),
+        )
+        .bind(
+            UriTemplate::parse("urn:iki:reader:entry:{layer}:{seq}").expect("a template"),
+            FnEndpoint::new("reader-entry", move |inv: &Invocation<'_>| {
+                let layer = inv.bindings.get("layer").unwrap_or_default();
+                let seq = inv
+                    .bindings
+                    .get("seq")
+                    .unwrap_or_default()
+                    .parse()
+                    .map_err(|_| Error::NotFound(format!("urn:layer:{layer} entry")))?;
+                Ok(model(&entry_node(&entry, layer, seq)?))
+            }),
+        )
+        .bind(
+            UriTemplate::parse("urn:iki:ui:screen:name:entry-{key}:source").expect("a template"),
+            FnEndpoint::new("reader-entry-source", move |inv: &Invocation<'_>| {
+                let key = inv.bindings.get("key").unwrap_or_default();
+                let (layer, seq) = parse_entry(key)
+                    .filter(|(l, _)| entry_source.feeds().iter().any(|f| f.name == *l))
+                    .ok_or_else(|| Error::NotFound(format!("entry {key}")))?;
+                Ok(text_repr(format!(
+                    "# One entry.\ngroup label=\"Entry\"\n  nav label=\"Back\"\n    link label=\"Back to the feed\" href=/page/{feed}\n    link label=\"All feeds\" href=/page/feeds\n  reference resource=urn:iki:reader:entry:{layer}:{seq} fallback=\"This entry could not be read.\"\n",
+                    feed = feed_screen(layer),
+                )))
             }),
         )
         .bind(

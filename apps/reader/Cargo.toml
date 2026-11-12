@@ -34,6 +34,10 @@ age = { version = "0.11.1", default-features = false }
 rcgen = "0.13"
 ikigai-vocab = "0.3"
 
+# GPUI's test platform, for the window test (macOS only, as ikigai-ui-gpui's are).
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "test-support"] }
+
 [[bin]]
 name = "ikigai-reader"
 path = "src/main.rs"
