@@ -75,28 +75,30 @@ native acknowledgment; response HTML is never rendered. HTTP(S) and mail links
 open in the system handler. Demo `/page/gallery` and `/page/contact` links load
 native screens; other relative routes report that no native route exists.
 
-## The 3D scene: phase 2 (research, not shipped)
+## The 3D scene: phase 2 (ledger #3516, spike behind `scene`)
 
-Phase 1 of ledger #3514 ships the `scene` kind on the html face only. This face's descriptor
-falls `scene` back to text, so the ladder shows the scene's replacement (the same graph as
-text, a list here since `table` falls back to `list`), else its label. Two ways to draw it
-natively later, to spike before choosing:
+Phase 1 of ledger #3514 ships the `scene` kind on the html face only, and this face's
+descriptor still falls `scene` back to text (the replacement). The `scene` cargo feature (off
+by default) adds the offscreen route, `ikigai_ui_gpui::scene`: the datum is rendered with
+`wgpu` into a BGRA texture, read back, and handed over as pixels for a GPUI image.
 
-- **Offscreen `wgpu` into an image.** Render the scene datum with `wgpu` (the same fixed
-  WGSL as `urn:iki:ui:scene-renderer.js`, so both faces draw one scene) into an offscreen
-  texture, read it back, and show it as an `img` element GPUI can paint. GPUI 0.2 exposes no
-  surface for a foreign GPU context, so this is the only native route today. Costs: a second
-  GPU device beside GPUI's own (Metal on macOS), a GPU-to-CPU readback per frame while the
-  viewer orbits (fine at the gallery's size, to measure at `MAX_NODES` 512), `wgpu` in the
-  dependency tree, and keyboard orbit/select and the status announcement rebuilt on GPUI
-  focus. Selection and focus stay in GPUI; the image is only pixels, so the replacement must
-  still be reachable beside it.
-- **Take the replacement.** What phase 1 does: no GPU code, every node and edge as text, and
-  the accessible form is the only form. Costs nothing and loses the picture.
+- **One scene, two faces.** The shaders are `urn:iki:ui:scene-renderer.js`'s own:
+  `ikigai_ui::scene::wgsl` reads `NODE_WGSL` and `EDGE_WGSL` out of the script, so there is
+  no second copy to drift. The camera (yaw, pitch, distance), the keys (arrows orbit, `+`/`-`
+  zoom, N / Shift+N / Escape select) and the status sentence are the script's.
+- **Colors by role, from the shared palettes**, through the shader's uniform on both faces:
+  the ground `--bg`, nodes `--accent`, edges `--line`, the selection `--focus` (and 1.8 times
+  larger, so never color alone). Each is a pair `PAIRS` already holds (`accent`/`line`/`focus`
+  on `bg`), so no new pair.
+- **Measured** (`cargo test -p ikigai-ui-gpui --features scene --release --test scene measure
+  -- --nocapture`, Apple Silicon Mac): device and pipelines 12-32 ms once; a frame plus
+  readback 9.3 ms at 640x360 and 9.8 ms at 1280x720, the same at the gallery's 8 nodes and at
+  `MAX_NODES` (512 nodes, 1536 edges), worst of 60 under 10.2 ms. The cost is the readback's
+  round trip, not the graph. Under a 60 Hz frame (16.7 ms), so orbiting can be smooth.
 
-Recommendation: keep the replacement until GPUI offers a surface (or a custom element whose
-paint callback can sample an external texture); spike the offscreen route behind a feature
-flag first, measuring readback time at 512 nodes, before any shipping code.
+Not yet done: the walker drawing `scene` from the image (the descriptor claiming `scene` with
+the feature on, focus and key handling in the window, the status announcement, the
+replacement beside the image). Until then the replacement is the scene on this face.
 
 ## Verification
 

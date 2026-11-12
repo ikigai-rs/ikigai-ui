@@ -8,6 +8,13 @@ description = "Native GPUI walker and off-thread snapshot loader for ikigai-ui"
 repository = "https://github.com/ikigai-rs/ikigai-ui"
 publish = false
 
+[features]
+default = []
+# Draw `scene` natively (ledger #3516): the scene datum rendered offscreen with wgpu, through the
+# html face's own WGSL, read back and painted as an image. Off, `scene` falls back to its
+# replacement (the graph as text), as it did in phase 1.
+scene = ["dep:wgpu", "dep:pollster"]
+
 [dependencies]
 ikigai-ui = { path = ".." }
 ikigai-core = "0.3.0"
@@ -24,6 +31,9 @@ unicode-segmentation = "1.12"
 # GPUI's zed-async-tar -> xattr 0.2 still uses Linux ENOATTR, removed in
 # libc 0.2.190. Keep that compatible until GPUI updates its tar dependency.
 libc = "=0.2.189"
+# The `scene` feature's offscreen renderer (ledger #3516): a second GPU device beside GPUI's own.
+wgpu = { version = "25", optional = true, default-features = false, features = ["metal", "vulkan", "wgsl"] }
+pollster = { version = "0.4", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # ★ `font-kit` is GPUI's macOS text system. It is a DEFAULT feature, so turning defaults off
