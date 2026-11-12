@@ -99,8 +99,9 @@ pub const HINT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:hint:";
 
 /// The compiled-in templates of the presentation hints the html descriptor claims (`hints`):
 /// a `choice` as radio buttons, a `<fieldset>` with its `<legend>`, and each of its options as
-/// one radio input with its label (ledger #3537, [`model::RADIO`]).
-pub const HINT_TEMPLATES: [crate::Artifact; 2] = [
+/// one radio input with its label (ledger #3537, [`model::RADIO`]); groups as wrapping columns;
+/// and plain GET navigation forms, which must not swap a page into the form alone.
+pub const HINT_TEMPLATES: [crate::Artifact; 4] = [
     crate::Artifact {
         iri: "urn:iki:ui:template:hint:choice-radio",
         id: "ui-template-hint",
@@ -114,6 +115,20 @@ pub const HINT_TEMPLATES: [crate::Artifact; 2] = [
         file: "template/hint/option-radio.html",
         media_type: crate::HTML,
         bytes: include_bytes!("../assets/template/hint/option-radio.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:group-columns",
+        id: "ui-template-hint",
+        file: "template/hint/group-columns.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/group-columns.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:form-navigation",
+        id: "ui-template-hint",
+        file: "template/hint/form-navigation.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/form-navigation.html"),
     },
 ];
 
@@ -278,7 +293,12 @@ async fn screen(inv: &Invocation<'_>) -> Result<Node, Error> {
     let node = if descriptor.hints.iter().any(|ns| ns == model::CHOICE_HINTS) {
         node
     } else {
-        without_choice_hints(node)
+        without_hint_namespace(node, model::CHOICE_HINTS)
+    };
+    let node = if descriptor.hints.iter().any(|ns| ns == model::GROUP_HINTS) {
+        node
+    } else {
+        without_hint_namespace(node, model::GROUP_HINTS)
     };
     // A descriptor that does not claim `scene` (a host serving no WebGPU renderer) takes the
     // ladder's next rung for each one: its replacement, else its label as text (ledger #3514).
@@ -288,15 +308,16 @@ async fn screen(inv: &Invocation<'_>) -> Result<Node, Error> {
     Ok(without_scenes(node))
 }
 
-fn without_choice_hints(mut node: Node) -> Node {
-    node.hint
-        .retain(|key, _| !key.starts_with(model::CHOICE_HINTS));
+fn without_hint_namespace(mut node: Node, namespace: &str) -> Node {
+    node.hint.retain(|key, _| !key.starts_with(namespace));
     node.children = node
         .children
         .into_iter()
-        .map(without_choice_hints)
+        .map(|n| without_hint_namespace(n, namespace))
         .collect();
-    node.replacement = node.replacement.map(|r| Box::new(without_choice_hints(*r)));
+    node.replacement = node
+        .replacement
+        .map(|r| Box::new(without_hint_namespace(*r, namespace)));
     node
 }
 
@@ -411,6 +432,15 @@ async fn view(
         "option" if in_choice.is_some_and(model::is_radio) => "option-radio",
         "option" if in_choice.is_none() => "text",
         "choice" if model::is_radio(node) => "choice-radio",
+        "group" if model::is_columns(node) => "group-columns",
+        // A read-only form without a Sink resource navigates. Enhancing it with
+        // hx-target=this would put the returned page inside the controls alone.
+        "form"
+            if property(node, "method").as_deref() == Some("get")
+                && !node.properties.contains_key("resource") =>
+        {
+            "form-navigation"
+        }
         kind => kind,
     };
     let mut vars = Bindings::new();

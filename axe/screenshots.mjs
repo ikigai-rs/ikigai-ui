@@ -31,6 +31,22 @@ const MAX_HEIGHT = 1400;
 
 // Each shot: a page, what to do on it, and what to capture (a selector, or the page).
 const SHOTS = [
+  {
+    name: "lens-board-page-2",
+    path: "/lens/name/demo-board/resource/urn%3Aiki%3Aui%3Aexample%3Agraph%3Alenses",
+    act: async (page) => {
+      await page.getByLabel("Column page (1–1000)").fill("2");
+      await page.getByRole("checkbox", { name: "Status: Todo", exact: true }).check();
+      await page.getByRole("button", { name: "Show", exact: true }).click();
+      await page.waitForURL("**page=2**");
+      await page.getByText("Page 2 of 2; 4 cards in this answer.", { exact: true }).waitFor();
+      const todo = page.locator('.ui-columns > section[aria-label="Todo"]');
+      if (await todo.getByRole("link", { name: "Thread renderer", exact: true }).count()
+          || !(await todo.getByRole("link", { name: "Timeline renderer", exact: true }).count())) {
+        throw new Error("the board did not page within its Todo column");
+      }
+    },
+  },
   { name: "gallery", path: "/page/gallery" },
   { name: "elements", path: "/page/elements" },
   {

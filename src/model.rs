@@ -294,6 +294,17 @@ pub fn is_radio(node: &Node) -> bool {
     node.kind == "choice" && node.hint.get(RADIO) == Some(&Hint::Plain(Value::Text("radio".into())))
 }
 
+/// Presentation hints for ordinary groups. Faces which do not claim them keep
+/// the usual stacked group, preserving its children and reading order.
+pub const GROUP_HINTS: &str = "urn:iki:ui:hint:group:";
+/// Lay out a group's children as columns, wrapping on narrow screens.
+pub const COLUMNS: &str = "urn:iki:ui:hint:group:columns";
+/// Whether this group requests a column layout.
+pub fn is_columns(node: &Node) -> bool {
+    node.kind == "group"
+        && node.hint.get(COLUMNS) == Some(&Hint::Plain(Value::Text("columns".into())))
+}
+
 /// The presentation hints a list item or a table row takes (ledger #3521), read by every face
 /// that claims this namespace and dropped by every other: the row's TEXT says the same, so a face
 /// without them loses a line or a color, never the meaning.

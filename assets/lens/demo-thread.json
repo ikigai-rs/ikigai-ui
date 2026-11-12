@@ -1,0 +1,8 @@
+{
+  "renderer": "thread",
+  "bound": 3,
+  "legend": "Demo thread",
+  "graphs": [
+    "urn:iki:ui:example:graph:lenses"
+  ]
+}

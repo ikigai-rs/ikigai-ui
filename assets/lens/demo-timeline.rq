@@ -1,0 +1,6 @@
+PREFIX ex: <urn:iki:ui:example:lenses:>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?focus ?item ?label ?time WHERE {
+ GRAPH ?focus { ?item a ex:Reply ; rdfs:label ?label ; ex:time ?time }
+} ORDER BY ?time ?item

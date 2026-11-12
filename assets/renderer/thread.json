@@ -1,0 +1,139 @@
+{
+  "kind": "group",
+  "properties": {
+    "label": "{legend}"
+  },
+  "children": [
+    {
+      "kind": "text",
+      "properties": {
+        "content": "Replies form a tree. Past {bound} nodes per thread, each thread shows its root and first and last replies with a count. Participants and selection remain lists. A missing parent starts a new thread."
+      }
+    },
+    {
+      "kind": "group",
+      "properties": {
+        "label": "Reply tree and participants"
+      },
+      "hint": {
+        "urn:iki:ui:hint:group:columns": "columns"
+      },
+      "children": [
+        {
+          "kind": "group",
+          "properties": {
+            "label": "Reply tree"
+          },
+          "children": [
+            {
+              "kind": "heading",
+              "properties": {
+                "content": "Replies",
+                "level": 3
+              }
+            },
+            {
+              "kind": "list",
+              "properties": {
+                "label": "Threads"
+              },
+              "children": [
+                {
+                  "hierarchy": "replyTo",
+                  "id": "item",
+                  "collapse": true,
+                  "each": {
+                    "kind": "group",
+                    "properties": {
+                      "label": "{?label}"
+                    },
+                    "children": [
+                      {
+                        "kind": "link",
+                        "properties": {
+                          "label": "{?label}",
+                          "href": "{home:?item}"
+                        }
+                      },
+                      {
+                        "kind": "text",
+                        "properties": {
+                          "content": "{?count} descendants in this answer"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "group",
+          "properties": {
+            "label": "Thread participants"
+          },
+          "children": [
+            {
+              "kind": "heading",
+              "properties": {
+                "content": "Participants",
+                "level": 3
+              }
+            },
+            {
+              "kind": "list",
+              "properties": {
+                "label": "Participants"
+              },
+              "children": [
+                {
+                  "repeat": "rows",
+                  "each": {
+                    "kind": "link",
+                    "properties": {
+                      "label": "{?participantName}",
+                      "href": "{home:?participant}"
+                    }
+                  },
+                  "distinct": "participant",
+                  "window": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "heading",
+      "properties": {
+        "content": "Selection",
+        "level": 3
+      }
+    },
+    {
+      "kind": "list",
+      "properties": {
+        "label": "Selection: resources in this answer"
+      },
+      "children": [
+        {
+          "repeat": "rows",
+          "each": {
+            "kind": "link",
+            "properties": {
+              "label": "{?label} \u2014 {?item}",
+              "href": "{home:?item}"
+            }
+          },
+          "window": true,
+          "distinct": "item"
+        }
+      ]
+    },
+    {
+      "past": "Showing the first 1000 result rows; more rows exist beyond this answer window. Counts and thread endpoints describe this window only. Narrow the query or use facets for the rest."
+    }
+  ]
+}

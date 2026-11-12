@@ -757,6 +757,225 @@ fn a_lensed_view_is_a_page_in_the_shell() {
     .is_err());
 }
 
+#[test]
+fn stage_two_named_renderers_are_available_over_demo_queries() {
+    let kernel = common::host(None);
+    for name in ["thread", "board", "tree", "timeline"] {
+        let n = view(
+            &kernel,
+            &format!("demo-{name}"),
+            ikigai_ui::lens::DEMO_GRAPH,
+            &Capability::root(),
+        )
+        .unwrap_or_else(|e| panic!("{name} lens must render: {e}"));
+        assert!(
+            !of(&n, "link").is_empty(),
+            "{name} retains linked selections"
+        );
+    }
+}
+
+fn labeled<'a>(n: &'a Node, label: &str) -> &'a Node {
+    fn find<'a>(n: &'a Node, label: &str) -> Option<&'a Node> {
+        if n.properties.get("label").is_some_and(|v| text(v) == label) {
+            return Some(n);
+        }
+        n.children.iter().find_map(|c| find(c, label))
+    }
+    find(n, label).unwrap_or_else(|| panic!("missing {label}: {n:?}"))
+}
+
+fn labels(n: &Node) -> Vec<String> {
+    of(n, "link")
+        .iter()
+        .map(|n| text(&n.properties["label"]))
+        .collect()
+}
+
+fn demo_view(kernel: &ikigai_core::Kernel, name: &str, args: &[(&str, &str)]) -> Node {
+    let mut req = Request::new(
+        Verb::Source,
+        Iri::parse(view_iri(name, ikigai_ui::lens::DEMO_GRAPH)).unwrap(),
+    );
+    for (k, v) in args {
+        req = req.with_arg(*k, ikigai_core::ArgRef::Inline(v.as_bytes().to_vec()));
+    }
+    let rep = block_on(kernel.issue(req, &Capability::root())).unwrap();
+    serde_json::from_slice(&rep.bytes).unwrap()
+}
+
+#[test]
+fn a_long_thread_keeps_its_root_first_and_last_replies_and_participants() {
+    let n = demo_view(&common::host(None), "demo-thread", &[]);
+    let threads = labeled(&n, "Threads");
+    let links = labels(threads);
+    assert!(links.contains(&"How should we render results?".into()));
+    assert!(links.contains(&"Use named templates".into()));
+    assert!(links.contains(&"Ready for review".into()));
+    assert!(!links.contains(&"Keep the links".into()));
+    assert!(said(threads).contains("4 replies"));
+    let mut participants = labels(labeled(&n, "Participants"));
+    participants.sort();
+    assert_eq!(participants, ["Ada", "Brian"]);
+    assert_eq!(
+        labels(labeled(&n, "Selection: resources in this answer")).len(),
+        6
+    );
+}
+
+#[test]
+fn board_columns_page_and_a_facet_is_bound_as_a_term() {
+    let host = common::host(None);
+    let first = demo_view(&host, "demo-board", &[]);
+    let second = demo_view(&host, "demo-board", &[("page", "2")]);
+    let first_todo = labels(labeled(&first, "Todo"));
+    let second_todo = labels(labeled(&second, "Todo"));
+    assert!(first_todo.contains(&"Thread renderer".into()));
+    assert!(!first_todo.contains(&"Timeline renderer".into()));
+    assert!(second_todo.contains(&"Timeline renderer".into()));
+    assert!(!second_todo.contains(&"Thread renderer".into()));
+    assert!(said(labeled(&second, "Todo")).contains("Page 2 of 2; 4 cards"));
+    assert!(labels(labeled(&second, "Doing")).is_empty());
+    let filtered = demo_view(
+        &host,
+        "demo-board",
+        &[("onlyStatus", "Todo"), ("page", "2")],
+    );
+    assert_eq!(
+        labels(labeled(&filtered, "Selection: resources in this answer")).len(),
+        4
+    );
+    assert!(!format!("{filtered:?}").contains("Review accessibility"));
+    let screen = format!("lens:demo-board:resource:{}", ikigai_ui::lens::DEMO_GRAPH);
+    let page = html(
+        &host,
+        &screen,
+        &[
+            ("lens", "demo-board"),
+            ("page", "2"),
+            ("onlyStatus", "Todo"),
+        ],
+    );
+    assert!(page.contains("Page 2 of 2"));
+    assert!(checked_box(&page));
+    assert!(page.contains("name=\"page\""));
+    assert!(
+        !page.contains("hx-get="),
+        "lens GET controls navigate the page"
+    );
+    assert!(page.contains("ui-columns"));
+    assert!(page.contains("Timeline renderer"));
+}
+
+#[test]
+fn a_tree_counts_all_descendants_and_discloses_its_display_bound() {
+    let n = demo_view(&common::host(None), "demo-tree", &[]);
+    let tree = labeled(&n, "Hierarchy");
+    assert!(said(tree).contains("5 descendants in this answer"));
+    assert!(said(tree).contains("3 descendants in this answer"));
+    assert!(said(tree).contains("Hierarchy bound reached"));
+    assert_eq!(
+        labels(labeled(&n, "Selection: resources in this answer")).len(),
+        6
+    );
+}
+
+#[test]
+fn timeline_days_and_rows_follow_time() {
+    let n = demo_view(&common::host(None), "demo-timeline", &[]);
+    assert_eq!(
+        labels(labeled(&n, "2026-11-10")),
+        [
+            "How should we render results?",
+            "Use named templates",
+            "Keep the links"
+        ]
+    );
+    assert_eq!(
+        labels(labeled(&n, "2026-11-11")),
+        [
+            "Group the work by status",
+            "Ready for review",
+            "A second discussion"
+        ]
+    );
+}
+
+#[test]
+fn every_structured_renderer_says_when_its_graph_is_withheld() {
+    let mut space = host_lenses();
+    for renderer in ["thread", "board", "tree", "timeline"] {
+        space = lens(
+            space,
+            &format!("secret-{renderer}"),
+            &format!(
+                r#"{{"renderer":"{renderer}","bound":3,"legend":"Private","graphs":["{SECRET}"]}}"#
+            ),
+            "SELECT ?focus ?item WHERE { GRAPH ?focus { ?item ?p ?o } }",
+        );
+    }
+    let kernel = common::host_with(None, vec![Arc::new(space)]);
+    for renderer in ["thread", "board", "tree", "timeline"] {
+        let n = view(
+            &kernel,
+            &format!("secret-{renderer}"),
+            SECRET,
+            &Capability::scoped(std::iter::empty::<&str>()),
+        )
+        .unwrap();
+        assert!(said(&n).contains("withheld"), "{renderer}: {n:?}");
+    }
+}
+
+#[test]
+fn lensed_page_links_round_trip_for_native_navigation() {
+    use ikigai_ui::lens::{html_href, screen_from_href, screen_name, Selection};
+    let chosen = Selection::from([
+        ("page".into(), "2".into()),
+        ("onlyStatus".into(), "Todo".into()),
+    ]);
+    let href = html_href("demo-board", ikigai_ui::lens::DEMO_GRAPH, &chosen);
+    assert_eq!(
+        screen_from_href(&href).unwrap(),
+        screen_name("demo-board", ikigai_ui::lens::DEMO_GRAPH, &chosen)
+    );
+    for bad in [
+        "https://evil.example",
+        "/lens/name/../resource/urn:x",
+        "/lens/name/tree/resource/%zz",
+        "/lens/name/tree/resource/urn:x%3Fy",
+    ] {
+        assert!(screen_from_href(bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn every_structured_selection_and_related_iri_uses_the_home_mapping() {
+    let homes = EndpointSpace::new().bind(
+        Exact::new(ikigai_ui::lens::HOME_TABLE),
+        fixed(
+            "demo-homes",
+            "application/json",
+            r#"[{"prefix":"urn:iki:ui:example:lenses:","href":"https://example.com/resources/"}]"#
+                .into(),
+        ),
+    );
+    let kernel = common::host_with(None, vec![Arc::new(homes)]);
+    for name in ["demo-thread", "demo-board", "demo-tree", "demo-timeline"] {
+        let n = demo_view(&kernel, name, &[]);
+        let selection = labeled(&n, "Selection: resources in this answer");
+        assert!(of(selection, "link")
+            .iter()
+            .all(|n| text(&n.properties["href"]).starts_with("https://example.com/resources/")));
+        for link in of(&n, "link").into_iter().filter(|l| {
+            text(&l.properties["label"]).starts_with("Assignee:")
+                || text(&l.properties["label"]).starts_with("Related:")
+        }) {
+            assert!(text(&link.properties["href"]).starts_with("https://example.com/resources/"));
+        }
+    }
+}
+
 // Lenses 3 (ledger #3520): a lens whose renderer is `construct` builds the UI model itself.
 
 /// The rendered view's body: the node after the lensed view's heading, link and form.
@@ -1229,6 +1448,7 @@ fn a_role_the_query_leaves_empty_is_no_hint() {
         legend: "L",
         focus: "urn:x",
         bound: 5,
+        page: 1,
         rows: &rows,
         edges: &Default::default(),
         home: &Default::default(),

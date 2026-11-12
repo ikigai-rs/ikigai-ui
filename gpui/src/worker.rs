@@ -65,15 +65,25 @@ impl Worker {
         let this = self.clone();
         let screen = screen.to_string();
         spawn(move || {
-            // A screen name is one binding, not an arbitrary resource supplied by a node.
-            if screen.is_empty()
-                || !screen
+            // Simple host screen names, or a canonical lensed screen validated by the
+            // same route decoder as HTML. Neither path accepts an arbitrary resource.
+            let lensed = ikigai_ui::lens::parse_screen(&screen)
+                .and_then(Result::ok)
+                .and_then(|(name, chosen, resource)| {
+                    ikigai_ui::lens::screen_from_href(&ikigai_ui::lens::html_href(
+                        &name, &resource, &chosen,
+                    ))
+                    .ok()
+                })
+                .is_some_and(|canonical| canonical == screen);
+            let simple = !screen.is_empty()
+                && screen
                     .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-            {
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+            if !simple && !lensed {
                 return Err(Error::InvalidArgument {
                     name: "screen".into(),
-                    detail: "expected a screen name".into(),
+                    detail: "expected a screen name or canonical lensed screen".into(),
                 });
             }
             let iri = Iri::parse(format!("urn:iki:ui:face:target:gpui:screen:{screen}"))

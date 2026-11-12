@@ -1,0 +1,122 @@
+{
+  "kind": "group",
+  "properties": {
+    "label": "{legend}"
+  },
+  "children": [
+    {
+      "kind": "text",
+      "properties": {
+        "content": "Columns group by status. Each column pages {bound} cards at a time; choose Column page and Show. Short columns may have no cards on later pages."
+      }
+    },
+    {
+      "kind": "group",
+      "properties": {
+        "label": "Status columns"
+      },
+      "hint": {
+        "urn:iki:ui:hint:group:columns": "columns"
+      },
+      "children": [
+        {
+          "repeat": "rows",
+          "each": {
+            "kind": "group",
+            "properties": {
+              "label": "{?status}"
+            },
+            "children": [
+              {
+                "kind": "heading",
+                "properties": {
+                  "content": "{?status}",
+                  "level": 3
+                }
+              },
+              {
+                "kind": "text",
+                "properties": {
+                  "content": "Page {page} of {?pages}; {?groupCount} cards in this answer."
+                }
+              },
+              {
+                "repeat": "group",
+                "each": {
+                  "kind": "group",
+                  "properties": {
+                    "label": "{?label}"
+                  },
+                  "children": [
+                    {
+                      "kind": "list",
+                      "properties": {
+                        "label": "Card links"
+                      },
+                      "children": [
+                        {
+                          "kind": "link",
+                          "properties": {
+                            "label": "{?label}",
+                            "href": "{home:?item}"
+                          }
+                        },
+                        {
+                          "kind": "link",
+                          "properties": {
+                            "label": "Assignee: {?assigneeName}",
+                            "href": "{home:?assignee}"
+                          }
+                        },
+                        {
+                          "kind": "link",
+                          "properties": {
+                            "label": "Related: {?related}",
+                            "href": "{home:?related}"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "page": true
+              }
+            ]
+          },
+          "group": "status",
+          "order": "status"
+        }
+      ]
+    },
+    {
+      "kind": "heading",
+      "properties": {
+        "content": "Selection",
+        "level": 3
+      }
+    },
+    {
+      "kind": "list",
+      "properties": {
+        "label": "Selection: resources in this answer"
+      },
+      "children": [
+        {
+          "repeat": "rows",
+          "each": {
+            "kind": "link",
+            "properties": {
+              "label": "{?label} \u2014 {?item}",
+              "href": "{home:?item}"
+            }
+          },
+          "window": true,
+          "distinct": "item"
+        }
+      ]
+    },
+    {
+      "past": "Showing the first 1000 result rows; more rows exist beyond this answer window. Counts and thread endpoints describe this window only. Narrow the query or use facets for the rest."
+    }
+  ]
+}

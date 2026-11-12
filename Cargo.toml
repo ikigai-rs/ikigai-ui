@@ -53,6 +53,9 @@ ikigai-a11y = "0.6.0"
 # The UI model's JSON face (ledger #3352), and the test kit's vectors reader. 1.0 is every
 # serde_json there is.
 serde_json = "1.0"
+# Lens time ordering and UTC day grouping, including dateTime offsets; no clock or
+# platform time-zone data, so the library remains wasm-clean.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 # The UI model's types.
 serde = { version = "1.0", features = ["derive"] }
 # A region's narrowed space is named by the SHA-256 of what it binds (ledger #3361).

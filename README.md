@@ -290,6 +290,49 @@ There is no sign-in yet: the door grants every request a write to the contact se
 nothing else. Sign-in comes later (#2169). The submissions live in memory and are gone
 when the process stops. `demo/tests/door.rs` drives the door end to end.
 
+## Lenses
+
+A lens pairs a read-only SPARQL query with a named renderer template. The templates
+are JSON data, expanded into ordinary core nodes; HTML and GPUI use the same screen,
+radio lens chooser, linked selection, and checkbox facets. Queries still run under
+the caller's capability and the store's time and answer budgets. A denied graph is
+reported as withheld in words.
+
+The four structured examples are attached to `urn:iki:ui:example:graph:lenses` by
+`lens::examples()`, which the demo installs. Open, for example,
+`http://127.0.0.1:8080/lens/name/demo-board/resource/urn%3Aiki%3Aui%3Aexample%3Agraph%3Alenses`.
+The chooser opens the other examples. On macOS, open the same screen natively with:
+
+```sh
+cargo run -p ikigai-ui-gpui --bin ikigai-ui-demo-native -- 127.0.0.1:8080 light \
+  lens:demo-board:resource:urn:iki:ui:example:graph:lenses
+```
+
+| Template | Projected columns | Behavior past the display bound |
+| --- | --- | --- |
+| `thread` | `item`, `label`, optional `replyTo`, `participant`, `participantName`, `time` | Each long thread keeps its root and first and last replies, ordered by time, with a reply count. Participants remain a separate list. |
+| `board` | `item`, `label`, `status`, `assignee`, `assigneeName`, `related` | Status columns page independently within their own rows, using the same one-based **Column page** control. Each reports its page count; short columns can be empty on later pages. |
+| `tree` | `item`, `label`, optional `broader` | Counts unique descendants in the answer. Stops after the display bound or 16 levels, says where it stopped, and keeps links in Selection. Cycles are disclosed. Map SKOS broader/narrower or `rdfs:subClassOf` onto `broader` in the query. |
+| `timeline` | `item`, `label`, `time` | Orders RFC 3339 instants, normalizes day groups to UTC, and shows the first bounded rows per day. Missing or invalid dates go under Undated. |
+
+These renderers read an answer window of at most 1000 rows (plus one to detect
+more); the display bound applies inside that window. Counts and first/last replies
+describe the window, not an unseen dataset. An overflow notice says when the window
+is incomplete. Explicit query LIMITs and stricter store budgets still apply. Every
+result item remains in the linked Selection list through the home mapping. Narrow
+large answers with queries or facets. Board paging is a presentation parameter,
+not SPARQL text, and preserves selected facets.
+
+The bounded template operations are documented in [`lens`](src/lens.rs): grouped
+repeats, distinct values, ordered UTC day groups, and an identity/parent hierarchy.
+`urn:iki:ui:hint:group:columns` asks a face to wrap a group's children as columns;
+a face without that hint keeps their stacked reading order. GET navigation forms
+work with or without browser script and navigate through the native snapshot worker
+in GPUI. Renderer assets, example queries, and the demo fixture live in
+[`assets/renderer`](assets/renderer) and [`assets/lens`](assets/lens).
+
+![The board after choosing page two and the Todo facet, showing its fourth task.](docs/screenshots/lens-board-page-2-light.webp)
+
 ## The test kit
 
 `ikigai-ui = { version = "0.5", features = ["testkit"] }` as a dev-dependency gives a UI repo:

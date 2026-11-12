@@ -1,0 +1,77 @@
+{
+  "kind": "group",
+  "properties": {
+    "label": "{legend}"
+  },
+  "children": [
+    {
+      "kind": "text",
+      "properties": {
+        "content": "Hierarchy by broader/parent: counts are unique descendants in this answer. Past {bound} nodes or 16 levels, branches stop with words; every result remains in Selection. Cycles are disclosed. A missing parent starts a root."
+      }
+    },
+    {
+      "kind": "list",
+      "properties": {
+        "label": "Hierarchy"
+      },
+      "children": [
+        {
+          "hierarchy": "broader",
+          "id": "item",
+          "each": {
+            "kind": "group",
+            "properties": {
+              "label": "{?label}"
+            },
+            "children": [
+              {
+                "kind": "link",
+                "properties": {
+                  "label": "{?label}",
+                  "href": "{home:?item}"
+                }
+              },
+              {
+                "kind": "text",
+                "properties": {
+                  "content": "{?count} descendants in this answer"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "kind": "heading",
+      "properties": {
+        "content": "Selection",
+        "level": 3
+      }
+    },
+    {
+      "kind": "list",
+      "properties": {
+        "label": "Selection: resources in this answer"
+      },
+      "children": [
+        {
+          "repeat": "rows",
+          "each": {
+            "kind": "link",
+            "properties": {
+              "label": "{?label} \u2014 {?item}",
+              "href": "{home:?item}"
+            }
+          },
+          "window": true,
+          "distinct": "item"
+        }
+      ]
+    },
+    {
+      "past": "Showing the first 1000 result rows; more rows exist beyond this answer window. Counts and thread endpoints describe this window only. Narrow the query or use facets for the rest."
+    }
+  ]
+}

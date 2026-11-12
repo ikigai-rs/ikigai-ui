@@ -1,0 +1,8 @@
+{
+  "renderer": "tree",
+  "bound": 3,
+  "legend": "Demo tree",
+  "graphs": [
+    "urn:iki:ui:example:graph:lenses"
+  ]
+}

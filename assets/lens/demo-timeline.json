@@ -1,0 +1,8 @@
+{
+  "renderer": "timeline",
+  "bound": 3,
+  "legend": "Demo timeline",
+  "graphs": [
+    "urn:iki:ui:example:graph:lenses"
+  ]
+}
