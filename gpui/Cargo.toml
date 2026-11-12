@@ -26,6 +26,10 @@ unicode-segmentation = "1.12"
 libc = "=0.2.189"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# ★ `font-kit` is GPUI's macOS text system. It is a DEFAULT feature, so turning defaults off
+# above dropped it, and GPUI then installs `NoopTextSystem`: every window drew its boxes and no
+# text at all (headings, labels, button captions), while the test platform's snapshots passed.
+gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "font-kit"] }
 ikigai-ui-demo = { path = "../demo" }
 tokio = { version = "1", features = ["rt", "net"] }
 ikigai-web = "0.5.0"
