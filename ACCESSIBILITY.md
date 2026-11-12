@@ -8,6 +8,7 @@ test, not a review.
 |---|---|
 | Text contrast 4.5:1, component borders (`--line`) and focus ring 3:1, in light and dark; decorative rules (`--rule`, exempt from SC 1.4.11) at least 1.3:1; 7:1 for every pair in high contrast | `tests/palettes.rs`, through ikigai-a11y, over the palette tables |
 | No color outside the palette tables; every `var(--x)` defined | `tests/palettes.rs`, the test kit's lints |
+| A palette a host rebinds is parsed as a table and held to the same floor before either face draws with it: a value that is not `#rrggbb`, an unknown token or a pair below its floor is refused, naming it | `tests/palettes.rs` (rebound palettes through `tokens.css`), `gpui/src/theme.rs` |
 | Landmarks: a skip link, one `<header>`, one `<main id="main" tabindex="-1">`, one status region | `tests/pages.rs` |
 | One live region: an in-place note has no role; its control points at it with `aria-describedby` (removed when the note goes), and `#status` says the sentence, naming the control | `tests/shell.rs`, `axe/shell-smoke.mjs` |
 | Focus after a swap: a swap into `#main` focuses its first heading; a swap that took the focused element never leaves focus on `<body>`; on a page nobody has focused, a poll or a lazily loaded region leaves focus on `<body>` and the scroll where it was | `axe/shell-smoke.mjs`, in Chromium |
