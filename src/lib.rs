@@ -670,6 +670,14 @@ pub fn space() -> EndpointSpace {
             lens::view_endpoint(),
         )
         .bind(
+            Exact::new(format!("{}{}", lens::NAME, lens::DEFAULT)),
+            lens::default_lens(),
+        )
+        .bind(
+            Exact::new(format!("{}{}:query", lens::NAME, lens::DEFAULT)),
+            lens::default_query(),
+        )
+        .bind(
             template(&format!("{}{{iri}}", view::RESOURCE)),
             view::endpoint("ui-view-resource", true),
         )

@@ -42,8 +42,8 @@
 use std::collections::BTreeMap;
 
 use ikigai_core::{
-    ArgRef, AsyncFnEndpoint, Description, Error, Invocation, InvokeFuture, Iri, ReprType,
-    Representation, Request, Verb,
+    ArgRef, AsyncFnEndpoint, Description, EndpointSpace, Error, Exact, FnEndpoint, Invocation,
+    InvokeFuture, Iri, ReprType, Representation, Request, Verb,
 };
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
@@ -76,6 +76,35 @@ pub const MAX_BOUND: usize = 1000;
 pub const MAX_BYTES: usize = 64 * 1024;
 /// The SPARQL result media type.
 pub const RESULTS: &str = "application/sparql-results+json";
+
+const XSD_ANY_URI: &str = "http://www.w3.org/2001/XMLSchema#anyURI";
+
+/// The lens every resource has last, compiled in: its JSON and its query.
+pub const DEFAULT_LENS: (&str, &str) = (
+    include_str!("../assets/lens/graph.json"),
+    include_str!("../assets/lens/graph.rq"),
+);
+
+/// The example lenses over the contact graph ([`crate::scene::EXAMPLE_GRAPH`]), one per renderer:
+/// (name, lens, query). Shipped by this crate, which owns that graph; a host places
+/// [`examples`].
+pub const EXAMPLES: [(&str, &str, &str); 3] = [
+    (
+        "contact-graph",
+        include_str!("../assets/lens/contact-graph.json"),
+        include_str!("../assets/lens/contact-graph.rq"),
+    ),
+    (
+        "contact-table",
+        include_str!("../assets/lens/contact-table.json"),
+        include_str!("../assets/lens/contact-table.rq"),
+    ),
+    (
+        "contact-list",
+        include_str!("../assets/lens/contact-list.json"),
+        include_str!("../assets/lens/contact-list.rq"),
+    ),
+];
 
 /// The compiled-in renderers, by name.
 pub const RENDERERS: [(&str, &str); 3] = [
@@ -667,6 +696,15 @@ async fn result(
     let text = String::from_utf8(q.bytes)
         .map_err(|_| refuse("query", format!("{query_at} is not UTF-8")))?;
     let form = read_only(&text, &lens.services)?;
+    // The lens asks for one row past its bound, so it knows it is past it. The store REFUSES an
+    // answer past `max_rows=` rather than cutting it, so the bound is a LIMIT the lens appends to
+    // its own query (a query with its own LIMIT keeps it, inside the store's answer budget).
+    let text =
+        if form == Form::Select && !words(&text).iter().any(|w| w.eq_ignore_ascii_case("LIMIT")) {
+            format!("{text}\nLIMIT {}", lens.bound + 1)
+        } else {
+            text
+        };
     let bindings = json!({ lens.focus.clone(): {"type": "uri", "value": resource} });
     let mut request = Request::new(Verb::Source, iri(form.endpoint())?)
         .with_arg("query", ArgRef::Inline(text.into_bytes()))
@@ -675,13 +713,23 @@ async fn result(
             ArgRef::Inline(bindings.to_string().into_bytes()),
         );
     if !lens.graphs.is_empty() {
-        request = request.with_arg("graph", ArgRef::Inline(lens.graphs.join(" ").into_bytes()));
-    }
-    if form == Form::Select {
-        request = request.with_arg(
-            "max_rows",
-            ArgRef::Inline((lens.bound + 1).to_string().into_bytes()),
-        );
+        // `{focus}` names the resource itself as a source: a graph argument, resolved through
+        // the kernel under the caller's capability, never text in the query.
+        let graphs: Vec<String> = lens
+            .graphs
+            .iter()
+            .map(|g| {
+                if g == "{focus}" {
+                    resource.to_string()
+                } else {
+                    g.clone()
+                }
+            })
+            .collect();
+        for g in &graphs {
+            iri(g)?;
+        }
+        request = request.with_arg("graph", ArgRef::Inline(graphs.join(" ").into_bytes()));
     }
     inv.issue(request).await
 }
@@ -713,7 +761,9 @@ async fn lensed(inv: &Invocation<'_>, name: &str, resource: &str) -> Result<Node
         .await
     {
         Ok(r) => {
-            let rows = rows(&r.bytes, lens.bound)?;
+            let mut rows = rows(&r.bytes, lens.bound)?;
+            // The focus is the resource the view is about, said in the heading, not a column.
+            rows.vars.retain(|v| *v != lens.focus);
             let fill = Fill {
                 legend: &lens.legend,
                 focus: resource,
@@ -767,7 +817,7 @@ pub(crate) fn result_endpoint() -> AsyncFnEndpoint {
         })
     })
     .with_description(
-        Description::new("ui-lens-result").input(ikigai_core::ArgSpec::new("lens").summary("a template variable").class("http://www.w3.org/2001/XMLSchema#string").binding().example("table")).input(ikigai_core::ArgSpec::new("iri").summary("a template variable").class("http://www.w3.org/2001/XMLSchema#string").binding().example("urn:iki:ui:kind"))
+        Description::new("ui-lens-result").input(ikigai_core::ArgSpec::new("lens").summary("the lens's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("graph")).input(ikigai_core::ArgSpec::new("iri").summary("the resource").class(XSD_ANY_URI).binding().example(crate::scene::EXAMPLE_GRAPH))
             .title("A lens's result for a resource")
             .summary("The lens's read-only query run for the resource, bound as a term to its focus variable, under the caller's capability.")
             .verb(Verb::Source)
@@ -786,7 +836,7 @@ pub(crate) fn resource_endpoint() -> AsyncFnEndpoint {
         })
     })
     .with_description(
-        Description::new("ui-lens-resource").input(ikigai_core::ArgSpec::new("iri").summary("a template variable").class("http://www.w3.org/2001/XMLSchema#string").binding().example("urn:iki:ui:kind"))
+        Description::new("ui-lens-resource").input(ikigai_core::ArgSpec::new("iri").summary("the resource").class(XSD_ANY_URI).binding().example(crate::scene::EXAMPLE_GRAPH))
             .title("A resource's lenses")
             .summary("Its lens names in precedence: the instance's, the dataset's, each type's, then graph.")
             .verb(Verb::Source)
@@ -807,7 +857,7 @@ pub(crate) fn renderer_endpoint() -> AsyncFnEndpoint {
         })
     })
     .with_description(
-        Description::new("ui-renderer").input(ikigai_core::ArgSpec::new("name").summary("a template variable").class("http://www.w3.org/2001/XMLSchema#string").binding().example("table"))
+        Description::new("ui-renderer").input(ikigai_core::ArgSpec::new("name").summary("the renderer's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("graph"))
             .title("A renderer, a named template")
             .summary("A model template that repeats, boundedly, over a lens's result rows: graph, table, list.")
             .verb(Verb::Source)
@@ -834,9 +884,10 @@ pub(crate) fn home_endpoint() -> AsyncFnEndpoint {
         Description::new("ui-home")
             .input(
                 ikigai_core::ArgSpec::new("iri")
-                    .summary("a template variable")
+                    .summary("the resource")
+                    .class(XSD_ANY_URI)
                     .binding()
-                    .example("urn:iki:ui:kind"),
+                    .example(crate::scene::EXAMPLE_GRAPH),
             )
             .title("Where a resource links")
             .summary("The home mapping's longest matching prefix, else the resource's own view.")
@@ -857,12 +908,90 @@ pub(crate) fn view_endpoint() -> AsyncFnEndpoint {
         })
     })
     .with_description(
-        Description::new("ui-view-lens").input(ikigai_core::ArgSpec::new("lens").summary("a template variable").class("http://www.w3.org/2001/XMLSchema#string").binding().example("table")).input(ikigai_core::ArgSpec::new("iri").summary("a template variable").class("http://www.w3.org/2001/XMLSchema#string").binding().example("urn:iki:ui:kind"))
+        Description::new("ui-view-lens").input(ikigai_core::ArgSpec::new("lens").summary("the lens's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("graph")).input(ikigai_core::ArgSpec::new("iri").summary("the resource").class(XSD_ANY_URI).binding().example(crate::scene::EXAMPLE_GRAPH))
             .title("A resource through a lens")
             .summary("The lens's legend, a chooser among the resource's lenses, and its renderer filled with the lens's result.")
             .verb(Verb::Source)
             .output(model::MEDIA_TYPE)
             .output(model::JSON_LD),
+    )
+}
+
+fn fixed(id: &str, title: &str, media: &'static str, bytes: &'static str) -> FnEndpoint {
+    FnEndpoint::new(id, move |_: &Invocation<'_>| {
+        Ok(data(bytes.as_bytes().to_vec(), media))
+    })
+    .with_description(
+        Description::new(id)
+            .title(title)
+            .summary(title)
+            .verb(Verb::Source)
+            .output(media),
+    )
+}
+
+fn bind_lens(
+    space: EndpointSpace,
+    name: &str,
+    lens: &'static str,
+    query: &'static str,
+) -> EndpointSpace {
+    space
+        .bind(
+            Exact::new(format!("{NAME}{name}")),
+            fixed(
+                &format!("ui-lens-{name}"),
+                "A lens",
+                "application/json",
+                lens,
+            ),
+        )
+        .bind(
+            Exact::new(format!("{NAME}{name}:query")),
+            fixed(
+                &format!("ui-lens-{name}-query"),
+                "A lens's query",
+                "application/sparql-query",
+                query,
+            ),
+        )
+}
+
+/// `urn:iki:ui:lens:name:graph`: the default lens, in [`crate::space`].
+pub(crate) fn default_lens() -> FnEndpoint {
+    fixed(
+        "ui-lens-graph",
+        "The default lens",
+        "application/json",
+        DEFAULT_LENS.0,
+    )
+}
+
+/// `urn:iki:ui:lens:name:graph:query`: the default lens's query.
+pub(crate) fn default_query() -> FnEndpoint {
+    fixed(
+        "ui-lens-graph-query",
+        "The default lens's query",
+        "application/sparql-query",
+        DEFAULT_LENS.1,
+    )
+}
+
+/// The example lenses ([`EXAMPLES`]) and the contact graph's instance list, which names them.
+/// A host places it AFTER its own lenses, so a host's binding of the same name wins.
+pub fn examples() -> EndpointSpace {
+    let mut space = EndpointSpace::new();
+    for (name, lens, query) in EXAMPLES {
+        space = bind_lens(space, name, lens, query);
+    }
+    space.bind(
+        Exact::new(format!("{INSTANCE}{}", crate::scene::EXAMPLE_GRAPH)),
+        fixed(
+            "ui-lens-instance-contact",
+            "The contact graph's lenses",
+            "application/json",
+            include_str!("../assets/lens/contact-instance.json"),
+        ),
     )
 }
 

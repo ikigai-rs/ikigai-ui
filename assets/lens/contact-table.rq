@@ -1,0 +1,12 @@
+# Each field of the service: its name and whether it is required.
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX schema: <http://schema.org/>
+SELECT ?focus ?field ?name ?required WHERE {
+  GRAPH ?focus {
+    ?service schema:hasPart ?field .
+    ?field rdfs:label ?name .
+    OPTIONAL { ?field schema:valueRequired ?r }
+  }
+  BIND(COALESCE(?r, "false") AS ?required)
+}
+ORDER BY ?name

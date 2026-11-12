@@ -22,7 +22,47 @@ fn conforms() {
     });
     let root = ikigai_ui_demo::root(store);
     let kernel = ikigai_ui_demo::kernel(root.clone());
-    let report = Suite::new()
+    let mut suite = Suite::new();
+    // Lenses (ledger #3518): their data is compiled-in constants, and the example lenses run
+    // on the real urn:sparql:* the demo binds over the contact graph.
+    for id in [
+        "ui-renderer",
+        "ui-lens-graph",
+        "ui-lens-graph-query",
+        "ui-lens-contact-graph",
+        "ui-lens-contact-graph-query",
+        "ui-lens-contact-table",
+        "ui-lens-contact-table-query",
+        "ui-lens-contact-list",
+        "ui-lens-contact-list-query",
+        "ui-lens-instance-contact",
+    ] {
+        suite = suite.pure(id);
+    }
+    for (id, query) in [
+        ("sparql-select", "SELECT * WHERE { ?s ?p ?o } LIMIT 1"),
+        ("sparql-ask", "ASK { ?s ?p ?o }"),
+        (
+            "sparql-construct",
+            "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o } LIMIT 1",
+        ),
+        ("sparql-describe", "DESCRIBE <urn:iki:uidemo:contact>"),
+    ] {
+        suite = suite.fixture(
+            Fixture::new(id, Verb::Source)
+                .arg("query", query)
+                .arg("graph", ikigai_ui::scene::EXAMPLE_GRAPH),
+        );
+    }
+    for id in ["ui-lens-result", "ui-view-lens"] {
+        suite = suite.fixture(
+            Fixture::new(id, Verb::Source)
+                .binding("lens", "contact-table")
+                .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),
+        );
+    }
+    let report = suite
+        .fixture(Fixture::new("ui-renderer", Verb::Source).binding("name", "table"))
         .fixture(Fixture::new("uidemo-title", Verb::Source).binding("name", "gallery"))
         .fixture(Fixture::new("uidemo-fragment", Verb::Source).binding("name", "contact"))
         .fixture(Fixture::new("uidemo-submission-id", Verb::Source).binding("id", "1"))

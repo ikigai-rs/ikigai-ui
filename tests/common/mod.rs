@@ -148,6 +148,9 @@ pub fn root(dir: Option<&Path>, extra: Vec<Arc<dyn Space>>) -> Arc<dyn Space> {
         vec![Arc::new(ikigai_ui::space()), Arc::new(demo_pages())];
     spaces.extend(extra);
     spaces.push(Arc::new(demo_app()));
+    // The example lenses over the contact graph and a real SPARQL store to run them (#3518).
+    spaces.push(Arc::new(ikigai_ui::lens::examples()));
+    spaces.push(Arc::new(ikigai_sparql::space()));
     if let Some(dir) = dir {
         spaces.push(Arc::new(EndpointSpace::new().bind(
             UriTemplate::parse("urn:iki:ui:dir:{path}").unwrap(),
