@@ -21,3 +21,31 @@ jobs:
       site: target/axe-site
       checker-ref: ${{ github.event.pull_request.head.sha || github.sha }}
       smoke: true
+  # The README's HTML screenshots (ledger #3528), regenerated from the demo's fixtures in this
+  # runner's Chromium and uploaded as the `screenshots` artifact. The job fails, naming each
+  # image, when docs/screenshots/ was taken from a page or stylesheet that has since changed;
+  # it never compares pixels, so fonts or a GPU on another machine cannot fail it. To refresh:
+  # `scripts/screenshots.sh`, or commit this job's artifact.
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright (exact pins, from its lock)
+        working-directory: axe
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium
+        working-directory: axe
+        run: npx playwright install --with-deps chromium || { echo "::warning::apt deps unavailable; installing Chromium alone"; npx playwright install chromium; }
+      - name: Screenshots, checked against docs/screenshots
+        run: scripts/screenshots.sh --check
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: target/screenshots
+          if-no-files-found: ignore

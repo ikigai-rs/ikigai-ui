@@ -1,0 +1,34 @@
+{
+  "gallery-light.webp": {
+    "inputs": "8368254276e9640d180317231a977f94b0cb88457e05cbc34be1b9ff595f2543"
+  },
+  "gallery-dark.webp": {
+    "inputs": "8368254276e9640d180317231a977f94b0cb88457e05cbc34be1b9ff595f2543"
+  },
+  "elements-light.webp": {
+    "inputs": "5603818c13ae00aab912780e5a7a6356d1b1adca60444e92dc4febbbc2652213"
+  },
+  "elements-dark.webp": {
+    "inputs": "5603818c13ae00aab912780e5a7a6356d1b1adca60444e92dc4febbbc2652213"
+  },
+  "contact-refusal-light.webp": {
+    "inputs": "675cf6a4b6ade58f8693f6d45a988257cdfd5a1033cee91ff192cd645bb092fa"
+  },
+  "contact-refusal-dark.webp": {
+    "inputs": "675cf6a4b6ade58f8693f6d45a988257cdfd5a1033cee91ff192cd645bb092fa"
+  },
+  "support-light.webp": {
+    "inputs": "65954f55f5acd68fb9c49c7c5abc4ed7ed680d4e580eb5376bad165c847bcf6d"
+  },
+  "support-dark.webp": {
+    "inputs": "65954f55f5acd68fb9c49c7c5abc4ed7ed680d4e580eb5376bad165c847bcf6d"
+  },
+  "scene-light.webp": {
+    "inputs": "8368254276e9640d180317231a977f94b0cb88457e05cbc34be1b9ff595f2543",
+    "webgpu": false
+  },
+  "scene-dark.webp": {
+    "inputs": "8368254276e9640d180317231a977f94b0cb88457e05cbc34be1b9ff595f2543",
+    "webgpu": false
+  }
+}
