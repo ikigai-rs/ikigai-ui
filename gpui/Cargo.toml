@@ -14,6 +14,14 @@ default = []
 # html face's own WGSL, read back and painted as an image. Off, `scene` falls back to its
 # replacement (the graph as text), as it did in phase 1.
 scene = ["dep:wgpu", "dep:pollster", "dep:image"]
+# ★ The Linux and FreeBSD window platforms (ledger #3526), BY NAME: GPUI's `wayland` and `x11`,
+# each with `font-kit`, which cosmic-text uses to find the system's fonts. Without either, GPUI
+# runs headless there and no window opens (the demo says so and exits); `tests/text_system.rs`
+# pins both. Not default only because they link libxkbcommon-x11, which GitHub's stock Ubuntu
+# runner lacks and the shared CI cannot yet install (README, "Linux"); once it can, they move
+# into a Linux `gpui` dependency line and stop being features. Elsewhere they change nothing.
+wayland = ["gpui/wayland", "gpui/font-kit"]
+x11 = ["gpui/x11", "gpui/font-kit"]
 
 [dependencies]
 ikigai-ui = { path = ".." }
@@ -51,24 +59,15 @@ libc = "=0.2.189"
 # text at all (headings, labels, button captions), while the test platform's snapshots passed.
 gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "font-kit"] }
 
-[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
-# ★ The Linux and FreeBSD window platforms (ledger #3526), BY NAME, for the same reason: with
-# neither, GPUI falls back to its headless client and no window opens; with one, the text system
-# is `CosmicTextSystem` (cosmic-text, which `wayland` and `x11` enable themselves, with GPUI's
-# `font-kit` for font discovery). Wayland is chosen when WAYLAND_DISPLAY is set, else X11 on
-# DISPLAY. Both render through blade on Vulkan. Linking needs libxkbcommon, libxkbcommon-x11 and
-# libxcb (README: "Linux").
-gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "wayland", "x11", "font-kit"] }
-
 [target.'cfg(target_os = "windows")'.dependencies]
 # ★ The Windows window platform needs no feature (its text system is DirectWrite, always on);
 # `windows-manifest` embeds GPUI's application manifest (per-monitor DPI awareness, the common
 # controls GPUI's dialogs use), which GPUI's own binaries carry and GPUI's defaults turn on.
 gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "windows-manifest"] }
 
-# GPUI test-support forces X11/Wayland link dependencies even for headless
-# tests. Keep actual test windows on macOS; stock Linux CI still compiles the
-# walker and exercises the background boundary against real faces and Sinks.
+# GPUI test-support turns on `wayland` and `x11`, so it links libxkbcommon-x11, which the stock
+# Linux runner lacks (README, "Verification"). The window tests run on macOS; they pass on Linux
+# too (lawnboy, ledger #3526) once the shared CI can install that library.
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "test-support"] }
 

@@ -3,12 +3,11 @@
 //! kinds with raw HTML dropped, and the screens composed and drawn by the HTML face.
 #![cfg(not(target_arch = "wasm32"))]
 
-use std::path::Path;
 use std::sync::Arc;
 
 use futures::executor::block_on;
 use ikigai_core::{Fallback, Iri, Kernel, Request, Verb};
-use ikigai_reader::{Descriptor, Identity};
+use ikigai_reader::Descriptor;
 
 mod common;
 use common::{host, publish, reader, Scratch, DESCRIPTOR};
@@ -26,7 +25,9 @@ fn the_descriptor_lists_public_feeds_and_refuses_a_bad_name() {
 #[cfg(unix)]
 #[test]
 fn the_identity_is_made_fresh_and_kept_owner_only() {
+    use ikigai_reader::Identity;
     use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
     let home = Scratch::new("home-perm");
     let id = Identity::load_or_create(&home.0.join("reader")).unwrap();
     let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;

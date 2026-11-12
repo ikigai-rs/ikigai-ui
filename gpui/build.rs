@@ -1,9 +1,10 @@
-//! GPUI's Linux and FreeBSD window platforms link libxkbcommon, libxkbcommon-x11 and libxcb by
-//! their development names (`libxkbcommon.so`), which only the `-dev` packages install. A desktop
-//! (and GitHub's stock Ubuntu runner, where the shared CI has no step to install packages) has the
-//! runtime libraries (`libxkbcommon.so.0`) without them. When a development name is missing, this
-//! links the runtime library through a symlink in OUT_DIR; with the `-dev` packages installed it
-//! does nothing. A runtime library that is absent too still fails the link, naming it.
+//! GPUI's Linux and FreeBSD window platforms (this crate's `wayland` and `x11` features) link
+//! libxkbcommon, libxkbcommon-x11 and libxcb by their development names (`libxkbcommon.so`), which
+//! only the `-dev` packages install; a desktop has the runtime libraries (`libxkbcommon.so.0`)
+//! without them. When a development name is missing, this links the runtime library through a
+//! symlink in OUT_DIR, so building needs no `-dev` package; with them installed it does nothing.
+//! A runtime library that is absent too (GitHub's stock Ubuntu runner has no libxkbcommon-x11)
+//! still fails the link, naming it, and this warns which.
 
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");

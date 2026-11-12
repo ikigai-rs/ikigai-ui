@@ -78,6 +78,25 @@ fn ring(
         .child(child)
 }
 
+/// Exit with a message when no window can open here, rather than let GPUI run headless and open
+/// none: on Linux and FreeBSD, a build without the `wayland` and `x11` features, or a session
+/// with neither `WAYLAND_DISPLAY` nor `DISPLAY`. `command` is how to build it with them.
+pub fn require_window_platform(command: &str) {
+    let unix = cfg!(any(target_os = "linux", target_os = "freebsd"));
+    if unix && !cfg!(any(feature = "wayland", feature = "x11")) {
+        eprintln!(
+            "Built without a Linux window platform (the `wayland` and `x11` features). \
+             Run it with them:\n  {command}"
+        );
+        std::process::exit(1);
+    }
+    let unset = |var| std::env::var_os(var).is_none_or(|v| v.is_empty());
+    if unix && unset("WAYLAND_DISPLAY") && unset("DISPLAY") {
+        eprintln!("No display: set WAYLAND_DISPLAY (Wayland) or DISPLAY (X11) to open a window.");
+        std::process::exit(1);
+    }
+}
+
 fn dark(appearance: WindowAppearance) -> bool {
     matches!(
         appearance,

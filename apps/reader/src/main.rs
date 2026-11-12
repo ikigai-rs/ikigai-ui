@@ -13,6 +13,9 @@ fn main() {
     use ikigai_ui_gpui::{descriptor_space, native::Screen, theme::Theme, worker::Worker};
     use std::sync::Arc;
 
+    ikigai_ui_gpui::native::require_window_platform(
+        "cargo run -p ikigai-reader --features wayland,x11 -- <arguments>",
+    );
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [config, state, key, descriptor] = &args[..] else {
         eprintln!("usage: ikigai-reader <host config> <host state> <host age key> <layers.json>");

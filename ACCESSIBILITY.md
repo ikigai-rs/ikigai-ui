@@ -35,11 +35,21 @@ part 2, a design question). With script the choice applies at once, and a page b
 `pages()` or `Pages` takes `theme=` and has no such gap.
 
 Known limitations of the native face: GPUI 0.2.2 reports a window's appearance as light or
-dark only, not macOS "Increase contrast", so `auto` never picks high contrast there (choose
-`high-contrast` explicitly). Its window tests run on GPUI's test platform, which can neither
+dark only, not macOS "Increase contrast", the Linux portal's `contrast` or Windows' contrast
+themes, so `auto` never picks high contrast there (choose `high-contrast` explicitly). `auto`
+follows macOS's Appearance, the Linux XDG portal's `color-scheme` (light when there is no
+portal) and Windows' app mode. Its window tests run on GPUI's test platform, which can neither
 change a window's appearance (the test calls the appearance observer's handler) nor show the
 pixels a real window paints; they check the colors the window draws with, not a screenshot.
-Native windows are not checked by axe or any screen-reader test. The reader's window test drives the keyboard on GPUI's test platform and reads the snapshot each screen draws; nobody has looked at its pixels or heard it through VoiceOver.
+Native windows are not checked by axe or any screen-reader test, on any platform: GPUI 0.2.2
+exposes no accessibility tree (no AccessKit), so VoiceOver, Orca and Narrator hear nothing of a
+window's content. By platform (ledger #3526): the window tests (keyboard paths, themes, focus)
+run on GPUI's test platform on macOS, and passed on Linux (lawnboy), but no CI job runs them
+(`gpui/README.md`, "Verification"); on Windows only the portable tests are meant to run (once the
+`windows` CI input is on), and the windows are untested there.
+Real windows were looked at on macOS by hand and on Linux (X11 and Wayland, lawnboy, without a
+desktop session) on 2026-11-12, for text and theme only; nobody has driven a real keyboard, IME
+or appearance change on Linux or Windows. The reader's window test drives the keyboard on GPUI's test platform and reads the snapshot each screen draws; nobody has looked at its pixels or heard it through VoiceOver.
 
 Known limitations of the 3D scene: the canvas draws pixels only, so a screen reader hears the
 scene's name, its keys and what `#status` says, and reads the graph itself in the replacement

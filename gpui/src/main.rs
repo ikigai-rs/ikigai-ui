@@ -12,6 +12,9 @@ fn main() {
     use ikigai_ui_gpui::{descriptor_space, native::Screen, theme::Theme, worker::Worker};
     use std::sync::Arc;
 
+    ikigai_ui_gpui::native::require_window_platform(
+        "cargo run -p ikigai-ui-gpui --features wayland,x11 --bin ikigai-ui-demo-native",
+    );
     let store = ikigai_ui_demo::Store::default();
     let root = Arc::new(Fallback::new(vec![
         Arc::new(descriptor_space()),
@@ -57,17 +60,6 @@ fn main() {
             }
         });
     });
-    // With neither WAYLAND_DISPLAY nor DISPLAY set, GPUI runs headless and no window opens.
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    if ["WAYLAND_DISPLAY", "DISPLAY"]
-        .iter()
-        .all(|var| std::env::var_os(var).is_none_or(|v| v.is_empty()))
-    {
-        eprintln!(
-            "No display: set WAYLAND_DISPLAY (Wayland) or DISPLAY (X11) to open the windows."
-        );
-        std::process::exit(1);
-    }
     let capability = Capability::root().attenuate([ikigai_ui_demo::CONTACT_WRITE]);
     let worker = Worker::new(kernel, capability, Scope::empty());
     Application::new().run(move |cx: &mut App| {
