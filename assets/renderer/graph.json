@@ -1,0 +1,8 @@
+{"kind": "group", "properties": {"label": "{legend}"}, "children": [
+  {"kind": "scene", "properties": {"label": "{legend}", "datum": "urn:iki:ui:scene:graph:{focus}"},
+   "replacement": {"kind": "text", "properties": {"content": "The graph of {focus} as a picture; the selection beside it is the same nodes as links."}}},
+  {"kind": "list", "properties": {"label": "Selection"}, "children": [
+    {"repeat": "rows", "each": {"kind": "link", "properties": {"label": "{?label}", "href": "{home:?node}"}}}
+  ]},
+  {"past": "Showing the first {shown} of more nodes; the lens's bound is {bound}."}
+]}

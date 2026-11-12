@@ -1,0 +1,11 @@
+{"kind": "group", "properties": {"label": "{legend}"}, "children": [
+  {"kind": "table", "properties": {"caption": "{legend}"}, "children": [
+    {"kind": "group", "properties": {"label": "Columns", "header": "column"}, "children": [
+      {"repeat": "vars", "each": {"kind": "text", "properties": {"content": "{?var}"}}}
+    ]},
+    {"repeat": "rows", "each": {"kind": "group", "properties": {"label": "Row"}, "children": [
+      {"repeat": "cells", "each": {"kind": "link", "properties": {"label": "{?value}", "href": "{home:?value}"}}}
+    ]}}
+  ]},
+  {"past": "Showing the first {shown} of more rows; the lens's bound is {bound}."}
+]}

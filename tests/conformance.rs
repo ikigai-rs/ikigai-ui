@@ -27,6 +27,9 @@ fn conforms() {
     let pages = Arc::new(common::demo_pages());
     let report = Suite::new()
         .fixture(Fixture::new("ui-palette", Verb::Source).binding("name", "light"))
+        .fixture(Fixture::new("ui-renderer", Verb::Source).binding("name", "table"))
+        .fixture(Fixture::new("ui-home", Verb::Source).binding("iri", common::CONTACT))
+        .fixture(Fixture::new("ui-lens-resource", Verb::Source).binding("iri", common::CONTACT))
         .fixture(Fixture::new("ui-theme-chooser", Verb::Source).binding("theme", "dark"))
         .fixture(
             Fixture::new("ui-chooser", Verb::Source)
@@ -47,6 +50,7 @@ fn conforms() {
         .cacheable("ui-form-resource")
         .cacheable("ui-form-openapi")
         .pure("demo-openapi")
+        .pure("ui-renderer")
         .pure("demo-contact")
         .cacheable("demo-contact")
         .cacheable("demo-openapi")
