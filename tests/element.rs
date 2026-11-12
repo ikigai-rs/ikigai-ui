@@ -704,3 +704,103 @@ fn copies_into_a_slot_count_against_the_node_bound() {
         Err(e) => panic!("not InvalidArgument: {e:?}"),
     }
 }
+
+#[test]
+fn meter_has_a_definition_and_native_support_on_both_faces() {
+    let kernel = common::host(None);
+    let iri = "urn:iki:ui:element:name:meter";
+    let rep = common::source(&kernel, iri).expect("meter definition must be available");
+    let definition = Definition::parse(&rep.bytes, iri).unwrap();
+    assert_eq!(
+        definition.expansion["properties"]["content"],
+        "{label}: {value} of {max}"
+    );
+    let support: serde_json::Value =
+        serde_json::from_slice(&common::source(&kernel, "urn:iki:ui:support").unwrap().bytes)
+            .unwrap();
+    for target in ["html", "gpui"] {
+        assert_eq!(support[target]["element"][iri], true);
+    }
+}
+
+#[test]
+fn meter_html_snapshots_cover_native_and_expansion_without_native_support() {
+    let native = common::text(
+        &common::host(None),
+        "urn:iki:ui:html:screen:elements:node:n.6",
+        &[],
+    );
+    assert!(native.contains("<label for=\"ui-meter-n.6\">Reservoir capacity (%)</label>"));
+    assert!(native.contains("<meter id=\"ui-meter-n.6\" value=\"82\" min=\"0\" max=\"100\" low=\"25\" high=\"75\" optimum=\"50\">82</meter>"));
+    assert!(native.contains("outside optimum region"));
+    let dir = common::scratch("meter-expanded");
+    let kernel = html_without_native(&dir);
+    let expanded = common::text(&kernel, "urn:iki:ui:html:screen:elements:node:n.6", &[]);
+    assert_eq!(expanded, "<p>Reservoir capacity (%): 82 of 100</p>");
+    std::fs::remove_dir_all(dir).unwrap();
+    ikigai_ui::testkit::snapshot::assert_snapshots(
+        &common::snapshots(),
+        [
+            ("meter-native.html", native),
+            ("meter-expanded.html", expanded),
+        ],
+    );
+}
+
+#[test]
+fn meter_defaults_and_decimal_text_are_native_and_text_is_escaped() {
+    let kernel = host_with_screen(serde_json::json!({
+        "kind": ikigai_ui::meter::IRI,
+        "properties": {"label": "Storage <&>", "value": "0.75", "fallback": "Storage"}
+    }));
+    let html = common::text(&kernel, "urn:iki:ui:html:screen:disclosure-test", &[]);
+    assert!(html.contains("Storage &lt;&amp;&gt;</label>"), "{html}");
+    assert!(
+        html.contains("value=\"0.75\" min=\"0\" max=\"1\" low=\"0\" high=\"1\" optimum=\"0.5\""),
+        "{html}"
+    );
+    assert!(html.contains("Storage &lt;&amp;&gt;: 0.75 of 1"));
+    ikigai_ui::testkit::snapshot::assert_snapshot(
+        &common::snapshots(),
+        "meter-defaults.html",
+        &html,
+    );
+}
+
+#[test]
+fn meter_expansion_defaults_and_remaining_ladder_paths_are_text() {
+    let mut node = example("meter");
+    node.properties.remove("min");
+    node.properties.remove("max");
+    node.properties
+        .insert("value".into(), model::Value::Text("0.75".into()));
+    let definition = Definition::parse(
+        include_bytes!("../assets/element/meter.json"),
+        ikigai_ui::meter::IRI,
+    )
+    .unwrap();
+    let defs = [(ikigai_ui::meter::IRI.into(), definition)].into();
+    let mut face = html();
+    face.elements.clear();
+    let expanded = element::expand_with(&node, &face, &defs).unwrap();
+    assert_eq!(expanded.kind, "text");
+    assert_eq!(
+        expanded.properties["content"],
+        model::Value::Text("Reservoir capacity (%): 0.75 of 1".into())
+    );
+    node.replacement = Some(Box::new(serde_json::from_value(serde_json::json!({"kind":"text", "properties":{"content":"Reservoir reading unavailable"}})).unwrap()));
+    let replacement = element::expand_with(&node, &face, &BTreeMap::new()).unwrap();
+    assert_eq!(
+        replacement.properties["content"],
+        model::Value::Text("Reservoir reading unavailable".into())
+    );
+    node.replacement = None;
+    let fallback = element::expand_with(&node, &face, &BTreeMap::new()).unwrap();
+    assert_eq!(fallback.properties["content"], node.properties["fallback"]);
+    let support = common::text(
+        &common::host(None),
+        "urn:iki:ui:support",
+        &[("as", "text/html")],
+    );
+    assert!(support.contains("<tr><th scope=\"row\">urn:iki:ui:element:name:meter</th><td>Native</td><td>Native</td></tr>"));
+}

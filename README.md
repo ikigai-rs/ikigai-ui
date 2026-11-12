@@ -31,7 +31,7 @@ dark follows your GitHub theme). The native GPUI windows are captured by
 | `urn:iki:ui:target:name:{target}` | the `html` or `gpui` descriptor: versioned capabilities, rendered kinds, fallbacks and target limits |
 | `urn:iki:ui:support` | every target against every kind, plus capabilities, composed from descriptors; JSON by default, `as=text/html` for the support page |
 | `urn:iki:ui:face:target:{target}:screen:{screen}` | `urn:iki:ui:screen:name:{screen}` with the descriptor's fallbacks applied; model JSON by default, `as=application/ld+json` for named JSON-LD nodes |
-| `urn:iki:ui:element:name:{name}` | a custom element's definition (ledger #3358): its argument contract and its expansion, a model template over core kinds and other elements; a face renders an element natively when its descriptor claims it, else expands it (bounded by depth and nodes produced, a cycle refused), else its declared `replacement`, else its `fallback` text. `rating`, `card`, `key-value`, `tag-list` and `disclosure` are this crate's, shown at `urn:iki:ui:screen:name:elements` (the demo's `/page/elements`); `disclosure` is native on both faces (HTML `<details>`/`<summary>` from `urn:iki:ui:template:element:disclosure`, GPUI a toggle whose state is the window's), the others expanded on every face |
+| `urn:iki:ui:element:name:{name}` | a custom element's definition (ledger #3358): its argument contract and its expansion, a model template over core kinds and other elements; a face renders an element natively when its descriptor claims it, else expands it (bounded by depth and nodes produced, a cycle refused), else its declared `replacement`, else its `fallback` text. `rating`, `card`, `key-value`, `tag-list`, `disclosure` and `meter` are this crate's, shown at `urn:iki:ui:screen:name:elements` (the demo's `/page/elements`); `disclosure` is native on both faces (HTML `<details>`/`<summary>` from `urn:iki:ui:template:element:disclosure`, GPUI a toggle whose state is the window's), `meter` is also native on both faces (HTML `<meter>` with an associated label, GPUI a palette bar with its numeric reading beside it); the others expand on every face |
 | `urn:iki:ui:hint:choice:radio` | a presentation hint on a `choice` (value `radio`, ledger #3537): a face whose descriptor claims `urn:iki:ui:hint:choice:` draws it as radio buttons, the html face a `<fieldset>` with its `<legend>` and one native radio per option (`urn:iki:ui:template:hint:choice-radio` and `:option-radio`; the arrow keys move within the group), the GPUI face a radio group (one tab stop, the arrows move the selection, the choice announced in the status line); a face that does not claim it keeps its select. The lens chooser, on a lensed view and on a resource's view, carries it |
 | `urn:iki:ui:scene:graph:{graph}` | an embedded 3D scene's DATUM (ledger #3514), `application/vnd.ikigai.ui.scene+json`: `{graph}`'s nodes (labels, types, positions), its edges (labels) and a camera; data, never code (no shaders, no scripts: the datum is closed). `{graph}` is read under the CALLER's capability, in its own face when that is JSON(-LD), else `as=application/ld+json` |
 | `urn:iki:ui:layout:graph:{graph}` | 3D positions for `{graph}`'s nodes: a force-directed layout from a fixed seed, fitted to the unit sphere; cacheable and golden-threaded from the graph, so an unchanged graph is laid out once and an edit to it cuts the layout |
@@ -249,11 +249,12 @@ one ikigai-web door. It serves four pages in the shared shell:
 
 - `/` or `/page/gallery`: the gallery screen, every node kind rendered by the html target.
 - `/page/elements`: the custom elements (`rating`, `card`, `key-value`, `tag-list`, each
-  expanded into core kinds by the html target, and `disclosure`, native as `<details>`).
+  expanded into core kinds by the html target, `disclosure`, native as `<details>`, and `meter`, a labeled reservoir reading
+  native as `<meter>` with value text; the GPUI face draws a palette bar and the same text).
 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/elements-dark.webp">
-    <img src="docs/screenshots/elements-light.webp" width="480" alt="The demo elements page: a rating reading Service: 4 out of 5; a Field notes card with two links; a Gauge 14 key-value table of station Mill Lane, level 2.31 m, read 2026-11-10; a tag list of hydrology, flooding and open data; and a closed disclosure asking How often is the gauge read?">
+    <img src="docs/screenshots/elements-light.webp" width="480" alt="The demo elements page: a rating reading Service: 4 out of 5; a Field notes card with two links; a Gauge 14 key-value table of station Mill Lane, level 2.31 m, read 2026-11-10; a tag list of hydrology, flooding and open data; a closed disclosure asking How often is the gauge read?; and a reservoir capacity meter at 82 of 100, outside its optimum region.">
   </picture>
 
 - `/page/contact`: a contact form. **The form is a client generated from the service's
@@ -279,7 +280,7 @@ one ikigai-web door. It serves four pages in the shared shell:
 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/support-dark.webp">
-    <img src="docs/screenshots/support-light.webp" width="480" alt="The support page: a table of each node kind against the gpui and html targets, html rendering every kind and gpui rendering some and falling back to text or a list for the rest; below it, the custom elements, expanded on both targets except the native disclosure, and each target's capabilities.">
+    <img src="docs/screenshots/support-light.webp" width="480" alt="The support page: a table of each node kind against the gpui and html targets, html rendering every kind and gpui rendering some and falling back to text or a list for the rest; below it, the custom elements, expanded on both targets except the native disclosure and meter, and each target's capabilities.">
   </picture>
 
 There is no sign-in yet: the door grants every request a write to the contact service and

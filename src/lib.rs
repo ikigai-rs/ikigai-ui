@@ -113,6 +113,7 @@ pub mod element;
 pub mod form;
 pub mod html;
 pub mod lens;
+pub mod meter;
 pub mod model;
 pub mod palette;
 pub mod reference;

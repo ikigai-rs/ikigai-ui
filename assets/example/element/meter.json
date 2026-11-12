@@ -1,0 +1,13 @@
+{
+  "kind": "urn:iki:ui:element:name:meter",
+  "properties": {
+    "fallback": "Reservoir capacity: 82 of 100 (above high threshold 75).",
+    "label": "Reservoir capacity (%)",
+    "value": 82,
+    "min": 0,
+    "max": 100,
+    "low": 25,
+    "high": 75,
+    "optimum": 50
+  }
+}

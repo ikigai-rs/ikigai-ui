@@ -358,7 +358,7 @@ fn fragment_parts(name: &str) -> (&'static str, &'static str, Option<&'static st
             None,
         ),
         "elements" => (
-            "<h1>Elements</h1>\n<p>Custom elements, each a composition of core kinds: expanded by the html target, or native where it claims one (the disclosure).</p>",
+            "<h1>Elements</h1>\n<p>Custom elements, each a composition of core kinds: expanded by the html target, or native where it claims one (disclosure and meter).</p>",
             "urn:iki:ui:html:screen:elements",
             None,
         ),
