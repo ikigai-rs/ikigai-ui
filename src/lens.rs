@@ -12,7 +12,7 @@
 //! | `urn:iki:ui:lens:instance:{iri}` | data (a host's) | a JSON list of lens names for one resource |
 //! | `urn:iki:ui:lens:dataset` | data (a host's) | a JSON list of lens names for the whole dataset |
 //! | `urn:iki:ui:lens:resource:{iri}` | data | `{iri}`'s lenses in precedence: instance, dataset, each type, then `graph` ([`precedence`]) |
-//! | `urn:iki:ui:renderer:name:{name}` | data | a renderer, a model template: `graph`, `table`, `list`, `thread`, `board`, `tree`, `timeline` are compiled in; a host's binding of the same name, placed first, wins |
+//! | `urn:iki:ui:renderer:name:{name}` | data | a renderer, a model template: `graph`, `table`, `list`, `thread`, `board`, `tree`, `timeline` are compiled in; a host's binding of the same name, placed first, wins. `construct` is no template and is never read here ([`CONSTRUCT`]) |
 //! | `urn:iki:ui:view:lens:{lens}:resource:{iri}` | data | the lensed view: the legend, a radio chooser among `{iri}`'s lenses, the renderer filled with the result |
 //! | `urn:iki:ui:lens:title:lens:{lens}:resource:{iri}` | text | a lensed page's title: the legend and the resource; a family with [`crate::Pages::lenses`] serves `{base}page:lens:{lens}:resource:{iri}` in the shell, at the door's `/lens/name/{lens}/resource/{iri}` ([`html_href`]) |
 //! | `urn:iki:ui:home` | data (a host's) | the home mapping, a JSON prefix table `[{"prefix", "href"}]`, longest prefix wins |
@@ -66,6 +66,21 @@
 //! every edge. A SELECT lens drawn as a graph is its `?node`s, with no edges. A `link` whose value is not an IRI is its text.
 //! A bound past [`MAX_BOUND`], or an expansion past [`crate::element::MAX_NODES`] nodes, is
 //! refused, never unbounded.
+//!
+//! **A `construct` lens builds the model itself** (ledger #3520, stage 3 of #3517). Its renderer
+//! is [`CONSTRUCT`], no template: its query is a CONSTRUCT (anything else is refused before it
+//! runs) whose graph IS the UI model in the model's own vocabulary ([`model::CONTEXT`]): each
+//! node `a urn:iki:ui:kind:name:{kind}` (a core kind), its properties
+//! `urn:iki:ui:property:name:{p}` (one value each; an xsd integer is a number, an xsd boolean a
+//! boolean), its children [`CHILD`] in [`ORDER`] (an integer, then IRI), its [`REPLACEMENT`].
+//! [`frame`] frames it to the model's JSON by that context: one root, each other node one
+//! parent's child, no cycle, no other predicate. The result is then bounded and validated by
+//! [`model::parse`] exactly as any screen is, so a lens cannot construct what a screen could
+//! not contain: a fault refuses the view as `InvalidArgument`. A `href` written as an IRI (not a
+//! literal) links through the home mapping, so every rendered resource keeps its IRI. Its
+//! bound is the most nodes it constructs; past it, a constructed model is shown whole or not at
+//! all, so nothing of it is shown and the view says so. The example is `contact-dashboard`, a
+//! small dashboard of counts over the contact graph.
 
 use std::collections::BTreeMap;
 
@@ -134,7 +149,7 @@ pub const DEFAULT_LENS: (&str, &str) = (
 /// Example lenses over the contact graph ([`crate::scene::EXAMPLE_GRAPH`]) and [`DEMO_GRAPH`]:
 /// (name, lens, query). Shipped by this crate, which owns that graph; a host places
 /// [`examples`].
-pub const EXAMPLES: [(&str, &str, &str); 7] = [
+pub const EXAMPLES: [(&str, &str, &str); 8] = [
     (
         "contact-graph",
         include_str!("../assets/lens/contact-graph.json"),
@@ -169,6 +184,11 @@ pub const EXAMPLES: [(&str, &str, &str); 7] = [
         "demo-timeline",
         include_str!("../assets/lens/demo-timeline.json"),
         include_str!("../assets/lens/demo-timeline.rq"),
+    ),
+    (
+        "contact-dashboard",
+        include_str!("../assets/lens/contact-dashboard.json"),
+        include_str!("../assets/lens/contact-dashboard.rq"),
     ),
 ];
 
@@ -1329,6 +1349,284 @@ pub fn graph_rows(bytes: &[u8], bound: usize) -> Result<(Rows, Rows), Error> {
     Ok((rows, edges))
 }
 
+/// The renderer that is no template (ledger #3520): the lens's CONSTRUCT builds the model.
+pub const CONSTRUCT: &str = "construct";
+/// A constructed node's child, as the model's context names `children`.
+pub const CHILD: &str = "urn:iki:ui:property:name:child";
+/// A constructed child's place among its siblings: an integer, 0 when absent, ties by IRI.
+/// Framing reads it; it is no property of the model.
+pub const ORDER: &str = "urn:iki:ui:property:name:order";
+/// A constructed node's replacement, as the model's context names it.
+pub const REPLACEMENT: &str = "urn:iki:ui:property:name:replacement";
+
+const RDF_TYPE: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+const XSD: &str = "http://www.w3.org/2001/XMLSchema#";
+
+/// What a `construct` lens's graph framed to: the model, nothing, or a graph past the bound.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Framed {
+    /// The model, bounded and validated as any screen is.
+    Model(Node),
+    /// The graph constructed no node.
+    Empty,
+    /// The graph constructed this many nodes, more than the lens's bound.
+    Past(usize),
+}
+
+/// One constructed node, read from its node object.
+#[derive(Default)]
+struct Built {
+    kind: Option<String>,
+    properties: serde_json::Map<String, Json>,
+    children: Vec<String>,
+    order: i64,
+    replacement: Option<String>,
+}
+
+fn object_id(v: &Json) -> Option<&str> {
+    match v {
+        Json::Object(o) if o.len() == 1 => o.get("@id").and_then(Json::as_str),
+        _ => None,
+    }
+}
+
+fn values(v: &Json) -> Vec<&Json> {
+    match v {
+        Json::Array(a) => a.iter().collect(),
+        one => vec![one],
+    }
+}
+
+/// One literal or IRI as a model value: an xsd integer a number, an xsd boolean a boolean,
+/// anything else text; an IRI its text, and an IRI `href` through the home mapping.
+fn literal(name: &str, v: &Json, home: &Home, at: &str) -> Result<Json, Error> {
+    if let Some(id) = object_id(v) {
+        return Ok(Json::String(if name == "href" {
+            home.href(id).unwrap_or_else(|| id.to_string())
+        } else {
+            id.to_string()
+        }));
+    }
+    let (value, datatype) = match v {
+        Json::Object(o) => (
+            o.get("@value").cloned().unwrap_or(Json::Null),
+            o.get("@type").and_then(Json::as_str).unwrap_or(""),
+        ),
+        other => (other.clone(), ""),
+    };
+    let local = datatype.strip_prefix(XSD).unwrap_or("");
+    Ok(match (value, local) {
+        (
+            Json::String(s),
+            "integer" | "int" | "long" | "short" | "byte" | "nonNegativeInteger"
+            | "positiveInteger",
+        ) => {
+            json!(s.parse::<i64>().map_err(|_| refuse(
+                "construct",
+                format!("{at}: `{name}` is not an integer: {s}")
+            ))?)
+        }
+        (Json::String(s), "boolean") => json!(s == "true" || s == "1"),
+        (v @ (Json::String(_) | Json::Number(_) | Json::Bool(_)), _) => v,
+        _ => {
+            return Err(refuse(
+                "construct",
+                format!("{at}: `{name}` is not a literal or an IRI"),
+            ))
+        }
+    })
+}
+
+/// A `construct` lens's result graph (JSON-LD node objects, as `urn:sparql:construct` answers
+/// `as=application/ld+json`) framed to the model's JSON by the model's own context
+/// ([`model::CONTEXT`]): each node's `rdf:type` is its kind (`urn:iki:ui:kind:name:{kind}`,
+/// exactly one, a core kind), each `urn:iki:ui:property:name:{p}` its property `p` (one value),
+/// its [`CHILD`]ren in [`ORDER`], its [`REPLACEMENT`]. The one node no other names is the root;
+/// a node named twice, a cycle, a child not constructed, or any other predicate is refused.
+/// Past `bound` nodes it frames nothing ([`Framed::Past`]). The model is then bounded and
+/// validated by [`model::parse`], exactly as any screen is.
+pub fn frame(bytes: &[u8], bound: usize, home: &Home) -> Result<Framed, Error> {
+    model::bound(bytes)?;
+    let doc: Json = serde_json::from_slice(bytes)
+        .map_err(|e| refuse("construct", format!("not JSON-LD: {e}")))?;
+    let objects: Vec<&Json> = match &doc {
+        Json::Array(a) => a.iter().collect(),
+        Json::Object(o) => match o.get("@graph") {
+            Some(Json::Array(a)) => a.iter().collect(),
+            _ => vec![&doc],
+        },
+        _ => return Err(refuse("construct", "not JSON-LD node objects")),
+    };
+    if objects.is_empty() {
+        return Ok(Framed::Empty);
+    }
+    if objects.len() > bound.min(MAX_BOUND) {
+        return Ok(Framed::Past(objects.len()));
+    }
+    let mut built: BTreeMap<String, Built> = BTreeMap::new();
+    for object in objects {
+        let Json::Object(o) = object else {
+            return Err(refuse("construct", "a node object is an object"));
+        };
+        let id = o
+            .get("@id")
+            .and_then(Json::as_str)
+            .ok_or_else(|| refuse("construct", "a constructed node has an IRI"))?
+            .to_string();
+        let mut b = Built::default();
+        for (key, v) in o {
+            match key.as_str() {
+                "@id" => {}
+                "@type" | RDF_TYPE => {
+                    for t in values(v) {
+                        let t = t.as_str().or_else(|| object_id(t)).unwrap_or("");
+                        let k = t
+                            .strip_prefix(model::KIND_PREFIX)
+                            .filter(|k| model::kind(k).is_some())
+                            .ok_or_else(|| {
+                                refuse("construct", format!("{id}: `{t}` is not a kind"))
+                            })?;
+                        if b.kind.replace(k.to_string()).is_some_and(|was| was != k) {
+                            return Err(refuse("construct", format!("{id}: a node is one kind")));
+                        }
+                    }
+                }
+                CHILD => {
+                    for c in values(v) {
+                        let c = object_id(c).ok_or_else(|| {
+                            refuse("construct", format!("{id}: a child is a node, by IRI"))
+                        })?;
+                        b.children.push(c.to_string());
+                    }
+                }
+                ORDER | REPLACEMENT => {
+                    let [one] = values(v)[..] else {
+                        return Err(refuse(
+                            "construct",
+                            format!("{id}: `{key}` takes one value"),
+                        ));
+                    };
+                    if key == ORDER {
+                        b.order = match literal("order", one, home, &id)? {
+                            Json::Number(n) => n.as_i64(),
+                            Json::String(s) => s.parse().ok(),
+                            _ => None,
+                        }
+                        .ok_or_else(|| {
+                            refuse("construct", format!("{id}: `order` is an integer"))
+                        })?;
+                    } else {
+                        b.replacement = Some(
+                            object_id(one)
+                                .ok_or_else(|| {
+                                    refuse(
+                                        "construct",
+                                        format!("{id}: a replacement is a node, by IRI"),
+                                    )
+                                })?
+                                .to_string(),
+                        );
+                    }
+                }
+                _ => {
+                    let name = key.strip_prefix(model::PROPERTY_PREFIX).ok_or_else(|| {
+                        refuse(
+                            "construct",
+                            format!("{id}: `{key}` is not a property the model's context names"),
+                        )
+                    })?;
+                    let [one] = values(v)[..] else {
+                        return Err(refuse(
+                            "construct",
+                            format!("{id}: `{name}` takes one value"),
+                        ));
+                    };
+                    b.properties
+                        .insert(name.to_string(), literal(name, one, home, &id)?);
+                }
+            }
+        }
+        if b.kind.is_none() {
+            return Err(refuse(
+                "construct",
+                format!("{id}: a constructed node has a kind"),
+            ));
+        }
+        built.insert(id, b);
+    }
+    let mut named: BTreeMap<&str, usize> = BTreeMap::new();
+    for b in built.values() {
+        for c in b.children.iter().chain(&b.replacement) {
+            if !built.contains_key(c) {
+                return Err(refuse(
+                    "construct",
+                    format!("{c}: a child it does not construct"),
+                ));
+            }
+            *named.entry(c.as_str()).or_default() += 1;
+        }
+    }
+    if let Some((c, _)) = named.iter().find(|(_, n)| **n > 1) {
+        return Err(refuse(
+            "construct",
+            format!("{c}: a node is one parent's child"),
+        ));
+    }
+    let roots: Vec<&String> = built
+        .keys()
+        .filter(|id| !named.contains_key(id.as_str()))
+        .collect();
+    let [root] = roots[..] else {
+        return Err(refuse(
+            "construct",
+            format!(
+                "a model has one root, not {} (a cycle has none)",
+                roots.len()
+            ),
+        ));
+    };
+    fn tree(
+        id: &str,
+        built: &BTreeMap<String, Built>,
+        depth: usize,
+        seen: &mut usize,
+    ) -> Result<Json, Error> {
+        *seen += 1;
+        if depth > model::MAX_DEPTH {
+            return Err(refuse(
+                "construct",
+                format!("nested past the bound of {}", model::MAX_DEPTH),
+            ));
+        }
+        let b = &built[id];
+        let mut children: Vec<&String> = b.children.iter().collect();
+        children.sort_by_key(|c| (built[c.as_str()].order, c.as_str()));
+        let mut n = json!({"kind": b.kind, "properties": b.properties});
+        if !children.is_empty() {
+            n["children"] = children
+                .into_iter()
+                .map(|c| tree(c, built, depth + 1, seen))
+                .collect::<Result<_, _>>()?;
+        }
+        if let Some(r) = &b.replacement {
+            n["replacement"] = tree(r, built, depth + 1, seen)?;
+        }
+        Ok(n)
+    }
+    // One root and every other node named once: the walk visits each node at most once, and
+    // a node it never reaches is on a cycle apart from the root.
+    let mut seen = 0;
+    let json = tree(root, &built, 0, &mut seen)?;
+    if seen != built.len() {
+        return Err(refuse(
+            "construct",
+            "a node the root never reaches: the children make a cycle",
+        ));
+    }
+    let bytes = serde_json::to_vec(&json).expect("a model serializes");
+    Ok(Framed::Model(model::parse(&bytes)?))
+}
+
 fn words_node(content: impl Into<String>) -> Node {
     serde_json::from_value(json!({"kind": "text", "properties": {"content": content.into()}}))
         .expect("a text node")
@@ -1348,13 +1646,26 @@ pub async fn lensed(
         Some(b) => Home::parse(&b)?,
         None => Home::default(),
     };
-    let renderer_at = format!("{RENDERER}{}", lens.renderer);
-    let template: Json = serde_json::from_slice(
-        &inv.issue(Request::new(Verb::Source, iri(&renderer_at)?))
-            .await?
-            .bytes,
-    )
-    .map_err(|e| refuse("renderer", format!("{renderer_at}: {e}")))?;
+    let construct = lens.renderer == CONSTRUCT;
+    let template: Json = if construct {
+        // No template: the lens's CONSTRUCT is the model, so it must be one, refused before
+        // anything runs.
+        if read_prepared(inv, name).await?.form != Form::Construct {
+            return Err(refuse(
+                "renderer",
+                format!("{name}: a construct lens's query is a CONSTRUCT"),
+            ));
+        }
+        Json::Null
+    } else {
+        let renderer_at = format!("{RENDERER}{}", lens.renderer);
+        serde_json::from_slice(
+            &inv.issue(Request::new(Verb::Source, iri(&renderer_at)?))
+                .await?
+                .bytes,
+        )
+        .map_err(|e| refuse("renderer", format!("{renderer_at}: {e}")))?
+    };
     // Each facet combination is its own request, so its own cached result.
     let mut request = Request::new(
         Verb::Source,
@@ -1364,6 +1675,20 @@ pub async fn lensed(
         request = request.with_arg(k.clone(), ArgRef::Inline(v.clone().into_bytes()));
     }
     let body = match inv.issue(request).await {
+        Ok(r) if construct => match frame(&r.bytes, lens.bound, &home)? {
+            Framed::Model(n) => n,
+            Framed::Empty => words_node(format!(
+                "{}: the query constructed nothing for {resource}.",
+                lens.legend
+            )),
+            // A constructed model is shown whole or not at all: a cut tree is not the model
+            // the lens meant.
+            Framed::Past(n) => words_node(format!(
+                "{}: the query constructed {n} nodes for {resource}, past the lens's bound of {}; \
+                 a constructed model is shown whole or not at all, so nothing is shown.",
+                lens.legend, lens.bound
+            )),
+        },
         Ok(r) => {
             let (mut rows, edges) = if r.repr_type.media_type.as_str() == GRAPH {
                 graph_rows(&r.bytes, lens.bound)?
@@ -1966,7 +2291,7 @@ pub(crate) fn renderer_endpoint() -> AsyncFnEndpoint {
     .with_description(
         Description::new("ui-renderer").input(ikigai_core::ArgSpec::new("name").summary("the renderer's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("graph"))
             .title("A renderer, a named template")
-            .summary("A model template that repeats, boundedly, over a lens's result rows: graph, table, list, thread, board, tree, timeline.")
+            .summary("A model template that repeats, boundedly, over a lens's result rows: graph, table, list, thread, board, tree, timeline. A lens whose renderer is construct has no template: its CONSTRUCT builds the model.")
             .verb(Verb::Source)
             .output("application/json"),
     )
@@ -2285,6 +2610,37 @@ mod tests {
             },
         );
         assert!(matches!(e, Err(Error::InvalidArgument { .. })));
+    }
+
+    #[test]
+    fn a_constructed_graph_frames_in_order_with_home_links() {
+        let k = |n: &str| format!("{}{n}", model::KIND_PREFIX);
+        let p = |n: &str| format!("{}{n}", model::PROPERTY_PREFIX);
+        let graph = json!([
+            {"@id": "urn:x:b", RDF_TYPE: [{"@id": k("link")}], p("label"): [{"@value": "B"}],
+             p("href"): [{"@id": "urn:ex:b"}], ORDER: [{"@value": "2", "@type": format!("{XSD}integer")}]},
+            {"@id": "urn:x:root", "@type": [k("list")], p("label"): "Root",
+             CHILD: [{"@id": "urn:x:b"}, {"@id": "urn:x:a"}, {"@id": "urn:x:c"}]},
+            {"@id": "urn:x:a", RDF_TYPE: [{"@id": k("heading")}], p("content"): [{"@value": "A"}],
+             p("level"): [{"@value": "2", "@type": format!("{XSD}integer")}],
+             ORDER: [{"@value": "1", "@type": format!("{XSD}integer")}]},
+            {"@id": "urn:x:c", RDF_TYPE: [{"@id": k("text")}], p("content"): [{"@value": "C"}],
+             ORDER: [{"@value": "2", "@type": format!("{XSD}integer")}]},
+        ]);
+        let home = Home::parse(br#"[{"prefix": "urn:ex:", "href": "/ex/"}]"#).unwrap();
+        let bytes = graph.to_string().into_bytes();
+        let Framed::Model(n) = frame(&bytes, 10, &home).unwrap() else {
+            panic!("a model")
+        };
+        let kinds: Vec<&str> = n.children.iter().map(|c| c.kind.as_str()).collect();
+        assert_eq!(kinds, ["heading", "link", "text"], "by order, then IRI");
+        assert_eq!(n.children[0].properties["level"], model::Value::Number(2));
+        assert_eq!(
+            n.children[1].properties["href"],
+            model::Value::Text("/ex/b".into())
+        );
+        assert_eq!(frame(&bytes, 3, &home).unwrap(), Framed::Past(4));
+        assert_eq!(frame(b"[]", 3, &home).unwrap(), Framed::Empty);
     }
 
     #[test]

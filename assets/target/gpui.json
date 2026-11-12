@@ -32,7 +32,7 @@
   },
   "limits": {},
   "elements": [
-    "urn:iki:ui:element:name:disclosure"
+    "urn:iki:ui:element:name:disclosure", "urn:iki:ui:element:name:meter"
   ],
   "hints": [
     "urn:iki:ui:hint:gpui:"

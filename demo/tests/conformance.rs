@@ -35,6 +35,8 @@ fn conforms() {
         "ui-lens-contact-table-query",
         "ui-lens-contact-list",
         "ui-lens-contact-list-query",
+        "ui-lens-contact-dashboard",
+        "ui-lens-contact-dashboard-query",
         "ui-lens-instance-contact",
         "ui-lens-demo-thread",
         "ui-lens-demo-thread-query",

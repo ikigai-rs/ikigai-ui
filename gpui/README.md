@@ -112,11 +112,17 @@ cargo run -p ikigai-ui-gpui --bin ikigai-ui-demo-native -- 127.0.0.1:8080 dark
 
 The palette is a resource: `Worker::palette` reads `urn:iki:ui:palette:{name}` through the
 host's kernel on a worker thread, so a host that overrides a palette repaints the native windows
-as it repaints the HTML face. Until it arrives, or if the kernel refuses it (the refusal is
+as it repaints the HTML face. It is parsed into the same `palette::Table` the token stylesheet
+is written from, so a palette that is not a full table of `#rrggbb` colors, or that misses the
+contrast floor, is refused here as it is there. Until it arrives, or if the kernel refuses it (the refusal is
 shown), the compiled table of the same name stands in. Colors go by role, as the HTML face
 uses them: text `fg` on `bg`, placeholders `muted`, links `accent`, errors `danger`, buttons,
 selected options and selected text `accent-fg` on `accent`, control borders `line`, table
 rules `rule`, the focus ring and the text cursor `focus` (drawn outside the control, on `bg`).
+Meters use `surface` for the track, `accent` for the fill, `warn` for a suboptimal region
+and `danger` for the farthest region or a value beyond the range; `line` outlines the
+track. The visible sentence beside the bar states the original value, bounds, thresholds,
+optimum and assessment, so color only reinforces the text.
 Each is a pair `palette::PAIRS` holds to the contrast floor. `tests/palette_source.rs` fails if
 a color is written anywhere in `src`.
 
@@ -158,7 +164,7 @@ only, where it is a system panel (Linux and Windows reach their emoji pickers th
 Windows+Period, or the input method's own key). Composition goes through GPUI's platform input
 handler on each: macOS text input, XIM or the `zwp_text_input_v3` protocol on Linux, IMM32 on
 Windows. Other field input hints use text editing, leaving authoritative value
-validation to the Sink. Choices use selectable options, and a choice with the `urn:iki:ui:hint:choice:radio` hint is one radio group: one tab stop, the arrow keys move the selection (wrapping), and the status line announces it ("Lens: graph, checked, 4 of 4"); Tab/Shift-Tab traverse
+validation to the Sink. Choices use selectable options, and a choice with the `urn:iki:ui:hint:choice:radio` hint is one radio group: one tab stop, the arrow keys move the selection (wrapping), and the status line announces it ("Lens: graph, checked, 5 of 5"); Tab/Shift-Tab traverse
 controls, and Enter/Space activate options and submit buttons. Native forms
 require a `resource` and `verb: sink` (Sink is the default). HTML-only `action`
 URLs and other form verbs are refused visibly. Successful Sink responses show a

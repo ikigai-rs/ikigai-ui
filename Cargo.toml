@@ -29,7 +29,7 @@ exclude = ["/tests", "/examples", "/axe", "/.github", "/demo"]
 [features]
 default = []
 # The UI test kit (UI conventions D18), for a UI repo's dev-dependency.
-testkit = ["dep:ikigai-a11y", "dep:futures-executor"]
+testkit = ["dep:futures-executor"]
 
 [dependencies]
 # 0.3.0 is the scoped content store (ledger #2965): held content is scoped to whoever delivered
@@ -37,18 +37,19 @@ testkit = ["dep:ikigai-a11y", "dep:futures-executor"]
 # `AliasTable::{exact,prefix}_at_root` that `pages` uses so a family's header, titles and
 # fragments resolve from the root (ledger #2061) came in 0.1.110. A caret on 0.3.0 is <0.4.0.
 ikigai-core = "0.3.0"
-# The shell and the token stylesheet are ikigai-fn compose templates (`composeOver`, named
-# instances). 0.5.1 is the floor: `{+name}`, RFC 6570 reserved expansion in a marker IRI, which
+# The shell is an ikigai-fn compose template (`composeOver`, a named instance); the token
+# stylesheet fills its palette slots itself, from parsed tables (ledger #3529). 0.5.1 is the floor: `{+name}`, RFC 6570 reserved expansion in a marker IRI, which
 # the shell's title and main markers use so a page name with `:` reaches its fragment whole
 # (ledger #2140, ikigai-rs/ikigai-fn#20); plus 0.5.0's escaping (`$h` per FND-H's rule set, ledger #1813)
 # and `ikigai_fn::html`, which the head slot and the test kit use. 0.8 brought reference
 # arguments and 0.9 was the shared host floor (ledger #2840); 0.10.0 is the release on
 # ikigai-core 0.3.0. A caret on it is <0.11.0.
 ikigai-fn = "0.10.0"
-# The test kit only. ikigai-a11y's `ratio` and `Rgba` are the contrast math every other UI
-# test uses (default features off: no syntect). 0.6.0 is the release on ikigai-core 0.3.0;
-# <0.7.0.
-ikigai-a11y = { version = "0.6.0", optional = true }
+# ikigai-a11y's `ratio` and `Rgba` are the contrast math every other UI test uses (default
+# features off: no syntect). The library holds a palette read as data to the contrast floor
+# with it (`palette::Table`, ledger #3529), and the test kit measures with it. 0.6.0 is the
+# release on ikigai-core 0.3.0; <0.7.0.
+ikigai-a11y = "0.6.0"
 # The UI model's JSON face (ledger #3352), and the test kit's vectors reader. 1.0 is every
 # serde_json there is.
 serde_json = "1.0"

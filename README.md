@@ -31,13 +31,14 @@ dark follows your GitHub theme). The native GPUI windows are captured by
 | `urn:iki:ui:target:name:{target}` | the `html` or `gpui` descriptor: versioned capabilities, rendered kinds, fallbacks and target limits |
 | `urn:iki:ui:support` | every target against every kind, plus capabilities, composed from descriptors; JSON by default, `as=text/html` for the support page |
 | `urn:iki:ui:face:target:{target}:screen:{screen}` | `urn:iki:ui:screen:name:{screen}` with the descriptor's fallbacks applied; model JSON by default, `as=application/ld+json` for named JSON-LD nodes |
-| `urn:iki:ui:element:name:{name}` | a custom element's definition (ledger #3358): its argument contract and its expansion, a model template over core kinds and other elements; a face renders an element natively when its descriptor claims it, else expands it (bounded by depth and nodes produced, a cycle refused), else its declared `replacement`, else its `fallback` text. `rating`, `card`, `key-value`, `tag-list` and `disclosure` are this crate's, shown at `urn:iki:ui:screen:name:elements` (the demo's `/page/elements`); `disclosure` is native on both faces (HTML `<details>`/`<summary>` from `urn:iki:ui:template:element:disclosure`, GPUI a toggle whose state is the window's), the others expanded on every face |
+| `urn:iki:ui:element:name:{name}` | a custom element's definition (ledger #3358): its argument contract and its expansion, a model template over core kinds and other elements; a face renders an element natively when its descriptor claims it, else expands it (bounded by depth and nodes produced, a cycle refused), else its declared `replacement`, else its `fallback` text. `rating`, `card`, `key-value`, `tag-list`, `disclosure` and `meter` are this crate's, shown at `urn:iki:ui:screen:name:elements` (the demo's `/page/elements`); `disclosure` is native on both faces (HTML `<details>`/`<summary>` from `urn:iki:ui:template:element:disclosure`, GPUI a toggle whose state is the window's), `meter` is also native on both faces (HTML `<meter>` with an associated label, GPUI a palette bar with its numeric reading beside it); the others expand on every face |
 | `urn:iki:ui:hint:choice:radio` | a presentation hint on a `choice` (value `radio`, ledger #3537): a face whose descriptor claims `urn:iki:ui:hint:choice:` draws it as radio buttons, the html face a `<fieldset>` with its `<legend>` and one native radio per option (`urn:iki:ui:template:hint:choice-radio` and `:option-radio`; the arrow keys move within the group), the GPUI face a radio group (one tab stop, the arrows move the selection, the choice announced in the status line); a face that does not claim it keeps its select. The lens chooser, on a lensed view and on a resource's view, carries it |
 | `urn:iki:ui:scene:graph:{graph}` | an embedded 3D scene's DATUM (ledger #3514), `application/vnd.ikigai.ui.scene+json`: `{graph}`'s nodes (labels, types, positions), its edges (labels) and a camera; data, never code (no shaders, no scripts: the datum is closed). `{graph}` is read under the CALLER's capability, in its own face when that is JSON(-LD), else `as=application/ld+json` |
 | `urn:iki:ui:layout:graph:{graph}` | 3D positions for `{graph}`'s nodes: a force-directed layout from a fixed seed, fitted to the unit sphere; cacheable and golden-threaded from the graph, so an unchanged graph is laid out once and an edit to it cuts the layout |
 | `urn:iki:ui:shape:scene` | the scene datum's SHACL shape (Turtle); `ikigai_ui::scene::validate` says the same in Rust |
 | `urn:iki:ui:scene-renderer.js` | the html face's WebGPU renderer, a first-party script like shell.js: fixed shaders, reads only the datum its `scene` names (a same-origin path), orbit/zoom/select by mouse and keyboard, the selection said in `#status`. With no WebGPU, no adapter or no script the canvas stays hidden and the scene's replacement is the scene |
 | `scene` (a core kind) | `label` (its fallback text), `datum` (the scene datum's IRI) and a REQUIRED `replacement`, its accessible form (the same graph as text). The html face draws the canvas with the replacement beside it, linked from the caption; a face that does not claim `scene` (gpui in phase 1, or an html descriptor a host overrides) shows the replacement in its place, else the label. The gallery's is the demo's contact contract as triples, `urn:iki:ui:example:graph:contact`. The s-expression face spells a replacement `:replacement (…)` |
+| `urn:iki:ui:view:lens:{lens}:resource:{iri}` with a `construct` lens | a lens whose renderer is `construct` (ledger #3520) has no template: its read-only SPARQL CONSTRUCT builds the UI model as RDF in the model's own vocabulary (each node `a urn:iki:ui:kind:name:{kind}`, its properties `urn:iki:ui:property:name:{p}`, children `…:child` placed by an integer `…:order`), framed to the model's JSON by the model's context and validated and bounded exactly as any screen is; an IRI `href` links through the home mapping; past its bound (in nodes) it shows nothing and says so. `contact-dashboard` is the example: a table of counts by type and a line on the required fields |
 | `artifacts(&[Artifact], dir)` | your own artifacts, with the same two deliveries: compiled in, or a file under your directory prefix |
 
 The gallery's scene as a reader without WebGPU gets it, its replacement (the canvas is not
@@ -249,11 +250,12 @@ one ikigai-web door. It serves four pages in the shared shell:
 
 - `/` or `/page/gallery`: the gallery screen, every node kind rendered by the html target.
 - `/page/elements`: the custom elements (`rating`, `card`, `key-value`, `tag-list`, each
-  expanded into core kinds by the html target, and `disclosure`, native as `<details>`).
+  expanded into core kinds by the html target, `disclosure`, native as `<details>`, and `meter`, a labeled reservoir reading
+  native as `<meter>` with value text; the GPUI face draws a palette bar and the same text).
 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/elements-dark.webp">
-    <img src="docs/screenshots/elements-light.webp" width="480" alt="The demo elements page: a rating reading Service: 4 out of 5; a Field notes card with two links; a Gauge 14 key-value table of station Mill Lane, level 2.31 m, read 2026-11-10; a tag list of hydrology, flooding and open data; and a closed disclosure asking How often is the gauge read?">
+    <img src="docs/screenshots/elements-light.webp" width="480" alt="The demo elements page: a rating reading Service: 4 out of 5; a Field notes card with two links; a Gauge 14 key-value table of station Mill Lane, level 2.31 m, read 2026-11-10; a tag list of hydrology, flooding and open data; a closed disclosure asking How often is the gauge read?; and a reservoir capacity meter at 82 of 100, outside its optimum region.">
   </picture>
 
 - `/page/contact`: a contact form. **The form is a client generated from the service's
@@ -279,7 +281,7 @@ one ikigai-web door. It serves four pages in the shared shell:
 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/support-dark.webp">
-    <img src="docs/screenshots/support-light.webp" width="480" alt="The support page: a table of each node kind against the gpui and html targets, html rendering every kind and gpui rendering some and falling back to text or a list for the rest; below it, the custom elements, expanded on both targets except the native disclosure, and each target's capabilities.">
+    <img src="docs/screenshots/support-light.webp" width="480" alt="The support page: a table of each node kind against the gpui and html targets, html rendering every kind and gpui rendering some and falling back to text or a list for the rest; below it, the custom elements, expanded on both targets except the native disclosure and meter, and each target's capabilities.">
   </picture>
 
 There is no sign-in yet: the door grants every request a write to the contact service and
@@ -370,6 +372,12 @@ Two of those decisions stand as amended on 2026-11-01 (ledger #2133, carried out
   control (an input, a button) and is held to SC 1.4.11's 3:1. `--rule` is a decorative line (a
   table rule, a section divider), which SC 1.4.11 exempts; it is held to a stated 1.3:1 so no
   palette can make it vanish, and light keeps gonk's `#c9d1d9`. High contrast holds both to 7:1.
+- **D12, a palette is data, read as a table.** `urn:iki:ui:palette:{name}` is a resource a host
+  may rebind, so it is never spliced as text: `palette::Table::parse` reads it (every token of
+  `TOKENS` once, each value `#rrggbb`, nothing else) and holds it to the floor (`PAIRS`) before
+  either face draws with it. `tokens.css` is written from the parsed colors, and a palette that
+  carries `}` or `;`, a value that is not a color or a pair below its floor refuses the stylesheet,
+  naming why (ledger #3529). The native face reads the same table.
 
 ## License
 

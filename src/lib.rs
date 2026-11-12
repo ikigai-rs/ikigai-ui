@@ -14,7 +14,7 @@
 //! | `urn:iki:ui:template:shell` | artifact | the page shell, a compose template (D1, D8, D13), the theme chooser in its header |
 //! | `urn:iki:ui:template:tokens` | artifact | the token stylesheet's template |
 //! | `urn:iki:ui:palette:{name}` | data | a palette table ([`palette`]): CSS declarations, or Turtle with `as=text/turtle` |
-//! | `urn:iki:ui:tokens.css` | composition | the template filled with the palettes: `auto`, light, dark, high contrast |
+//! | `urn:iki:ui:tokens.css` | composition | the template filled with the parsed palettes: `auto`, light, dark, high contrast |
 //! | a host's `{base}page:{name}` | composition | the shell over the host's fragment, from [`pages`] or [`Pages`] |
 //! | `urn:iki:ui:head:{family}` | data | a family's `<head>` additions, fixed by the host ([`Pages`]) |
 //! | `urn:iki:ui:theme-chooser:{theme}` | data | the theme chooser ([`theme_chooser`]), `{theme}` selected |
@@ -50,7 +50,10 @@
 //! failure, a denial included, passes through. Because the fallback is taken on the directory
 //! atom's own absence, the answer hangs from that atom's golden thread, and a write to the
 //! file through the kernel (or a watcher's cut) recomputes it. The palettes are not artifacts:
-//! they are the data the contrast floor is tested over, so a directory cannot change a color.
+//! they are the data the contrast floor is tested over, so a directory cannot change a color. A
+//! host that rebinds a palette gets it read as data: [`palette::Table::parse`] refuses anything
+//! but a full table of `#rrggbb` colors that clears the floor, and `tokens.css` is written from
+//! the parsed table, never from the palette's text (ledger #3529).
 //!
 //! **Sealed.** A directory can replace the artifacts [`ARTIFACTS`] names and the two
 //! [`target`] descriptors (`target/html.json`, `target/gpui.json`); it cannot add a name.
@@ -113,6 +116,7 @@ pub mod element;
 pub mod form;
 pub mod html;
 pub mod lens;
+pub mod meter;
 pub mod model;
 pub mod palette;
 pub mod reference;
@@ -348,7 +352,7 @@ fn artifact_endpoint(a: Artifact, file: Iri, dir: &str) -> AsyncFnEndpoint {
 // --- the palettes ------------------------------------------------------------------------
 
 /// `urn:iki:ui:palette:{name}`: a palette table, as CSS declarations (`text/plain`, the face the
-/// token template splices) or as Turtle (`as=text/turtle`).
+/// token stylesheet parses into a table) or as Turtle (`as=text/turtle`).
 fn palette_endpoint() -> FnEndpoint {
     FnEndpoint::new("ui-palette", |inv: &Invocation<'_>| {
         let asked = inv.request.target.as_str();
@@ -568,18 +572,33 @@ fn no_chooser_endpoint(family: &str) -> FnEndpoint {
 
 // --- the token stylesheet -------------------------------------------------------------------
 
-/// `urn:iki:ui:tokens.css`: the token template filled with the palettes. No view code: a
-/// `composeOver` under its own name and contract, as ikigai-toolbox's views are.
+/// A palette slot in the token template: `$h{urn:iki:ui:palette:{name}}`.
+const PALETTE_SLOT: &str = "$h{urn:iki:ui:palette:";
+
+/// `urn:iki:ui:tokens.css`: the token template with its palette slots filled from the parsed
+/// palettes (ledger #3529).
+///
+/// The template (compiled in, or a directory's `tokens.template.css`) is copied as it is, but
+/// for each slot `$h{urn:iki:ui:palette:{name}}`: the palette is read through the kernel, so a
+/// host's rebinding reaches it and its golden thread hangs from this answer, then parsed and
+/// held to the contrast floor ([`palette::Table::parse`]), and the slot is filled with the
+/// declarations written FROM the parsed colors ([`palette::Table::declarations`]), never with
+/// the palette's text. A palette the parse refuses refuses the stylesheet, naming why. `$$` is
+/// a literal `$`, as in a compose template; any other compose marker is refused, so nothing
+/// reaches the stylesheet unchecked through the template either.
 fn tokens_endpoint() -> AsyncFnEndpoint {
-    let composer = Arc::new(
-        ikigai_fn::compose_over(Iri::parse(TOKENS_TEMPLATE).expect("an IRI"))
-            .named("ui-tokens-css"),
-    );
     AsyncFnEndpoint::new(
         "ui-tokens-css",
         move |inv: &Invocation<'_>| -> InvokeFuture<'_> {
-            let composer = composer.clone();
-            Box::pin(async move { composer.invoke(inv).await })
+            Box::pin(async move {
+                let template = inv
+                    .source(&Iri::parse(TOKENS_TEMPLATE).expect("an IRI"))
+                    .await?;
+                let text = String::from_utf8(template.bytes)
+                    .map_err(|_| Error::Endpoint(format!("{TOKENS_TEMPLATE}: not UTF-8 text")))?;
+                let css = fill_palettes(inv, &text).await?;
+                Ok(Representation::new(template.repr_type, css.into_bytes()).cacheable())
+            })
         },
     )
     .with_description(
@@ -588,12 +607,67 @@ fn tokens_endpoint() -> AsyncFnEndpoint {
             .summary(
                 "The shared token stylesheet (UI conventions D12): every palette behind \
                  prefers-color-scheme, prefers-contrast and data-theme on <html>, plus the \
-                 shell's own rules. Composed from urn:iki:ui:template:tokens and the palettes.",
+                 shell's own rules. Composed from urn:iki:ui:template:tokens and the palettes, \
+                 each parsed as a table of token colors and held to the contrast floor first.",
             )
             .verb(Verb::Source)
             .verb(Verb::Meta)
             .output(CSS),
     )
+}
+
+/// The token template `text` with every palette slot filled from its parsed table.
+async fn fill_palettes(inv: &Invocation<'_>, text: &str) -> Result<String, Error> {
+    let refuse = |detail: String| Error::Endpoint(format!("{TOKENS_TEMPLATE}: {detail}"));
+    let mut tables: Vec<palette::Table> = Vec::new();
+    let mut css = String::with_capacity(text.len() * 2);
+    let mut rest = text;
+    while let Some(at) = rest.find('$') {
+        css.push_str(&rest[..at]);
+        rest = &rest[at..];
+        if let Some(after) = rest.strip_prefix("$$") {
+            css.push('$');
+            rest = after;
+        } else if let Some(after) = rest.strip_prefix(PALETTE_SLOT) {
+            let end = after
+                .find('}')
+                .ok_or_else(|| refuse("an unterminated palette slot".into()))?;
+            let name = &after[..end];
+            if !palette::name_ok(name) {
+                return Err(refuse(format!(
+                    "`{PALETTE_SLOT}{name}}}`: not a palette name"
+                )));
+            }
+            if !tables.iter().any(|t| t.name() == name) {
+                tables.push(read_palette(inv, name).await?);
+            }
+            let table = tables.iter().find(|t| t.name() == name).expect("read");
+            css.push_str(&table.declarations());
+            rest = &after[end + 1..];
+        } else if rest[1..].starts_with(ikigai_fn::MARKER_LETTERS) && rest[2..].starts_with('{') {
+            let marker: String = rest.chars().take(24).collect();
+            return Err(refuse(format!(
+                "`{marker}…`: the token template fills palette slots ({PALETTE_SLOT}{{name}}}}) \
+                 only"
+            )));
+        } else {
+            css.push('$');
+            rest = &rest[1..];
+        }
+    }
+    css.push_str(rest);
+    Ok(css)
+}
+
+/// `urn:iki:ui:palette:{name}`, read through the kernel and parsed as a [`palette::Table`].
+async fn read_palette(inv: &Invocation<'_>, name: &str) -> Result<palette::Table, Error> {
+    let iri = Iri::parse(format!("urn:iki:ui:palette:{name}")).expect("a checked name");
+    let rep = inv.source(&iri).await?;
+    let text = std::str::from_utf8(&rep.bytes).map_err(|_| Error::InvalidArgument {
+        name: "palette".into(),
+        detail: format!("{}: not UTF-8 text", iri.as_str()),
+    })?;
+    Ok(palette::Table::parse(name, text)?)
 }
 
 /// The shared artifacts, the palettes and the token stylesheet, named [`SPACE_ID`].

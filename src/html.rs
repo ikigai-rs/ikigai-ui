@@ -71,18 +71,27 @@ pub const TEMPLATES: [crate::Artifact; 16] = template!(
 /// An element's native template is this plus the element's name.
 pub const ELEMENT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:element:";
 
-/// The disclosure element's IRI, the one element the html face claims natively.
+/// The disclosure element's IRI, an element the html face claims natively.
 pub const DISCLOSURE: &str = "urn:iki:ui:element:name:disclosure";
 
 /// The compiled-in native templates of the elements the html descriptor claims
-/// (`elements`), one per element: `<details>`/`<summary>` for `disclosure` (ledger #3512).
-pub const ELEMENT_TEMPLATES: [crate::Artifact; 1] = [crate::Artifact {
-    iri: "urn:iki:ui:template:element:disclosure",
-    id: "ui-template-element",
-    file: "template/element/disclosure.html",
-    media_type: crate::HTML,
-    bytes: include_bytes!("../assets/template/element/disclosure.html"),
-}];
+/// (`elements`): `<details>`/`<summary>` for disclosure and a labeled `<meter>`.
+pub const ELEMENT_TEMPLATES: [crate::Artifact; 2] = [
+    crate::Artifact {
+        iri: "urn:iki:ui:template:element:disclosure",
+        id: "ui-template-element",
+        file: "template/element/disclosure.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/element/disclosure.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:element:meter",
+        id: "ui-template-element",
+        file: "template/element/meter.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/element/meter.html"),
+    },
+];
 
 /// A hinted template is this plus its name: `{kind}-{presentation}`.
 pub const HINT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:hint:";
@@ -379,6 +388,7 @@ fn composers() -> Arc<BTreeMap<&'static str, ikigai_fn::ComposeOver>> {
         let name = &a.iri[ELEMENT_TEMPLATE_PREFIX.len()..];
         let element: &'static str = match name {
             "disclosure" => DISCLOSURE,
+            "meter" => crate::meter::IRI,
             _ => unreachable!("every native template names its element"),
         };
         let iri = Iri::parse(a.iri).expect("an IRI");
@@ -566,6 +576,14 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                 let (node, _) = locate(&root, at)?;
                 let name = inv.bindings.get("property").unwrap_or_default();
                 let value = match (node.kind.as_str(), name) {
+                    (crate::meter::IRI, "control-id") => Some(format!("ui-meter-{at}")),
+                    (crate::meter::IRI, "description") => {
+                        Some(crate::meter::Reading::parse(node)?.description(node))
+                    }
+                    (crate::meter::IRI, "value" | "min" | "max" | "low" | "high" | "optimum") => {
+                        let reading = crate::meter::Reading::parse(node)?;
+                        Some(reading.property(name).to_string())
+                    }
                     ("form", "submit") => submit(inv, node).await?,
                     ("form", "method") => Some(form_method(node)?),
                     ("scene", "datum-url") => match text_of(node, "datum") {

@@ -1,0 +1,12 @@
+{
+  "arguments": [
+    { "name": "label", "summary": "what is measured", "required": true },
+    { "name": "value", "summary": "finite numeric value (integer or decimal text)", "required": true },
+    { "name": "min", "summary": "lower bound, less than max", "default": "0" },
+    { "name": "max", "summary": "upper bound", "default": "1" },
+    { "name": "low", "summary": "optional low threshold within min and max" },
+    { "name": "high", "summary": "optional high threshold, at least low, within min and max" },
+    { "name": "optimum", "summary": "optional ideal value within min and max" }
+  ],
+  "expansion": { "kind": "text", "properties": { "content": "{label}: {value} of {max}" } }
+}
