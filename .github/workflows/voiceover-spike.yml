@@ -12,10 +12,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --example axe_site -- target/axe-site
+      # One tar file: the site's scene datum lives at a path with colons in it (an IRI), which
+      # upload-artifact refuses file by file.
+      - run: tar -cf axe-site.tar -C target axe-site
       - uses: actions/upload-artifact@v4
         with:
           name: axe-site
-          path: target/axe-site
+          path: axe-site.tar
   voiceover:
     needs: site
     runs-on: macos-15
@@ -29,7 +32,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: axe-site
-          path: target/axe-site
+      - run: mkdir -p target && tar -xf axe-site.tar -C target
       - uses: actions/setup-node@v4
         with:
           node-version: 22
