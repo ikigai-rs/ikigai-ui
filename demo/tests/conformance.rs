@@ -228,6 +228,16 @@ fn conforms() {
         )
         .pure("ui-shape-scene")
         .pure("ui-example-graph")
+        // Accessibility acceptance criteria (ledger #3541), as ikigai-ui's tests/conformance.rs
+        // registers them: compiled-in data, its vocabulary the graph the shape serves.
+        .fixture(
+            Fixture::new("ui-criterion", Verb::Source)
+                .binding("kind", "field")
+                .binding("target", "html"),
+        )
+        .pure("ui-criterion")
+        .pure("ui-shape-criterion")
+        .vocabulary(ikigai_ui::criterion::SHAPE)
         // ikigai-ui's own vocabularies, as its tests/conformance.rs registers them.
         .namespace("urn:iki:ui:token:")
         .namespace("urn:iki:ui:kind:")
