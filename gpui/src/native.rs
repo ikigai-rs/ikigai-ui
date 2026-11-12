@@ -1087,11 +1087,12 @@ impl Screen {
                             }
                             row = row.child(cell_view);
                         }
-                        body = body.child(row);
+                        body = body.child(role(row, child, &colors));
                     } else {
                         let element = self.walk(child, &format!("{path}/{i}"), form, cx);
                         if node.kind == "list" {
-                            body = body.child(div().flex().gap_2().child("•").child(element));
+                            let item = div().flex().gap_2().child("•").child(element);
+                            body = body.child(role(item, child, &colors));
                         } else {
                             body = body.child(element);
                         }
@@ -1116,6 +1117,27 @@ impl Screen {
             body = body.child(div().text_color(colors.danger).child(error.to_string()));
         }
         body.into_any_element()
+    }
+}
+
+/// A list item or a table row in the role its screen gives it (ledger #3521), the hint kept only
+/// because this face's descriptor claims `urn:iki:ui:hint:role:`: a violation in the danger color
+/// with a solid danger rule, an asserted row with a solid rule, a derived one with a dashed rule.
+/// The row's own text says the same, so the rule and the color only repeat it.
+fn role(item: gpui::Div, node: &Node, colors: &Colors) -> gpui::Div {
+    match ikigai_ui::model::role(node) {
+        Some("danger") => item
+            .pl_2()
+            .border_l_2()
+            .border_color(colors.danger)
+            .text_color(colors.danger),
+        Some("asserted") => item.pl_2().border_l_2().border_color(colors.fg),
+        Some("derived") => item
+            .pl_2()
+            .border_l_2()
+            .border_dashed()
+            .border_color(colors.fg),
+        _ => item,
     }
 }
 
@@ -1972,6 +1994,60 @@ mod tests {
                     .output(ikigai_ui::model::MEDIA_TYPE),
             ),
         )
+    }
+
+    /// A screen of a list and a table whose items and rows play roles (ledger #3521).
+    fn roles_screen() -> EndpointSpace {
+        let role = ikigai_ui::model::ROLE;
+        let screen = serde_json::json!({"kind": "group", "properties": {"label": "Roles"}, "children": [
+            {"kind": "list", "properties": {"label": "Failing nodes"}, "children": [
+                {"kind": "text", "hint": {role: "danger"}, "properties": {"content": "Violation: topic"}},
+                {"kind": "text", "properties": {"content": "no role"}}]},
+            {"kind": "table", "properties": {"caption": "Split"}, "children": [
+                {"kind": "group", "hint": {role: "asserted"}, "properties": {"label": "Row"}, "children": [
+                    {"kind": "text", "properties": {"content": "asserted"}}]},
+                {"kind": "group", "hint": {role: "derived"}, "properties": {"label": "Row"}, "children": [
+                    {"kind": "text", "properties": {"content": "derived"}}]}]}]});
+        let bytes = serde_json::to_vec(&screen).unwrap();
+        EndpointSpace::new().bind(
+            Exact::new("urn:iki:ui:screen:name:roles"),
+            FnEndpoint::new("test-roles", move |_: &Invocation<'_>| {
+                Ok(Representation::new(
+                    ReprType::new(ikigai_ui::model::MEDIA_TYPE),
+                    bytes.clone(),
+                ))
+            })
+            .with_description(
+                Description::new("test-roles")
+                    .title("Roles")
+                    .summary("List items and table rows in the danger, asserted and derived roles.")
+                    .verb(Verb::Source)
+                    .output(ikigai_ui::model::MEDIA_TYPE),
+            ),
+        )
+    }
+
+    /// The role hints reach the native face, which claims them (ledger #3521): a danger item,
+    /// an asserted row and a derived row keep their roles in the snapshot it draws, and an item
+    /// with none has none. Each one's text says the same.
+    #[gpui::test]
+    fn list_items_and_table_rows_keep_their_roles_on_the_native_face(cx: &mut TestAppContext) {
+        let worker = demo_worker(Some(roles_screen()));
+        let (screen, cx) =
+            cx.add_window_view(|window, cx| Screen::new(worker, "roles", Theme::Auto, window, cx));
+        settle(&screen, cx);
+        screen.update(cx, |s, _| {
+            let root = s.snapshot.as_ref().expect("the roles screen").root();
+            let role = ikigai_ui::model::role;
+            assert_eq!(
+                role(&root.children[0].children[0]),
+                Some("danger"),
+                "{root:?}"
+            );
+            assert_eq!(role(&root.children[0].children[1]), None);
+            assert_eq!(role(&root.children[1].children[0]), Some("asserted"));
+            assert_eq!(role(&root.children[1].children[1]), Some("derived"));
+        });
     }
 
     fn tab_paths(screen: &Entity<Screen>, cx: &mut gpui::VisualTestContext) -> Vec<String> {

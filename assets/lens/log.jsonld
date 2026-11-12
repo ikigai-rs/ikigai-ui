@@ -1,0 +1,14 @@
+{
+  "@context": {
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "prov": "http://www.w3.org/ns/prov#",
+    "log": "urn:iki:ui:example:graph:log:"
+  },
+  "@graph": [
+    { "@id": "log:Entry", "rdfs:subClassOf": { "@id": "prov:Entity" } },
+    { "@id": "log:entry-1", "@type": "log:Entry", "rdfs:label": "entry 1, the contact form opened" },
+    { "@id": "log:entry-2", "@type": "log:Entry", "rdfs:label": "entry 2, a message sent" },
+    { "@id": "log:summary", "rdfs:label": "summary, one message today",
+      "prov:wasDerivedFrom": [ { "@id": "log:entry-1" }, { "@id": "log:entry-2" } ] }
+  ]
+}

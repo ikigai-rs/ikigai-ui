@@ -39,6 +39,14 @@ fn conforms() {
         "ui-lens-contact-dashboard",
         "ui-lens-contact-dashboard-query",
         "ui-lens-instance-contact",
+        // Lenses 4 (ledger #3521).
+        "ui-lens-shacl-violations",
+        "ui-lens-shacl-violations-query",
+        "ui-lens-asserted-vs-derived",
+        "ui-lens-asserted-vs-derived-query",
+        "ui-lens-shapes-contact",
+        "ui-example-graph-log",
+        "ui-lens-instance-log",
     ] {
         suite = suite.pure(id);
     }
@@ -57,6 +65,41 @@ fn conforms() {
             Fixture::new(id, Verb::Source)
                 .arg("query", query)
                 .arg("graph", ikigai_ui::scene::EXAMPLE_GRAPH),
+        );
+    }
+    // ikigai-shacl's and ikigai-reason's endpoints, bound so the SHACL and asserted-vs-derived
+    // lenses join a real report and real entailments (ledger #3521); and the two graphs the
+    // lenses name, over the example graphs. The example log segment's terms are its own.
+    suite = suite
+        .fixture(
+            Fixture::new("shacl-validate", Verb::Source)
+                .arg("data", "<urn:a> <urn:b> <urn:c> .")
+                .arg("shapes", ikigai_ui::lens::EXAMPLE_SHAPES),
+        )
+        .pure("shacl-validate")
+        .fixture(
+            Fixture::new("reason-closure", Verb::Source).arg("graph", ikigai_ui::lens::EXAMPLE_LOG),
+        )
+        .fixture(
+            Fixture::new("reason-inferred", Verb::Source)
+                .arg("graph", ikigai_ui::lens::EXAMPLE_LOG),
+        )
+        .fixture(
+            Fixture::new("ui-lens-report", Verb::Source)
+                .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),
+        )
+        .fixture(
+            Fixture::new("ui-lens-inferred", Verb::Source)
+                .binding("iri", ikigai_ui::lens::EXAMPLE_LOG),
+        )
+        .namespace("urn:iki:ui:example:graph:log:");
+    for id in ["reason-closure", "reason-inferred"] {
+        suite = suite.opt_out_check(
+            id,
+            Check::Resolves,
+            "ikigai-reason answers its non-Turtle faces through urn:rdf:transrept, which this \
+             host does not bind: the asserted-vs-derived lens reads only its Turtle face, which \
+             tests/lens.rs resolves against the real reasoner (ledger #3521)",
         );
     }
     let report = suite

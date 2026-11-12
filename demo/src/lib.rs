@@ -513,7 +513,8 @@ pub fn root(store: Store) -> Arc<dyn Space> {
         .lenses(true)
         .build()
         .expect("a valid family");
-    Arc::new(Fallback::new(vec![
+    #[allow(unused_mut)]
+    let mut spaces: Vec<Arc<dyn Space>> = vec![
         Arc::new(ikigai_ui::space()),
         Arc::new(family),
         Arc::new(site()),
@@ -522,8 +523,15 @@ pub fn root(store: Store) -> Arc<dyn Space> {
         // The example lenses over the contact graph, and the SPARQL store they run on (#3518).
         Arc::new(ikigai_ui::lens::examples()),
         Arc::new(ikigai_sparql::space()),
-        Arc::new(ikigai_ui::screen::screens()),
-    ]))
+    ];
+    // What the SHACL and asserted-vs-derived lenses join (#3521).
+    #[cfg(not(target_arch = "wasm32"))]
+    spaces.extend([
+        Arc::new(ikigai_shacl::space()) as Arc<dyn Space>,
+        Arc::new(ikigai_reason::space()),
+    ]);
+    spaces.push(Arc::new(ikigai_ui::screen::screens()));
+    Arc::new(Fallback::new(spaces))
 }
 
 /// A kernel over [`root`], with the Meta renderer that reads a contract as JSON.

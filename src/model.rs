@@ -294,6 +294,26 @@ pub fn is_radio(node: &Node) -> bool {
     node.kind == "choice" && node.hint.get(RADIO) == Some(&Hint::Plain(Value::Text("radio".into())))
 }
 
+/// The presentation hints a list item or a table row takes (ledger #3521), read by every face
+/// that claims this namespace and dropped by every other: the row's TEXT says the same, so a face
+/// without them loses a line or a color, never the meaning.
+pub const ROLE_HINTS: &str = "urn:iki:ui:hint:role:";
+/// The role a list item or a table row plays, one of [`ROLES`]: `danger` (a SHACL violation,
+/// drawn in the palette's danger color with a solid danger rule), `asserted` (a solid rule),
+/// `derived` (a dashed rule). A lens's query states it per row as `?role`.
+pub const ROLE: &str = "urn:iki:ui:hint:role:mark";
+/// The roles [`ROLE`] names.
+pub const ROLES: [&str; 3] = ["danger", "asserted", "derived"];
+
+/// The role `node` plays as a list item or a table row, when it carries [`ROLE`] with one of
+/// [`ROLES`]; anything else is no role.
+pub fn role(node: &Node) -> Option<&'static str> {
+    match node.hint.get(ROLE) {
+        Some(Hint::Plain(Value::Text(r))) => ROLES.iter().find(|x| **x == r).copied(),
+        _ => None,
+    }
+}
+
 /// The most hints one node carries.
 pub const MAX_HINTS: usize = 16;
 /// The longest hint key or text value, in bytes.
