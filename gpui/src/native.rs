@@ -23,6 +23,10 @@ use input::TextInput;
 pub struct Colors {
     /// The window's ground.
     pub bg: Hsla,
+    /// The unfilled meter track.
+    pub surface: Hsla,
+    /// A suboptimal meter reading on surface.
+    pub warn: Hsla,
     /// Text on `bg`.
     pub fg: Hsla,
     /// Placeholder text on `bg`.
@@ -47,6 +51,8 @@ impl Colors {
         let c = |token| Hsla::from(rgb(tokens.get(token)));
         Self {
             bg: c("bg"),
+            surface: c("surface"),
+            warn: c("warn"),
             fg: c("fg"),
             muted: c("muted"),
             accent: c("accent"),
@@ -960,6 +966,45 @@ impl Screen {
                 }
                 return body.into_any_element();
             }
+            ikigai_ui::meter::IRI => {
+                let reading = match ikigai_ui::meter::Reading::parse(node) {
+                    Ok(reading) => reading,
+                    Err(error) => {
+                        return body
+                            .child(format!("{}: {error}", label()))
+                            .into_any_element()
+                    }
+                };
+                let fill = match reading.token() {
+                    "danger" => colors.danger,
+                    "warn" => colors.warn,
+                    _ => colors.accent,
+                };
+                // The fill and the border meet surface, never one another: a 2px inset
+                // keeps every drawn pair in PAIRS. Empty/full readings keep the same border.
+                let bar = div()
+                    .w(px(164.))
+                    .h(px(20.))
+                    .flex_shrink_0()
+                    .p(px(2.))
+                    .border_1()
+                    .border_color(colors.line)
+                    .bg(colors.surface)
+                    .child(div().h_full().w(px(158. * reading.fraction())).bg(fill));
+                return body
+                    .flex_row()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_2()
+                    .child(bar)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(200.))
+                            .child(reading.description(node)),
+                    )
+                    .into_any_element();
+            }
             DISCLOSURE => {
                 // A button that holds its expanded state (`open`, the window's) and shows or
                 // hides its body: the summary line, then the body text and children when open.
@@ -1463,6 +1508,50 @@ mod tests {
             assert!(s.open.is_empty());
             assert!(s.tab_order.iter().any(|(path, _)| path == "//5/2"));
             assert!(s.shown("//5/2"));
+        });
+    }
+
+    #[gpui::test]
+    fn meters_draw_natively_in_each_palette_without_taking_keyboard_focus(cx: &mut TestAppContext) {
+        for theme in [Theme::Light, Theme::Dark, Theme::HighContrast] {
+            let worker = demo_worker(None);
+            let (screen, cx) =
+                cx.add_window_view(|window, cx| Screen::new(worker, "elements", theme, window, cx));
+            settle(&screen, cx);
+            screen.update(cx, |s, _| {
+                let meter = &s.snapshot.as_ref().unwrap().root().children[6];
+                assert_eq!(meter.kind, ikigai_ui::meter::IRI);
+                let reading = ikigai_ui::meter::Reading::parse(meter).unwrap();
+                assert!((reading.fraction() - 0.82).abs() < f32::EPSILON);
+                assert_eq!(reading.token(), "warn");
+                assert!(reading
+                    .description(meter)
+                    .contains("outside optimum region"));
+                assert!(!s.focus.contains_key("//6"));
+                assert!(!s.tab_order.iter().any(|(path, _)| path == "//6"));
+                let expected = Colors::new(&Tokens::compiled(
+                    ikigai_ui::palette::palette(theme.palette(false)).unwrap(),
+                ));
+                assert_eq!(s.colors.surface, expected.surface);
+                assert_eq!(s.colors.warn, expected.warn);
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn meters_draw_their_text_expansion_when_native_support_is_disabled(cx: &mut TestAppContext) {
+        let worker = demo_worker(Some(without_native_elements()));
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "elements", Theme::Auto, window, cx));
+        settle(&screen, cx);
+        screen.update(cx, |s, _| {
+            let meter = &s.snapshot.as_ref().unwrap().root().children[6];
+            assert_eq!(meter.kind, "text");
+            assert_eq!(
+                text(meter, "content"),
+                Some("Reservoir capacity (%): 82 of 100")
+            );
+            assert!(!s.focus.contains_key("//6"));
         });
     }
 

@@ -539,7 +539,7 @@ pub const SCREEN: &str = "urn:iki:ui:screen:name:elements";
 
 /// This crate's example elements, compiled in, each overridable from `element/{name}.json` in
 /// the UI directory (so an edit there recomputes exactly the screens that use it).
-pub const ELEMENTS: [crate::Artifact; 5] = [
+pub const ELEMENTS: [crate::Artifact; 6] = [
     crate::Artifact {
         iri: "urn:iki:ui:element:name:rating",
         id: "ui-element-name",
@@ -575,15 +575,23 @@ pub const ELEMENTS: [crate::Artifact; 5] = [
         media_type: "application/json",
         bytes: include_bytes!("../assets/element/disclosure.json"),
     },
+    crate::Artifact {
+        iri: "urn:iki:ui:element:name:meter",
+        id: "ui-element-name",
+        file: "element/meter.json",
+        media_type: "application/json",
+        bytes: include_bytes!("../assets/element/meter.json"),
+    },
 ];
 
 /// Each element's example node, in [`ELEMENTS`]' order.
-pub const EXAMPLES: [&str; 5] = [
+pub const EXAMPLES: [&str; 6] = [
     include_str!("../assets/example/element/rating.json"),
     include_str!("../assets/example/element/card.json"),
     include_str!("../assets/example/element/key-value.json"),
     include_str!("../assets/example/element/tag-list.json"),
     include_str!("../assets/example/element/disclosure.json"),
+    include_str!("../assets/example/element/meter.json"),
 ];
 
 fn known(name: &str) -> Result<&'static crate::Artifact, Error> {

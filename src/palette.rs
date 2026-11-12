@@ -73,7 +73,7 @@ pub enum Kind {
 /// `--focus` on their grounds), plus `--accent` and `--danger` as text on both grounds, because the token
 /// stylesheet colors links with `--accent` and refusal notes with `--danger`. The focus ring is
 /// drawn outside its control (`outline-offset`), so its ground is the page, never the control.
-pub const PAIRS: [(&str, &str, Kind); 18] = [
+pub const PAIRS: [(&str, &str, Kind); 19] = [
     ("fg", "bg", Kind::Text),
     ("fg", "surface", Kind::Text),
     ("muted", "bg", Kind::Text),
@@ -86,6 +86,8 @@ pub const PAIRS: [(&str, &str, Kind); 18] = [
     ("danger-fg", "danger", Kind::Text),
     ("ok-fg", "ok", Kind::Text),
     ("warn-fg", "warn", Kind::Text),
+    // The native meter fill against its inset track (all other meter pairs already above).
+    ("warn", "surface", Kind::NonText),
     ("line", "bg", Kind::NonText),
     ("line", "surface", Kind::NonText),
     ("rule", "bg", Kind::Decorative),

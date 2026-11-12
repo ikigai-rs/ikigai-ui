@@ -117,6 +117,10 @@ shown), the compiled table of the same name stands in. Colors go by role, as the
 uses them: text `fg` on `bg`, placeholders `muted`, links `accent`, errors `danger`, buttons,
 selected options and selected text `accent-fg` on `accent`, control borders `line`, table
 rules `rule`, the focus ring and the text cursor `focus` (drawn outside the control, on `bg`).
+Meters use `surface` for the track, `accent` for the fill, `warn` for a suboptimal region
+and `danger` for the farthest region or a value beyond the range; `line` outlines the
+track. The visible sentence beside the bar states the original value, bounds, thresholds,
+optimum and assessment, so color only reinforces the text.
 Each is a pair `palette::PAIRS` holds to the contrast floor. `tests/palette_source.rs` fails if
 a color is written anywhere in `src`.
 
