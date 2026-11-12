@@ -131,9 +131,21 @@ impl Reading {
                 _ => "in optimum region",
             }
         };
+        // Numeric geometry uses f64, but the readout keeps the author's numeral: large
+        // integers must not round, nor should decimal text lose its supplied precision.
+        let numeral = |name: &str, default: f64| match node.properties.get(name) {
+            Some(Value::Text(text)) => text.clone(),
+            Some(Value::Number(number)) => number.to_string(),
+            _ => default.to_string(),
+        };
         format!(
             "{label}: {} of {} (minimum {}; low {}; high {}; optimum {}; {state})",
-            self.value, self.max, self.min, self.low, self.high, self.optimum
+            numeral("value", self.value),
+            numeral("max", self.max),
+            self.min,
+            self.low,
+            self.high,
+            self.optimum
         )
     }
 }

@@ -104,3 +104,21 @@ fn every_meter_pair_is_measured_for_every_palette() {
         assert!(PAIRS.contains(&("line", ground, Kind::NonText)));
     }
 }
+
+#[test]
+fn visible_text_keeps_large_integer_and_decimal_spelling_without_float_rounding() {
+    for value in [
+        serde_json::json!(9_223_372_036_854_775_807_i64),
+        serde_json::json!("0.750"),
+    ] {
+        let node = node(serde_json::json!({"value":value, "max":"10000000000000000000"}));
+        let reading = Reading::parse(&node).unwrap();
+        let expected = match &value {
+            serde_json::Value::String(text) => text.clone(),
+            _ => value.to_string(),
+        };
+        assert!(reading
+            .description(&node)
+            .contains(&format!("Capacity: {expected} of 10000000000000000000")));
+    }
+}
