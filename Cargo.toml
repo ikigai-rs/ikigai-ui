@@ -1,7 +1,7 @@
 # The library at the root, and its demo host beside it (ledger #3356). ikigai-ui-gpui lands
 # here next. The library is still the published crate; every other member is `publish = false`.
 [workspace]
-members = [".", "demo", "gpui"]
+members = [".", "demo", "gpui", "apps/reader"]
 # MSRV-aware resolution: each dependency's newest version that still builds on
 # `rust-version`, since CI commits no lockfile.
 resolver = "3"
