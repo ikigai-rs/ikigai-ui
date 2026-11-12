@@ -38,32 +38,59 @@
     {
       "target": "gpui",
       "source": [
-        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/controls/text-input.md",
-        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/input-text.md"
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility",
+        "https://developer.apple.com/documentation/appkit/nsaccessibility-swift.struct/role/textfield",
+        "https://developer.apple.com/documentation/appkit/nsaccessibility-swift.struct/role/checkbox",
+        "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supporteditcontroltype",
+        "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supportcheckboxcontroltype",
+        "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-automation-element-propids",
+        "https://learn.microsoft.com/en-us/windows/apps/design/accessibility/keyboard-accessibility",
+        "https://learn.microsoft.com/en-us/windows/apps/design/accessibility/high-contrast-themes",
+        "https://docs.gtk.org/atspi2/enum.Role.html",
+        "https://docs.gtk.org/atspi2/enum.StateType.html",
+        "https://developer.gnome.org/hig/guidelines/keyboard.html",
+        "https://docs.rs/accesskit/latest/accesskit/enum.Role.html"
       ],
-      "semantics": "A text input in the window's tab order with its label above it (an asterisk when required; a click on the label focuses the input), its hint under it in text and its error in the danger color and in words; a checkbox field is one focusable control drawn ☐ or ☑ beside its label. GPUI exposes no accessibility tree, so no input role reaches assistive technology.",
+      "semantics": "A text input in the window's tab order with its label above it (an asterisk when required; a click on the label focuses the input), its hint under it in text and its error in the danger color and in words; a checkbox field is one focusable control drawn ☐ or ☑ beside its label. Input goes through the platform's text services (IME composition on all three). Once GPUI exposes a tree: an AccessKit TextInput (MultilineTextInput for a text area) or CheckBox node named by its label, described by the hint and then the error, required and invalid as the field is, with its value and text selection (AXTextField or AXTextArea and AXCheckBox on macOS, the Edit and CheckBox control types on Windows, an entry and a check box on AT-SPI).",
       "keyboard": [
-        { "key": "Tab", "outcome": "Focus moves to the input, in document order, and the focus ring shows." },
-        { "key": "Typing", "outcome": "Enters text in the input; a checkbox field toggles with Space instead." },
-        { "key": "Enter", "outcome": "A new line in a multi-line input; nothing in a one-line input, whose form submits from its button." }
+        {"key": "Tab", "outcome": "Focus moves to the input, in reading order, and the focus ring shows."},
+        {"key": "Shift+Tab", "outcome": "Focus moves back to the control before it, wrapping to the last."},
+        {"key": "Typing", "outcome": "Enters text in the input, through the IME when one composes; a checkbox field toggles with Space instead."},
+        {"key": "Left, Right, Home, End", "outcome": "Move the text cursor by a grapheme, or to the start or end of the text."},
+        {"key": "Shift+Left, Shift+Right", "outcome": "Extend the selection by a grapheme."},
+        {"key": "Cmd+A, C, X, V (macOS); Ctrl+A, C, X, V (Windows, Linux)", "outcome": "Select all, copy, cut and paste."},
+        {"key": "Enter", "outcome": "A new line in a multi-line input; nothing in a one-line input, whose form submits from its button."}
       ],
       "name": "The field's label, the same words as the visible label.",
-      "role": "The input's type: text input or checkbox.",
+      "role": "The input's type: text input (VoiceOver: edit text; Narrator: edit; Orca: entry) or checkbox (check box).",
       "group": "The hint, then the error, read after the label; the form's label names the group the field is in.",
-      "state": "Required when the field is required, invalid when it carries an error, checked or not for a checkbox.",
+      "state": "Required when the field is required, invalid when it carries an error (VoiceOver: invalid data; Narrator: invalid entry; Orca: invalid entry), checked or not for a checkbox.",
       "setting": [
-        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the label, the input's text, the hint and the error grow with it, with no loss of information." },
-        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the label, the input and its focus ring whole." }
+        {"mode": "see", "statement": "WHEN I set the system text size to 200% (Windows' Accessibility, Text size; GNOME's Large Text or text scaling factor) I SEE the label, the input's text, the hint and the error grow with it, with no loss of information.", "blocked": "toolkit"},
+        {"mode": "see", "statement": "WHEN I raise the display scale (macOS' Displays, Larger Text; Windows' Scale at 150% or 200%; GNOME's Scale at 200%) I SEE the label, the input's text, the hint and the error drawn sharp and larger, whole and without overlapping."},
+        {"mode": "see", "statement": "WHEN I turn on the platform's high contrast (macOS' Increase contrast, a Windows contrast theme, the desktop portal's contrast) I SEE the window switch to the high-contrast palette by itself, the label, the input's text, the hint and the error at 7:1.", "blocked": "toolkit"},
+        {"mode": "see", "statement": "WHEN I choose the high-contrast theme for the window I SEE the label, the input's text, the hint and the error and its focus ring drawn in the high-contrast palette, every pair at 7:1."},
+        {"mode": "see", "statement": "WHEN I magnify the screen (macOS Zoom, Windows Magnifier, GNOME's Zoom) with focus following I SEE the magnifier follow the keyboard focus to the label, the input's text, the hint and the error.", "blocked": "toolkit"}
       ],
       "check": [
-        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the input and its ring drawn in the focus color." },
-        { "mode": "see", "statement": "I SEE the label stay visible above the input, an asterisk after it when the field is required." },
-        { "mode": "see", "statement": "I SEE the hint as text under the input and the error in words, not only in the danger color." },
-        { "mode": "see", "statement": "WHEN I press Space on a focused checkbox field I SEE it toggle between ☐ and ☑." },
-        { "mode": "hear", "statement": "WHEN I Tab to the input with a screen reader (VoiceOver, Orca, Narrator) I HEAR its purpose is clear and I HEAR it identify itself as its input type." },
-        { "mode": "hear", "statement": "WHEN I Tab to the input I HEAR the hint and any error read after the label, and I HEAR it expressed as required or invalid when it is." }
+        {"mode": "see", "statement": "WHEN the window opens or loads a screen I SEE it hold the keyboard focus, so Tab reaches the input without a click."},
+        {"mode": "see", "statement": "WHEN I use Tab and Shift+Tab I SEE focus reach the input in reading order, top to bottom, wrapping at either end, on every platform (macOS' Keyboard navigation setting does not change it: the window keeps its own tab order)."},
+        {"mode": "see", "statement": "WHEN the input has focus I SEE a 2px ring in the focus color drawn outside it, on the window's ground, a pair the palettes hold to 3:1."},
+        {"mode": "see", "statement": "I SEE the label stay visible above the input, an asterisk after it when the field is required."},
+        {"mode": "see", "statement": "I SEE the hint as text under the input and the error in words, not only in the danger color."},
+        {"mode": "see", "statement": "WHEN I compose text with an IME (a Japanese keyboard; Windows+Period; macOS' Ctrl+Cmd+Space) I SEE the marked text in the input, and the composed text entered."},
+        {"mode": "see", "statement": "WHEN I press Space on a focused checkbox field I SEE it toggle between ☐ and ☑."},
+        {"mode": "hear", "statement": "WHEN I Tab to the input with VoiceOver (macOS), Narrator (Windows) or Orca (Linux) I HEAR its label and I HEAR it identify itself as its input type.", "blocked": "toolkit"},
+        {"mode": "hear", "statement": "WHEN I Tab to the input I HEAR the hint and any error read after the label, and I HEAR it expressed as required or invalid when it is.", "blocked": "toolkit"},
+        {"mode": "hear", "statement": "WHEN I type, move the cursor or select in the input I HEAR the characters, words or selection the screen reader echoes.", "blocked": "toolkit"},
+        {"mode": "hear", "statement": "WHEN I toggle a checkbox field I HEAR its new state, checked or not checked.", "blocked": "toolkit"}
       ],
-      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today, and no CI job verifies its SEE checks (the window tests in gpui/src/native.rs run by hand; ACCESSIBILITY.md)."
+      "announce": [
+        {"platform": "macos", "reader": "VoiceOver, over NSAccessibility", "api": "AXTextField (AXTextArea for a text area), its label as the AXTitle (AccessKit Role::TextInput or MultilineTextInput, with its label), the hint and error as its AXHelp (AccessKit described_by), AXRequired, AXInvalid when it carries an error, AXValue and AXSelectedTextRange; a checkbox field AXCheckBox with AXValue 0 or 1.", "says": "\"Email, required, edit text\", then the hint; with an error, \"invalid data\" and the error; a checkbox field \"Subscribe, unchecked, checkbox\"."},
+        {"platform": "windows", "reader": "Narrator (and NVDA), over UI Automation", "api": "ControlType Edit, its label as the Name, the hint and error as the HelpText (and DescribedBy), IsRequiredForForm, IsDataValidForForm false when it carries an error, the Value and Text patterns; a checkbox field ControlType CheckBox with the Toggle pattern.", "says": "\"Email, edit, required\", then the hint; with an error, \"invalid entry\" and the error; a checkbox field \"Subscribe, check box, not checked\"."},
+        {"platform": "linux", "reader": "Orca, over AT-SPI", "api": "ATSPI_ROLE_ENTRY, its label as the name (and a label-for relation from the label), the hint and error as its description, STATE_REQUIRED, STATE_INVALID_ENTRY when it carries an error, STATE_EDITABLE, the Text and EditableText interfaces; a checkbox field ATSPI_ROLE_CHECK_BOX with STATE_CHECKED.", "says": "\"Email, entry, required\", then the hint; with an error, \"invalid entry\" and the error; a checkbox field \"Subscribe, check box, not checked\"."}
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit, NSAccessibility, UI Automation or AT-SPI provider), so every HEAR check is blocked by the toolkit, and so are the system text size, the platform's high contrast and a magnifier following focus, which it does not report. GPUI's main branch has AccessKit (zed-industries/zed#56065), not yet released (gpui/README.md, \"Accessibility tree\"). No CI job runs the window tests that show the SEE checks; they run by hand (ACCESSIBILITY.md)."
     }
   ]
 }
