@@ -123,6 +123,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
         }
     }
+    // The SHACL-violation and asserted-vs-derived lenses (ledger #3521), so axe covers the danger
+    // role's color and the role rules on list items and table rows; the violations' scene datum
+    // at the door URL its figure names.
+    for (lens, resource) in [
+        ("shacl-violations", ikigai_ui::scene::EXAMPLE_GRAPH),
+        ("asserted-vs-derived", ikigai_ui::lens::EXAMPLE_LOG),
+    ] {
+        for theme in ["light", "dark"] {
+            let page = ikigai_ui::testkit::render::source(
+                &kernel,
+                &format!("urn:demo:page:lens:{lens}:resource:{resource}"),
+                &[("theme", theme)],
+            )?;
+            files.push((
+                format!("/lens-{lens}-{theme}.html"),
+                common::HTML.to_string(),
+                page.into_bytes(),
+            ));
+        }
+    }
+    let violations_datum = format!(
+        "{}urn:iki:ui:lens:name:shacl-violations:focus:{}",
+        ikigai_ui::scene::SCENE_PREFIX,
+        ikigai_ui::scene::EXAMPLE_GRAPH
+    );
+    let rep = common::source(&kernel, &violations_datum)?;
+    files.push((
+        format!("/resolution/iri/{violations_datum}"),
+        rep.repr_type.media_type,
+        rep.bytes,
+    ));
     // The lens's scene datum, at the door URL its figure names, as the gallery's below.
     let lens_datum = format!(
         "{}urn:iki:ui:lens:name:contact-graph:focus:{}",

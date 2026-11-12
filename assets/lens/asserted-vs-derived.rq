@@ -1,0 +1,36 @@
+# The focus graph's own triples beside what is derived from them: what OWL 2 RL entails
+# (urn:reason:inferred, at urn:iki:ui:lens:inferred:{focus}, derived only) and, for a log
+# segment, what PROV-O records as derived from its entries (prov:wasDerivedFrom). Each row says
+# which in `?how`; its `?role` draws asserted solid and derived dashed.
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+SELECT ?focus ?s ?subject ?property ?o ?value ?how ?role WHERE {
+  {
+    GRAPH ?focus { ?s ?p ?o }
+    FILTER NOT EXISTS { GRAPH ?focus { ?s prov:wasDerivedFrom ?any } }
+    BIND("asserted" AS ?how)
+    BIND("asserted" AS ?role)
+  } UNION {
+    {
+      SELECT ?focus ?s (GROUP_CONCAT(STR(?from); separator=", ") AS ?froms) WHERE {
+        GRAPH ?focus { ?s prov:wasDerivedFrom ?from }
+      }
+      GROUP BY ?focus ?s
+    }
+    GRAPH ?focus { ?s ?p ?o }
+    BIND(CONCAT("derived: PROV-O records it as derived from ", ?froms) AS ?how)
+    BIND("derived" AS ?role)
+  } UNION {
+    GRAPH ?inferred { ?s ?p ?o }
+    FILTER(STRSTARTS(STR(?inferred), "urn:iki:ui:lens:inferred:"))
+    # The reasoner's own axioms about OWL's vocabulary are not the graph's.
+    FILTER(!STRSTARTS(STR(?s), "http://www.w3.org/2002/07/owl#"))
+    BIND("derived: OWL 2 RL entails it" AS ?how)
+    BIND("derived" AS ?role)
+  }
+  OPTIONAL { GRAPH ?focus { ?s rdfs:label ?l } }
+  BIND(COALESCE(STR(?l), STR(?s)) AS ?subject)
+  BIND(REPLACE(STR(?p), "^.*[#/:]", "") AS ?property)
+  BIND(IF(isIRI(?o), REPLACE(STR(?o), "^.*[#/:]", ""), STR(?o)) AS ?value)
+}
+ORDER BY ?role ?subject ?property ?value ?how

@@ -739,7 +739,29 @@ impl Screen {
         }
     }
 
+    /// Draws `node`. Each kind that holds other nodes has its own function and every other kind
+    /// is [`Self::leaf`]'s, so a level of a deep screen costs only the frames on its own path: as
+    /// one function, an unoptimized build spent about 200 KB of stack per level, and the demo
+    /// tree overflowed a test thread's 2 MiB ten levels down.
     fn walk(
+        &self,
+        node: &Node,
+        path: &str,
+        form: Option<(&Node, &str)>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        match node.kind.as_str() {
+            #[cfg(feature = "scene")]
+            "scene" => self.scene(node, path, form, cx),
+            DISCLOSURE => self.disclosure(node, path, form, cx),
+            "group" if ikigai_ui::model::is_columns(node) => self.columns(node, path, form, cx),
+            "form" | "group" | "list" | "nav" | "table" => self.container(node, path, form, cx),
+            _ => self.leaf(node, path, form, cx),
+        }
+    }
+
+    /// A node that holds no other: a heading, text, field, choice, button, link, option or meter.
+    fn leaf(
         &self,
         node: &Node,
         path: &str,
@@ -748,12 +770,7 @@ impl Screen {
     ) -> gpui::AnyElement {
         let label = || text(node, "label").unwrap_or_default().to_string();
         let colors = self.colors;
-        let mut body = div()
-            .id(gpui::SharedString::from(path.to_string()))
-            .flex()
-            .flex_col()
-            .gap_2()
-            .w_full();
+        let mut body = node_body(path);
         match node.kind.as_str() {
             "heading" => {
                 let level = match node.properties.get("level") {
@@ -988,53 +1005,6 @@ impl Screen {
                     .into_any_element();
             }
             "option" => return body.child(label()).into_any_element(),
-            #[cfg(feature = "scene")]
-            "scene" => {
-                // The image is only pixels: it takes focus and the keys, and the replacement
-                // (the graph as text) is drawn beside it, always.
-                let focus = self.focus[path].clone();
-                let state = &self.scenes[path];
-                let (width, height) = SCENE_FRAME;
-                let picture = match (&state.frame, &state.error) {
-                    (Some(frame), _) => gpui::img(gpui::ImageSource::Render(frame.clone()))
-                        .w(px(width as f32))
-                        .h(px(height as f32))
-                        .into_any_element(),
-                    (None, Some(error)) => div().child(error.clone()).into_any_element(),
-                    (None, None) => div()
-                        .w(px(width as f32))
-                        .h(px(height as f32))
-                        .bg(colors.bg)
-                        .child("Drawing the scene…")
-                        .into_any_element(),
-                };
-                let key_path = path.to_string();
-                let click_focus = focus.clone();
-                let canvas = ring(
-                    picture,
-                    &focus,
-                    gpui::SharedString::from(format!("{path}:canvas")),
-                    colors,
-                )
-                .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
-                    if this.scene_key(&key_path, &event.keystroke, cx) {
-                        cx.stop_propagation();
-                    }
-                }))
-                .on_click(move |_, window, _| window.focus(&click_focus));
-                body = body.child(label()).child(canvas).child(
-                    "Arrows orbit, + and - zoom, N and Shift+N select a node, Escape clears.",
-                );
-                if let Some(replacement) = node.replacement.as_deref() {
-                    body = body.child(self.walk(
-                        replacement,
-                        &format!("{path}/replacement"),
-                        form,
-                        cx,
-                    ));
-                }
-                return body.into_any_element();
-            }
             ikigai_ui::meter::IRI => {
                 let reading = match ikigai_ui::meter::Reading::parse(node) {
                     Ok(reading) => reading,
@@ -1074,120 +1044,6 @@ impl Screen {
                     )
                     .into_any_element();
             }
-            DISCLOSURE => {
-                // A button that holds its expanded state (`open`, the window's) and shows or
-                // hides its body: the summary line, then the body text and children when open.
-                let open = self.open[path];
-                let focus = self.focus[path].clone();
-                let summary = text(node, "summary").unwrap_or_default().to_string();
-                let key_path = path.to_string();
-                let click_path = path.to_string();
-                let control = ring(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .p_1()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .child(if open { "▾" } else { "▸" })
-                        .child(summary),
-                    &focus,
-                    gpui::SharedString::from(format!("{path}:summary")),
-                    colors,
-                )
-                .cursor_pointer()
-                .hover(|s| s.underline())
-                .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
-                    if event.keystroke.key == "space" || event.keystroke.key == "enter" {
-                        this.toggle(&key_path, cx);
-                        cx.stop_propagation();
-                    }
-                }))
-                .on_click(cx.listener(move |this, _, _, cx| this.toggle(&click_path, cx)));
-                body = body.child(control);
-                if open {
-                    let mut inner = div().flex().flex_col().gap_2().pl_6();
-                    if let Some(text) = text(node, "body") {
-                        inner = inner.child(text.to_string());
-                    }
-                    for (i, child) in node.children.iter().enumerate() {
-                        inner = inner.child(self.walk(child, &format!("{path}/{i}"), form, cx));
-                    }
-                    body = body.child(inner);
-                }
-                return body.into_any_element();
-            }
-            "group" if ikigai_ui::model::is_columns(node) => {
-                let mut columns = div().flex().flex_row().flex_wrap().gap_4().w_full();
-                for (i, child) in node.children.iter().enumerate() {
-                    columns = columns.child(
-                        div()
-                            .flex_1()
-                            .min_w(px(220.))
-                            .p_4()
-                            .border_1()
-                            .border_color(colors.line)
-                            .rounded_md()
-                            .child(self.walk(child, &format!("{path}/{i}"), form, cx)),
-                    );
-                }
-                return body.child(label()).child(columns).into_any_element();
-            }
-            "form" | "group" | "list" | "nav" | "table" => {
-                body = body.child(if node.kind == "table" {
-                    text(node, "caption").unwrap_or_default().to_string()
-                } else {
-                    label()
-                });
-                if node.kind == "form" {
-                    body = body.p_4().border_1().border_color(colors.line).rounded_md();
-                }
-                let form = if node.kind == "form" {
-                    Some((node, path))
-                } else {
-                    form
-                };
-                if let Some(description) = text(node, "description") {
-                    body = body.child(description.to_string());
-                }
-                for (i, child) in node.children.iter().enumerate() {
-                    if node.kind == "table" {
-                        // A row's group children are laid out as native cells, not markup.
-                        let mut row = div()
-                            .flex()
-                            .flex_row()
-                            .gap_4()
-                            .border_b_1()
-                            .border_color(colors.rule);
-                        for (j, cell) in child.children.iter().enumerate() {
-                            let mut cell_view = div().flex_1().child(self.walk(
-                                cell,
-                                &format!("{path}/{i}/{j}"),
-                                form,
-                                cx,
-                            ));
-                            if text(child, "header") == Some("column")
-                                || (j == 0 && text(child, "header") == Some("row"))
-                            {
-                                cell_view = cell_view.font_weight(gpui::FontWeight::BOLD);
-                            }
-                            row = row.child(cell_view);
-                        }
-                        body = body.child(row);
-                    } else {
-                        let element = self.walk(child, &format!("{path}/{i}"), form, cx);
-                        if node.kind == "list" {
-                            body = body.child(div().flex().gap_2().child("•").child(element));
-                        } else {
-                            body = body.child(element);
-                        }
-                    }
-                }
-                if node.kind == "form" {
-                    let state = &self.forms[path];
-                    body = body.child(state.feedback.message.clone());
-                }
-                return body.into_any_element();
-            }
             _ => unreachable!("Snapshot rejects unsupported kinds"),
         }
         if let Some(description) = text(node, "description") {
@@ -1201,6 +1057,236 @@ impl Screen {
             body = body.child(div().text_color(colors.danger).child(error.to_string()));
         }
         body.into_any_element()
+    }
+
+    /// A scene: its picture, which takes focus and the keys, and its replacement drawn beside it.
+    #[cfg(feature = "scene")]
+    fn scene(
+        &self,
+        node: &Node,
+        path: &str,
+        form: Option<(&Node, &str)>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let colors = self.colors;
+        let mut body = node_body(path);
+        // The image is only pixels: it takes focus and the keys, and the replacement
+        // (the graph as text) is drawn beside it, always.
+        let focus = self.focus[path].clone();
+        let state = &self.scenes[path];
+        let (width, height) = SCENE_FRAME;
+        let picture = match (&state.frame, &state.error) {
+            (Some(frame), _) => gpui::img(gpui::ImageSource::Render(frame.clone()))
+                .w(px(width as f32))
+                .h(px(height as f32))
+                .into_any_element(),
+            (None, Some(error)) => div().child(error.clone()).into_any_element(),
+            (None, None) => div()
+                .w(px(width as f32))
+                .h(px(height as f32))
+                .bg(colors.bg)
+                .child("Drawing the scene…")
+                .into_any_element(),
+        };
+        let key_path = path.to_string();
+        let click_focus = focus.clone();
+        let canvas = ring(
+            picture,
+            &focus,
+            gpui::SharedString::from(format!("{path}:canvas")),
+            colors,
+        )
+        .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
+            if this.scene_key(&key_path, &event.keystroke, cx) {
+                cx.stop_propagation();
+            }
+        }))
+        .on_click(move |_, window, _| window.focus(&click_focus));
+        body = body
+            .child(text(node, "label").unwrap_or_default().to_string())
+            .child(canvas)
+            .child("Arrows orbit, + and - zoom, N and Shift+N select a node, Escape clears.");
+        if let Some(replacement) = node.replacement.as_deref() {
+            body = body.child(self.walk(replacement, &format!("{path}/replacement"), form, cx));
+        }
+        body.into_any_element()
+    }
+
+    /// A disclosure: its summary as a button that holds the window's open state, and its body.
+    fn disclosure(
+        &self,
+        node: &Node,
+        path: &str,
+        form: Option<(&Node, &str)>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let colors = self.colors;
+        let mut body = node_body(path);
+        // A button that holds its expanded state (`open`, the window's) and shows or
+        // hides its body: the summary line, then the body text and children when open.
+        let open = self.open[path];
+        let focus = self.focus[path].clone();
+        let summary = text(node, "summary").unwrap_or_default().to_string();
+        let key_path = path.to_string();
+        let click_path = path.to_string();
+        let control = ring(
+            div()
+                .flex()
+                .gap_2()
+                .p_1()
+                .font_weight(gpui::FontWeight::BOLD)
+                .child(if open { "▾" } else { "▸" })
+                .child(summary),
+            &focus,
+            gpui::SharedString::from(format!("{path}:summary")),
+            colors,
+        )
+        .cursor_pointer()
+        .hover(|s| s.underline())
+        .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
+            if event.keystroke.key == "space" || event.keystroke.key == "enter" {
+                this.toggle(&key_path, cx);
+                cx.stop_propagation();
+            }
+        }))
+        .on_click(cx.listener(move |this, _, _, cx| this.toggle(&click_path, cx)));
+        body = body.child(control);
+        if open {
+            let mut inner = div().flex().flex_col().gap_2().pl_6();
+            if let Some(text) = text(node, "body") {
+                inner = inner.child(text.to_string());
+            }
+            for (i, child) in node.children.iter().enumerate() {
+                inner = inner.child(self.walk(child, &format!("{path}/{i}"), form, cx));
+            }
+            body = body.child(inner);
+        }
+        body.into_any_element()
+    }
+
+    /// A group shown as columns ([`ikigai_ui::model::COLUMNS`]).
+    fn columns(
+        &self,
+        node: &Node,
+        path: &str,
+        form: Option<(&Node, &str)>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let colors = self.colors;
+        let mut columns = div().flex().flex_row().flex_wrap().gap_4().w_full();
+        for (i, child) in node.children.iter().enumerate() {
+            columns = columns.child(
+                div()
+                    .flex_1()
+                    .min_w(px(220.))
+                    .p_4()
+                    .border_1()
+                    .border_color(colors.line)
+                    .rounded_md()
+                    .child(self.walk(child, &format!("{path}/{i}"), form, cx)),
+            );
+        }
+        node_body(path)
+            .child(text(node, "label").unwrap_or_default().to_string())
+            .child(columns)
+            .into_any_element()
+    }
+
+    /// A form, group, list, nav or table: its label, then its children, a list's as items and a
+    /// table's as rows of cells.
+    fn container(
+        &self,
+        node: &Node,
+        path: &str,
+        form: Option<(&Node, &str)>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let colors = self.colors;
+        let mut body = node_body(path);
+        body = body.child(if node.kind == "table" {
+            text(node, "caption").unwrap_or_default().to_string()
+        } else {
+            text(node, "label").unwrap_or_default().to_string()
+        });
+        if node.kind == "form" {
+            body = body.p_4().border_1().border_color(colors.line).rounded_md();
+        }
+        let form = if node.kind == "form" {
+            Some((node, path))
+        } else {
+            form
+        };
+        if let Some(description) = text(node, "description") {
+            body = body.child(description.to_string());
+        }
+        for (i, child) in node.children.iter().enumerate() {
+            if node.kind == "table" {
+                // A row's group children are laid out as native cells, not markup.
+                let mut row = div()
+                    .flex()
+                    .flex_row()
+                    .gap_4()
+                    .border_b_1()
+                    .border_color(colors.rule);
+                for (j, cell) in child.children.iter().enumerate() {
+                    let mut cell_view =
+                        div()
+                            .flex_1()
+                            .child(self.walk(cell, &format!("{path}/{i}/{j}"), form, cx));
+                    if text(child, "header") == Some("column")
+                        || (j == 0 && text(child, "header") == Some("row"))
+                    {
+                        cell_view = cell_view.font_weight(gpui::FontWeight::BOLD);
+                    }
+                    row = row.child(cell_view);
+                }
+                body = body.child(role(row, child, &colors));
+            } else {
+                let element = self.walk(child, &format!("{path}/{i}"), form, cx);
+                if node.kind == "list" {
+                    let item = div().flex().gap_2().child("•").child(element);
+                    body = body.child(role(item, child, &colors));
+                } else {
+                    body = body.child(element);
+                }
+            }
+        }
+        if node.kind == "form" {
+            let state = &self.forms[path];
+            body = body.child(state.feedback.message.clone());
+        }
+        body.into_any_element()
+    }
+}
+
+/// The frame every node is drawn in: a column, as wide as its parent, named by the node's path.
+fn node_body(path: &str) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(gpui::SharedString::from(path.to_string()))
+        .flex()
+        .flex_col()
+        .gap_2()
+        .w_full()
+}
+
+/// A list item or a table row in the role its screen gives it (ledger #3521), the hint kept only
+/// because this face's descriptor claims `urn:iki:ui:hint:role:`: a violation in the danger color
+/// with a solid danger rule, an asserted row with a solid rule, a derived one with a dashed rule.
+/// The row's own text says the same, so the rule and the color only repeat it.
+fn role(item: gpui::Div, node: &Node, colors: &Colors) -> gpui::Div {
+    match ikigai_ui::model::role(node) {
+        Some("danger") => item
+            .pl_2()
+            .border_l_2()
+            .border_color(colors.danger)
+            .text_color(colors.danger),
+        Some("asserted") => item.pl_2().border_l_2().border_color(colors.fg),
+        Some("derived") => item
+            .pl_2()
+            .border_l_2()
+            .border_dashed()
+            .border_color(colors.fg),
+        _ => item,
     }
 }
 
@@ -2059,6 +2145,60 @@ mod tests {
         )
     }
 
+    /// A screen of a list and a table whose items and rows play roles (ledger #3521).
+    fn roles_screen() -> EndpointSpace {
+        let role = ikigai_ui::model::ROLE;
+        let screen = serde_json::json!({"kind": "group", "properties": {"label": "Roles"}, "children": [
+            {"kind": "list", "properties": {"label": "Failing nodes"}, "children": [
+                {"kind": "text", "hint": {role: "danger"}, "properties": {"content": "Violation: topic"}},
+                {"kind": "text", "properties": {"content": "no role"}}]},
+            {"kind": "table", "properties": {"caption": "Split"}, "children": [
+                {"kind": "group", "hint": {role: "asserted"}, "properties": {"label": "Row"}, "children": [
+                    {"kind": "text", "properties": {"content": "asserted"}}]},
+                {"kind": "group", "hint": {role: "derived"}, "properties": {"label": "Row"}, "children": [
+                    {"kind": "text", "properties": {"content": "derived"}}]}]}]});
+        let bytes = serde_json::to_vec(&screen).unwrap();
+        EndpointSpace::new().bind(
+            Exact::new("urn:iki:ui:screen:name:roles"),
+            FnEndpoint::new("test-roles", move |_: &Invocation<'_>| {
+                Ok(Representation::new(
+                    ReprType::new(ikigai_ui::model::MEDIA_TYPE),
+                    bytes.clone(),
+                ))
+            })
+            .with_description(
+                Description::new("test-roles")
+                    .title("Roles")
+                    .summary("List items and table rows in the danger, asserted and derived roles.")
+                    .verb(Verb::Source)
+                    .output(ikigai_ui::model::MEDIA_TYPE),
+            ),
+        )
+    }
+
+    /// The role hints reach the native face, which claims them (ledger #3521): a danger item,
+    /// an asserted row and a derived row keep their roles in the snapshot it draws, and an item
+    /// with none has none. Each one's text says the same.
+    #[gpui::test]
+    fn list_items_and_table_rows_keep_their_roles_on_the_native_face(cx: &mut TestAppContext) {
+        let worker = demo_worker(Some(roles_screen()));
+        let (screen, cx) =
+            cx.add_window_view(|window, cx| Screen::new(worker, "roles", Theme::Auto, window, cx));
+        settle(&screen, cx);
+        screen.update(cx, |s, _| {
+            let root = s.snapshot.as_ref().expect("the roles screen").root();
+            let role = ikigai_ui::model::role;
+            assert_eq!(
+                role(&root.children[0].children[0]),
+                Some("danger"),
+                "{root:?}"
+            );
+            assert_eq!(role(&root.children[0].children[1]), None);
+            assert_eq!(role(&root.children[1].children[0]), Some("asserted"));
+            assert_eq!(role(&root.children[1].children[1]), Some("derived"));
+        });
+    }
+
     fn tab_paths(screen: &Entity<Screen>, cx: &mut gpui::VisualTestContext) -> Vec<String> {
         screen.update(cx, |s, _| {
             s.tab_order.iter().map(|(p, _)| p.clone()).collect()
@@ -2207,7 +2347,7 @@ mod tests {
         screen.update(cx, |s, _| {
             assert_eq!(s.choices[&path], "contact-dashboard");
             assert_eq!(s.message, radio_announcement(&lens, 3));
-            assert_eq!(s.message, "Lens: contact-dashboard, checked, 4 of 5");
+            assert_eq!(s.message, "Lens: contact-dashboard, checked, 4 of 6");
         });
     }
 

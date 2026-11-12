@@ -26,8 +26,9 @@
 //!   a computed list, and `each` takes its list and its template as inline arguments, which a
 //!   template cannot compute from `{node}`. Where the parent's element needs one per child
 //!   (`<li>` in a `list` and a `nav`; `<tr>`, `<td>` and `<th scope=…>` in a `table`) the
-//!   child face writes that wrapper: it depends on the child's position and the row's
-//!   `header` (see [`crate::model::SCOPES`]), which a template filled once per node cannot see.
+//!   child face writes that wrapper: it depends on the child's position, the row's `header`
+//!   (see [`crate::model::SCOPES`]) and the child's role ([`crate::model::ROLE`], a
+//!   `ui-role-{role}` class from a fixed set), which a template filled once per node cannot see.
 //!   This is the table exception the item allows.
 //!
 //! An `option` outside a `choice` has no `<select>` to belong to, so it renders through the
@@ -690,9 +691,15 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
                 }
                 for (i, child) in node.children.iter().enumerate() {
                     let path = format!("{at}.{i}");
+                    // An item's or a row's role (ledger #3521): a class from a fixed set, kept
+                    // by [`screen`] only when the descriptor claims the role hints. Its text
+                    // says the same, so the class is never the only carrier.
+                    let class = model::role(child)
+                        .map(|r| format!(" class=\"ui-role-{r}\""))
+                        .unwrap_or_default();
                     match node.kind.as_str() {
                         "list" | "nav" => {
-                            out.push_str("<li>");
+                            out.push_str(&format!("<li{class}>"));
                             out.push_str(&child_view(path).await?);
                             out.push_str("</li>");
                         }
@@ -701,7 +708,7 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
                                 Value::Text(s) => Some(s.as_str()),
                                 _ => None,
                             });
-                            out.push_str("<tr>");
+                            out.push_str(&format!("<tr{class}>"));
                             for j in 0..child.children.len() {
                                 let cell = child_view(format!("{path}.{j}")).await?;
                                 let (open, close) = match (header, j) {
@@ -727,7 +734,8 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
             .title("A UI node's children, as HTML")
             .summary(
                 "The views of a screen node's children, in order: one <li> each in a list or \
-                 nav; one <tr> per row in a table, its cells <td>, or <th scope=col> in a \
+                 nav; one <tr> per row in a table (either with a ui-role-{role} class when the \
+                 child carries urn:iki:ui:hint:role:mark), its cells <td>, or <th scope=col> in a \
                  header=column row and <th scope=row> first in a header=row row.",
             )
             .verb(Verb::Source)

@@ -12,9 +12,12 @@
 //! | `urn:iki:ui:lens:instance:{iri}` | data (a host's) | a JSON list of lens names for one resource |
 //! | `urn:iki:ui:lens:dataset` | data (a host's) | a JSON list of lens names for the whole dataset |
 //! | `urn:iki:ui:lens:resource:{iri}` | data | `{iri}`'s lenses in precedence: instance, dataset, each type, then `graph` ([`precedence`]) |
-//! | `urn:iki:ui:renderer:name:{name}` | data | a renderer, a model template: `graph`, `table`, `list`, `thread`, `board`, `tree`, `timeline` are compiled in; a host's binding of the same name, placed first, wins. `construct` is no template and is never read here ([`CONSTRUCT`]) |
+//! | `urn:iki:ui:renderer:name:{name}` | data | a renderer, a model template: `graph`, `table`, `list`, `thread`, `board`, `tree`, `timeline` (ledger #3519), `violations` and `split` (ledger #3521) are compiled in; a host's binding of the same name, placed first, wins. `construct` is no template and is never read here ([`CONSTRUCT`]) |
 //! | `urn:iki:ui:view:lens:{lens}:resource:{iri}` | data | the lensed view: the legend, a radio chooser among `{iri}`'s lenses, the renderer filled with the result |
 //! | `urn:iki:ui:lens:title:lens:{lens}:resource:{iri}` | text | a lensed page's title: the legend and the resource; a family with [`crate::Pages::lenses`] serves `{base}page:lens:{lens}:resource:{iri}` in the shell, at the door's `/lens/name/{lens}/resource/{iri}` ([`html_href`]) |
+//! | `urn:iki:ui:lens:report:{graph}` | data | `{graph}`'s SHACL validation report, Turtle: `urn:shacl:validate` over `{graph}` (as Turtle, read through `urn:sparql:construct`) against `urn:iki:ui:lens:shapes:{graph}` (a host's binding), every read under the CALLER's capability; a lens joins it to the data by naming it in `graphs` (ledger #3521) |
+//! | `urn:iki:ui:lens:shapes:{graph}` | data (a host's) | the SHACL shapes `{graph}` is held to, Turtle |
+//! | `urn:iki:ui:lens:inferred:{graph}` | data | what OWL 2 RL derives from `{graph}` and `{graph}` does not assert: `urn:reason:inferred` over it, Turtle, under the CALLER's capability (ledger #3521) |
 //! | `urn:iki:ui:home` | data (a host's) | the home mapping, a JSON prefix table `[{"prefix", "href"}]`, longest prefix wins |
 //! | `urn:iki:ui:home:resource:{iri}` | data | where `{iri}` links: its home by the table, else its own view ([`crate::view::href`]) |
 //!
@@ -40,6 +43,10 @@
 //!   `{?edge}`, `{?to}`, as labels), every one, within the scene's [`crate::scene::MAX_EDGES`];
 //! - `{"past": "words"}` — a `text` only when the result had more rows than the bound: what the
 //!   renderer does past its bound is to show the first `bound` rows and say so.
+//!
+//! A `hint` whose value fills to nothing is dropped, so a row's own `?role` (`danger`,
+//! `asserted`, `derived`) marks it through [`crate::model::ROLE`] only when the query says so: the
+//! QUERY decides what is marked, the renderer only where the mark goes.
 //!
 //! **Structured templates (stage 2, ledger #3519)** use these additional data operations:
 //! - A rows repeat's `distinct: "v"` keeps the first row per value; `order: "v"` orders it.
@@ -114,6 +121,12 @@ pub const HOME_TABLE: &str = "urn:iki:ui:home";
 pub const HOME: &str = "urn:iki:ui:home:resource:";
 /// The lens every resource has last.
 pub const DEFAULT: &str = "graph";
+/// A graph's SHACL validation report is this plus the graph's IRI.
+pub const REPORT: &str = "urn:iki:ui:lens:report:";
+/// The shapes a graph is held to (a host's) are this plus the graph's IRI.
+pub const SHAPES: &str = "urn:iki:ui:lens:shapes:";
+/// What OWL 2 RL derives from a graph, and the graph does not assert, is this plus its IRI.
+pub const INFERRED: &str = "urn:iki:ui:lens:inferred:";
 /// The largest bound a lens may state.
 pub const MAX_BOUND: usize = 1000;
 /// The largest lens or query read, in bytes.
@@ -149,7 +162,7 @@ pub const DEFAULT_LENS: (&str, &str) = (
 /// Example lenses over the contact graph ([`crate::scene::EXAMPLE_GRAPH`]) and [`DEMO_GRAPH`]:
 /// (name, lens, query). Shipped by this crate, which owns that graph; a host places
 /// [`examples`].
-pub const EXAMPLES: [(&str, &str, &str); 8] = [
+pub const EXAMPLES: [(&str, &str, &str); 10] = [
     (
         "contact-graph",
         include_str!("../assets/lens/contact-graph.json"),
@@ -190,10 +203,30 @@ pub const EXAMPLES: [(&str, &str, &str); 8] = [
         include_str!("../assets/lens/contact-dashboard.json"),
         include_str!("../assets/lens/contact-dashboard.rq"),
     ),
+    (
+        "shacl-violations",
+        include_str!("../assets/lens/shacl-violations.json"),
+        include_str!("../assets/lens/shacl-violations.rq"),
+    ),
+    (
+        "asserted-vs-derived",
+        include_str!("../assets/lens/asserted-vs-derived.json"),
+        include_str!("../assets/lens/asserted-vs-derived.rq"),
+    ),
 ];
 
+/// The shapes the example lens `shacl-violations` holds the contact graph to, Turtle, at
+/// `urn:iki:ui:lens:shapes:urn:iki:ui:example:graph:contact`.
+pub const EXAMPLE_SHAPES: &str = include_str!("../assets/lens/contact-shapes.ttl");
+
+/// The example log segment `asserted-vs-derived` is shown on: two entries, a summary PROV-O
+/// records as derived from them, and the axiom OWL 2 RL derives each entry's `prov:Entity` from.
+pub const EXAMPLE_LOG: &str = "urn:iki:ui:example:graph:log";
+/// [`EXAMPLE_LOG`], JSON-LD.
+pub const EXAMPLE_LOG_JSON_LD: &str = include_str!("../assets/lens/log.jsonld");
+
 /// The compiled-in renderers, by name.
-pub const RENDERERS: [(&str, &str); 7] = [
+pub const RENDERERS: [(&str, &str); 9] = [
     ("graph", include_str!("../assets/renderer/graph.json")),
     ("table", include_str!("../assets/renderer/table.json")),
     ("list", include_str!("../assets/renderer/list.json")),
@@ -201,6 +234,11 @@ pub const RENDERERS: [(&str, &str); 7] = [
     ("board", include_str!("../assets/renderer/board.json")),
     ("tree", include_str!("../assets/renderer/tree.json")),
     ("timeline", include_str!("../assets/renderer/timeline.json")),
+    (
+        "violations",
+        include_str!("../assets/renderer/violations.json"),
+    ),
+    ("split", include_str!("../assets/renderer/split.json")),
 ];
 
 /// A lens's data.
@@ -787,6 +825,13 @@ fn tidy(mut n: Json) -> Json {
             n["properties"][key] = json!("(none)");
         }
     }
+    // A hint the row fills with nothing is no hint: the query did not mark this row.
+    if let Some(hints) = n.get_mut("hint").and_then(Json::as_object_mut) {
+        hints.retain(|_, v| v.as_str() != Some(""));
+        if hints.is_empty() {
+            n.as_object_mut().expect("a node").remove("hint");
+        }
+    }
     n
 }
 
@@ -1271,18 +1316,13 @@ async fn result(
         request = request.with_arg("as", ArgRef::Inline(GRAPH.into()));
     }
     if !lens.graphs.is_empty() {
-        // `{focus}` names the resource itself as a source: a graph argument, resolved through
-        // the kernel under the caller's capability, never text in the query.
+        // `{focus}` names the resource itself as a source, and inside an IRI a resource made
+        // from it (`urn:iki:ui:lens:report:{focus}`, its validation report): a graph argument,
+        // resolved through the kernel under the caller's capability, never text in the query.
         let graphs: Vec<String> = lens
             .graphs
             .iter()
-            .map(|g| {
-                if g == "{focus}" {
-                    resource.to_string()
-                } else {
-                    g.clone()
-                }
-            })
+            .map(|g| g.replace("{focus}", resource))
             .collect();
         for g in &graphs {
             iri(g)?;
@@ -2291,7 +2331,7 @@ pub(crate) fn renderer_endpoint() -> AsyncFnEndpoint {
     .with_description(
         Description::new("ui-renderer").input(ikigai_core::ArgSpec::new("name").summary("the renderer's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("graph"))
             .title("A renderer, a named template")
-            .summary("A model template that repeats, boundedly, over a lens's result rows: graph, table, list, thread, board, tree, timeline. A lens whose renderer is construct has no template: its CONSTRUCT builds the model.")
+            .summary("A model template that repeats, boundedly, over a lens's result rows: graph, table, list, thread, board, tree, timeline, violations, split. A lens whose renderer is construct has no template: its CONSTRUCT builds the model.")
             .verb(Verb::Source)
             .output("application/json"),
     )
@@ -2325,6 +2365,83 @@ pub(crate) fn home_endpoint() -> AsyncFnEndpoint {
             .summary("The home mapping's longest matching prefix, else the resource's own view.")
             .verb(Verb::Source)
             .output("text/plain"),
+    )
+}
+
+/// `urn:iki:ui:lens:report:{iri}`: `{iri}`'s SHACL report, a graph a lens joins to the data.
+pub(crate) fn report_endpoint() -> AsyncFnEndpoint {
+    AsyncFnEndpoint::new("ui-lens-report", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+        Box::pin(async move {
+            let graph = inv.bindings.get("iri").unwrap_or_default().to_string();
+            iri(&graph)?;
+            // The data as Turtle, read under the caller's capability (one the caller may not
+            // read is refused here, and the lens says so in words) through the store the lens
+            // runs on, which reads any RDF face, within its time and answer budgets.
+            let data = inv
+                .issue(
+                    Request::new(Verb::Source, iri("urn:sparql:construct")?)
+                        .with_arg(
+                            "query",
+                            ArgRef::Inline(b"CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }".to_vec()),
+                        )
+                        .with_arg("graph", ArgRef::Inline(graph.clone().into_bytes()))
+                        .with_arg("as", ArgRef::Inline(b"text/turtle".to_vec())),
+                )
+                .await?
+                .bytes;
+            // The shapes by reference, so the report follows their golden thread as well.
+            inv.issue(
+                Request::new(Verb::Source, iri("urn:shacl:validate")?)
+                    .with_arg("data", ArgRef::Inline(data))
+                    .with_arg("shapes", ArgRef::Inline(format!("{SHAPES}{graph}").into_bytes()))
+                    .with_arg("as", ArgRef::Inline(b"text/turtle".to_vec())),
+            )
+            .await
+        })
+    })
+    .with_description(
+        Description::new("ui-lens-report")
+            .input(
+                ikigai_core::ArgSpec::new("iri")
+                    .summary("the data graph")
+                    .class(XSD_ANY_URI)
+                    .binding()
+                    .example(crate::scene::EXAMPLE_GRAPH),
+            )
+            .title("A graph's SHACL report")
+            .summary("urn:shacl:validate over the graph, as Turtle through urn:sparql:construct, against urn:iki:ui:lens:shapes:{iri}: the report graph, every read under the caller's capability.")
+            .verb(Verb::Source)
+            .output("text/turtle"),
+    )
+}
+
+/// `urn:iki:ui:lens:inferred:{iri}`: what OWL 2 RL derives from `{iri}` and it does not assert.
+pub(crate) fn inferred_endpoint() -> AsyncFnEndpoint {
+    AsyncFnEndpoint::new("ui-lens-inferred", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+        Box::pin(async move {
+            let graph = inv.bindings.get("iri").unwrap_or_default().to_string();
+            iri(&graph)?;
+            inv.issue(
+                Request::new(Verb::Source, iri("urn:reason:inferred")?)
+                    .with_arg("graph", ArgRef::Inline(graph.into_bytes()))
+                    .with_arg("omit-thing", ArgRef::Inline(b"true".to_vec())),
+            )
+            .await
+        })
+    })
+    .with_description(
+        Description::new("ui-lens-inferred")
+            .input(
+                ikigai_core::ArgSpec::new("iri")
+                    .summary("the asserted graph")
+                    .class(XSD_ANY_URI)
+                    .binding()
+                    .example(crate::scene::EXAMPLE_GRAPH),
+            )
+            .title("What a graph's reasoning derives")
+            .summary("urn:reason:inferred over the graph: the OWL 2 RL entailments it does not assert, owl:Thing omitted, read under the caller's capability.")
+            .verb(Verb::Source)
+            .output("text/turtle"),
     )
 }
 
@@ -2413,14 +2530,18 @@ pub(crate) fn default_query() -> FnEndpoint {
     )
 }
 
-/// The example lenses ([`EXAMPLES`]), their demo graph and both graphs' instance lists.
+/// The example lenses ([`EXAMPLES`]), their demo graph ([`DEMO_GRAPH`]) and its instance list;
+/// the contact graph's instance list, which names them, and its shapes ([`EXAMPLE_SHAPES`]); the
+/// example log segment ([`EXAMPLE_LOG`]) and its list. The `shacl-violations` and
+/// `asserted-vs-derived` lenses need `urn:shacl:validate` and `urn:reason:inferred` bound beside
+/// it.
 /// A host places it AFTER its own lenses, so a host's binding of the same name wins.
 pub fn examples() -> EndpointSpace {
     let mut space = EndpointSpace::new();
     for (name, lens, query) in EXAMPLES {
         space = bind_lens(space, name, lens, query);
     }
-    space = space
+    space
         .bind(
             Exact::new(DEMO_GRAPH),
             fixed(
@@ -2438,16 +2559,43 @@ pub fn examples() -> EndpointSpace {
                 "application/json",
                 r#"["demo-thread", "demo-board", "demo-tree", "demo-timeline"]"#,
             ),
-        );
-    space.bind(
-        Exact::new(format!("{INSTANCE}{}", crate::scene::EXAMPLE_GRAPH)),
-        fixed(
-            "ui-lens-instance-contact",
-            "The contact graph's lenses",
-            "application/json",
-            include_str!("../assets/lens/contact-instance.json"),
-        ),
-    )
+        )
+        .bind(
+            Exact::new(format!("{INSTANCE}{}", crate::scene::EXAMPLE_GRAPH)),
+            fixed(
+                "ui-lens-instance-contact",
+                "The contact graph's lenses",
+                "application/json",
+                include_str!("../assets/lens/contact-instance.json"),
+            ),
+        )
+        .bind(
+            Exact::new(format!("{SHAPES}{}", crate::scene::EXAMPLE_GRAPH)),
+            fixed(
+                "ui-lens-shapes-contact",
+                "The shapes the contact graph is held to",
+                "text/turtle",
+                EXAMPLE_SHAPES,
+            ),
+        )
+        .bind(
+            Exact::new(EXAMPLE_LOG),
+            fixed(
+                "ui-example-graph-log",
+                "An example log segment, in PROV-O",
+                "application/ld+json",
+                EXAMPLE_LOG_JSON_LD,
+            ),
+        )
+        .bind(
+            Exact::new(format!("{INSTANCE}{EXAMPLE_LOG}")),
+            fixed(
+                "ui-lens-instance-log",
+                "The example log segment's lenses",
+                "application/json",
+                include_str!("../assets/lens/log-instance.json"),
+            ),
+        )
 }
 
 #[cfg(test)]
