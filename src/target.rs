@@ -527,7 +527,7 @@ pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
                 for element in crate::element::ELEMENTS {
                     html.push_str(&format!("<tr><th scope=\"row\">{}</th>", ikigai_fn::html::html_text(element.iri)));
                     for support in matrix.values() {
-                        let label = if support.element[element.iri] { "Renders" } else { "Expanded from its definition" };
+                        let label = if support.element[element.iri] { "Native" } else { "Expanded from its definition" };
                         html.push_str(&format!("<td>{label}</td>"));
                     }
                     html.push_str("</tr>");

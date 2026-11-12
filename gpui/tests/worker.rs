@@ -264,7 +264,7 @@ fn custom_elements_reach_the_native_face_expanded_into_kinds_it_draws() {
     every(root, &mut nodes);
     for node in &nodes {
         assert!(
-            descriptor.renders.contains(&node.kind),
+            descriptor.renders.contains(&node.kind) || descriptor.elements.contains(&node.kind),
             "{} is not drawn natively",
             node.kind
         );
@@ -285,4 +285,33 @@ fn custom_elements_reach_the_native_face_expanded_into_kinds_it_draws() {
     assert_eq!(tags.kind, "list");
     assert_eq!(text(tags, "label"), Some("Topics"));
     assert_eq!(text(&tags.children[0], "href"), Some("/topic/hydrology"));
+}
+
+#[test]
+fn a_disclosure_reaches_the_native_face_whole_carrying_only_its_initial_state() {
+    // disclosure (ledger #3512): GPUI claims it, so it arrives unexpanded, for the native
+    // renderer's toggle; the model holds `open` (the initial state) and nothing else of it.
+    let (worker, _) = host();
+    let elements = wait(&worker.load("elements")).unwrap();
+    let disclosure = &elements.root().children[5];
+    assert_eq!(disclosure.kind, ikigai_ui_gpui::DISCLOSURE);
+    assert_eq!(
+        text(disclosure, "summary"),
+        Some("How often is the gauge read?")
+    );
+    assert_eq!(
+        disclosure.properties.get("open"),
+        Some(&model::Value::Bool(false))
+    );
+    assert_eq!(disclosure.children[0].kind, "link");
+    assert!(Descriptor::parse(DESCRIPTOR, "gpui")
+        .unwrap()
+        .elements
+        .iter()
+        .any(|e| e == ikigai_ui_gpui::DISCLOSURE));
+    // A snapshot refuses an element the descriptor does not claim.
+    assert!(Snapshot::from_face(
+        br#"{"kind":"urn:iki:ui:element:name:card","properties":{"fallback":"A card"}}"#
+    )
+    .is_err());
 }

@@ -11,7 +11,7 @@ use crate::{
     text,
     theme::{Theme, Tokens},
     worker::{Feedback, Pending, Worker},
-    Snapshot,
+    Snapshot, DISCLOSURE,
 };
 #[path = "input.rs"]
 mod input;
@@ -100,7 +100,12 @@ pub struct Screen {
     choices: BTreeMap<String, String>,
     forms: BTreeMap<String, FormState>,
     focus: BTreeMap<String, gpui::FocusHandle>,
-    tab_order: Vec<gpui::FocusHandle>,
+    /// Every focusable control by its node path, in document order. Tab moves through the
+    /// ones shown ([`Self::shown`]): a closed disclosure's body is out of the order.
+    tab_order: Vec<(String, gpui::FocusHandle)>,
+    /// Each disclosure's open state, by node path: the window's, not the model's. The model
+    /// carries only the initial state (`open`), read once when the snapshot is installed.
+    open: BTreeMap<String, bool>,
     theme: Theme,
     dark: bool,
     /// The palette drawn with now, and the colors read from it.
@@ -157,6 +162,7 @@ impl Screen {
             forms: BTreeMap::new(),
             focus: BTreeMap::new(),
             tab_order: Vec::new(),
+            open: BTreeMap::new(),
             theme,
             dark,
             palette,
@@ -250,6 +256,7 @@ impl Screen {
                     self.forms.clear();
                     self.focus.clear();
                     self.tab_order.clear();
+                    self.open.clear();
                     self.install(snapshot.root(), "/", cx);
                     self.snapshot = Some(snapshot);
                     self.message.clear();
@@ -288,7 +295,7 @@ impl Screen {
                     input
                 });
                 let focus = input.focus_handle(cx);
-                self.tab_order.push(focus.clone());
+                self.tab_order.push((path.into(), focus.clone()));
                 self.focus.insert(path.into(), focus);
                 self.inputs.insert(path.into(), input);
             }
@@ -307,15 +314,39 @@ impl Screen {
                     },
                 );
             }
+            DISCLOSURE => {
+                self.open.insert(
+                    path.into(),
+                    node.properties.get("open") == Some(&Value::Bool(true)),
+                );
+            }
             _ => {}
         }
-        if ["button", "link", "option"].contains(&node.kind.as_str()) {
+        if ["button", "link", "option", DISCLOSURE].contains(&node.kind.as_str()) {
             let focus = cx.focus_handle();
-            self.tab_order.push(focus.clone());
+            self.tab_order.push((path.into(), focus.clone()));
             self.focus.insert(path.into(), focus);
         }
         for (index, child) in node.children.iter().enumerate() {
             self.install(child, &format!("{path}/{index}"), cx);
+        }
+    }
+
+    /// Whether the node at `path` is shown: no disclosure above it is closed.
+    fn shown(&self, path: &str) -> bool {
+        !self.open.iter().any(|(at, open)| {
+            !open
+                && path.len() > at.len()
+                && path.starts_with(at.as_str())
+                && path[at.len()..].starts_with('/')
+        })
+    }
+
+    /// Open a closed disclosure, close an open one.
+    fn toggle(&mut self, path: &str, cx: &mut Context<Self>) {
+        if let Some(open) = self.open.get_mut(path) {
+            *open = !*open;
+            cx.notify();
         }
     }
 
@@ -569,6 +600,48 @@ impl Screen {
                     .into_any_element();
             }
             "option" => return body.child(label()).into_any_element(),
+            DISCLOSURE => {
+                // A button that holds its expanded state (`open`, the window's) and shows or
+                // hides its body: the summary line, then the body text and children when open.
+                let open = self.open[path];
+                let focus = self.focus[path].clone();
+                let summary = text(node, "summary").unwrap_or_default().to_string();
+                let key_path = path.to_string();
+                let click_path = path.to_string();
+                let control = ring(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .p_1()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .child(if open { "▾" } else { "▸" })
+                        .child(summary),
+                    &focus,
+                    gpui::SharedString::from(format!("{path}:summary")),
+                    colors,
+                )
+                .cursor_pointer()
+                .hover(|s| s.underline())
+                .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
+                    if event.keystroke.key == "space" || event.keystroke.key == "enter" {
+                        this.toggle(&key_path, cx);
+                        cx.stop_propagation();
+                    }
+                }))
+                .on_click(cx.listener(move |this, _, _, cx| this.toggle(&click_path, cx)));
+                body = body.child(control);
+                if open {
+                    let mut inner = div().flex().flex_col().gap_2().pl_6();
+                    if let Some(text) = text(node, "body") {
+                        inner = inner.child(text.to_string());
+                    }
+                    for (i, child) in node.children.iter().enumerate() {
+                        inner = inner.child(self.walk(child, &format!("{path}/{i}"), form, cx));
+                    }
+                    body = body.child(inner);
+                }
+                return body.into_any_element();
+            }
             "form" | "group" | "list" | "nav" | "table" => {
                 body = body.child(if node.kind == "table" {
                     text(node, "caption").unwrap_or_default().to_string()
@@ -652,19 +725,22 @@ impl Render for Screen {
             .flex_col()
             .gap_4()
             .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
-                if event.keystroke.key == "tab" && !this.tab_order.is_empty() {
-                    let current = this
-                        .tab_order
-                        .iter()
-                        .position(|focus| focus.is_focused(window));
-                    let len = this.tab_order.len();
+                let order: Vec<gpui::FocusHandle> = this
+                    .tab_order
+                    .iter()
+                    .filter(|(path, _)| this.shown(path))
+                    .map(|(_, focus)| focus.clone())
+                    .collect();
+                if event.keystroke.key == "tab" && !order.is_empty() {
+                    let current = order.iter().position(|focus| focus.is_focused(window));
+                    let len = order.len();
                     let next = match (current, event.keystroke.modifiers.shift) {
                         (Some(i), true) => (i + len - 1) % len,
                         (Some(i), false) => (i + 1) % len,
                         (None, true) => len - 1,
                         (None, false) => 0,
                     };
-                    window.focus(&this.tab_order[next]);
+                    window.focus(&order[next]);
                     cx.stop_propagation();
                 }
             }))
@@ -883,6 +959,109 @@ mod tests {
             let mut values = BTreeMap::new();
             s.values(s.snapshot.as_ref().unwrap().root(), "/", cx, &mut values);
             assert_eq!(values["enabled"], "true");
+        });
+    }
+
+    /// The GPUI descriptor with no element claimed: the native disclosure turned off.
+    fn without_native_elements() -> EndpointSpace {
+        let mut descriptor: serde_json::Value = serde_json::from_slice(crate::DESCRIPTOR).unwrap();
+        descriptor.as_object_mut().unwrap().remove("elements");
+        let bytes = serde_json::to_vec(&descriptor).unwrap();
+        EndpointSpace::new().bind(
+            Exact::new("urn:iki:ui:target:name:gpui"),
+            FnEndpoint::new("test-gpui-no-elements", move |_: &Invocation<'_>| {
+                Ok(
+                    Representation::new(ReprType::new("application/json"), bytes.clone())
+                        .cacheable(),
+                )
+            })
+            .with_description(
+                Description::new("test-gpui-no-elements")
+                    .title("GPUI without native elements")
+                    .summary("The native descriptor, claiming no element.")
+                    .verb(Verb::Source)
+                    .verb(Verb::Meta)
+                    .output("application/json"),
+            ),
+        )
+    }
+
+    #[gpui::test]
+    fn a_disclosure_opens_and_closes_in_the_window_and_its_body_joins_the_tab_order(
+        cx: &mut TestAppContext,
+    ) {
+        let worker = demo_worker(None);
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "elements", Theme::Auto, window, cx));
+        settle(&screen, cx);
+        // [heading, rating, card, key-value, tag-list, disclosure]: the disclosure arrives
+        // whole, closed as its model says, its body's link out of the tab order.
+        let (summary, link, model) = screen.update(cx, |s, _| {
+            let root = s.snapshot.as_ref().expect("the elements screen").root();
+            assert_eq!(root.children[5].kind, DISCLOSURE);
+            assert_eq!(s.open.get("//5"), Some(&false));
+            (
+                s.focus["//5"].clone(),
+                s.focus["//5/0"].clone(),
+                root.children[5].clone(),
+            )
+        });
+        let order = |cx: &mut gpui::VisualTestContext| {
+            screen.update(cx, |s, _| {
+                s.tab_order
+                    .iter()
+                    .filter(|(path, _)| s.shown(path))
+                    .map(|(path, _)| path.clone())
+                    .collect::<Vec<_>>()
+            })
+        };
+        let closed = order(cx);
+        assert!(closed.contains(&"//5".to_string()) && !closed.contains(&"//5/0".to_string()));
+        // Tab from the summary wraps past the hidden link.
+        cx.update(|window, _| window.focus(&summary));
+        cx.simulate_keystrokes("tab");
+        cx.update(|window, _| assert!(!link.is_focused(window)));
+        // Space on the summary opens it; the model is untouched (the state is the window's).
+        cx.update(|window, _| window.focus(&summary));
+        cx.simulate_keystrokes("space");
+        screen.update(cx, |s, _| {
+            assert!(s.open["//5"]);
+            assert_eq!(s.snapshot.as_ref().unwrap().root().children[5], model);
+        });
+        assert!(order(cx).contains(&"//5/0".to_string()));
+        // Open, the body's link is the next stop after the summary, by keyboard alone.
+        cx.simulate_keystrokes("tab");
+        cx.update(|window, _| assert!(link.is_focused(window)));
+        // Enter on the summary closes it again.
+        cx.update(|window, _| window.focus(&summary));
+        cx.simulate_keystrokes("enter");
+        screen.update(cx, |s, _| assert!(!s.open["//5"]));
+        assert!(!order(cx).contains(&"//5/0".to_string()));
+    }
+
+    #[gpui::test]
+    fn with_the_native_disclosure_off_the_window_draws_its_expansion_always_open(
+        cx: &mut TestAppContext,
+    ) {
+        let worker = demo_worker(Some(without_native_elements()));
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "elements", Theme::Auto, window, cx));
+        settle(&screen, cx);
+        screen.update(cx, |s, _| {
+            let root = s.snapshot.as_ref().expect("the elements screen").root();
+            let expanded = &root.children[5];
+            assert_eq!(expanded.kind, "group");
+            assert_eq!(
+                text(expanded, "label"),
+                Some("How often is the gauge read?")
+            );
+            assert_eq!(expanded.children[0].kind, "heading");
+            assert_eq!(expanded.children[1].kind, "text");
+            assert_eq!(expanded.children[2].kind, "link");
+            // Nothing to toggle, nothing hidden: its link is in the tab order.
+            assert!(s.open.is_empty());
+            assert!(s.tab_order.iter().any(|(path, _)| path == "//5/2"));
+            assert!(s.shown("//5/2"));
         });
     }
 

@@ -18,6 +18,10 @@ use ikigai_ui::{
 /// The descriptor implemented by this renderer, including interactive forms.
 pub const DESCRIPTOR: &[u8] = include_bytes!("../assets/gpui.json");
 
+/// The disclosure element (ledger #3512), which this renderer draws natively: a button that
+/// holds its open state in the window and shows or hides its body.
+pub const DISCLOSURE: &str = "urn:iki:ui:element:name:disclosure";
+
 /// Override the base library's prospective GPUI descriptor in a host's fallback space.
 pub fn descriptor_space() -> EndpointSpace {
     EndpointSpace::new().bind(
@@ -44,14 +48,17 @@ pub fn descriptor_space() -> EndpointSpace {
 pub struct Snapshot(Arc<Node>);
 
 impl Snapshot {
-    /// Validate an already resolved GPUI face. References, custom elements, and
-    /// unsupported kinds are refused rather than resolved from a render callback.
+    /// Validate an already resolved GPUI face. References, custom elements the descriptor
+    /// does not claim (`elements`), and unsupported kinds are refused rather than resolved
+    /// from a render callback.
     pub fn from_face(bytes: &[u8]) -> Result<Self, ikigai_core::Error> {
         let node = model::parse(bytes)?;
         let descriptor = Descriptor::parse(DESCRIPTOR, "gpui")?;
         let mut stack = vec![&node];
         while let Some(node) = stack.pop() {
-            if !descriptor.renders.contains(&node.kind) || node.replacement.is_some() {
+            let native =
+                descriptor.renders.contains(&node.kind) || descriptor.elements.contains(&node.kind);
+            if !native || node.replacement.is_some() {
                 return Err(ikigai_core::Error::InvalidArgument {
                     name: "snapshot".into(),
                     detail: format!("{} is not a resolved native GPUI node", node.kind),
