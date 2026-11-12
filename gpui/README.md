@@ -204,6 +204,92 @@ through `View::key`; N / Shift+N / Escape put `announce`'s sentence in the windo
 as the html face says it in `#status`. The replacement (the graph as text) is always drawn
 beside the image. With the feature off, nothing changes: `scene` is its replacement.
 
+## Accessibility tree (ledger #3546)
+
+**Today: none.** GPUI 0.2.2, the release this crate pins (`=0.2.2`, crates.io, 2025-10-22, still
+the latest there on 2026-11-12), has no AccessKit dependency and no NSAccessibility, UI
+Automation or AT-SPI provider of its own: nothing in its source mentions one. So VoiceOver,
+Narrator and Orca hear nothing of a window's content: not a role, not a label, not the focus,
+and not the status line. 0.2.2 also reports none of the device settings a native app should
+follow: no system text size (Windows' Text size, GNOME's text scaling factor; this face draws
+its text at fixed sizes, 16 px for body text), no platform high contrast (its appearance is light or dark only,
+see Themes), and no focus position for a magnifier (macOS Zoom and Windows Magnifier follow the
+keyboard focus through the accessibility API). Display scaling it does follow.
+
+So every gpui criterion (`urn:iki:ui:criterion:kind:{button,link,field}:target:gpui`,
+`assets/criterion/*.json`) marks each HEAR check, and those three settings, `blocked` by the
+toolkit (`c:blocked "toolkit"`), and says what each platform's screen reader should announce
+once there is a tree (`c:announce`: macOS VoiceOver over NSAccessibility, Windows Narrator over
+UI Automation, Linux Orca over AT-SPI: the role and properties to expose and the reader's
+words). MagentaA11y and atomica11y-skills cover the web, iOS and Android only (atomica11y's
+skill marks any other platform Blocked), so these criteria are our own, drawn from Apple's
+accessibility guidelines and AppKit roles, Windows UI Automation's control types, AT-SPI's roles
+and states, GNOME's keyboard guidelines and AccessKit's roles; each criterion names its sources.
+`tests/criterion.rs` holds them to that.
+
+**Upstream: AccessKit landed on Zed's main branch, unreleased and off by default.**
+What we found on 2026-11-12:
+
+- [zed-industries/zed#56065](https://github.com/zed-industries/zed/pull/56065) ("gpui:
+  Accesskit support", merged 2026-05-27, `1d029c5`) puts AccessKit in GPUI: AccessKit 0.24 with
+  its macOS (`accesskit_macos` 0.26), Unix/AT-SPI (`accesskit_unix` 0.22) and Windows
+  (`accesskit_windows` 0.34) adapters, wired into the Wayland, X11, macOS and Windows windows.
+  Zed's own components gain roles only after it.
+- The API (`crates/gpui/src/_accessibility.rs`, `examples/a11y.rs`): an element is reported when
+  it has an id and a role, `div().id(..).role(Role::Button).aria_label(..)`; a node's AccessKit
+  id derives from its global element id, so ids must be stable across frames and unique in one;
+  `.on_click` registers AccessKit's Click action, and `.on_a11y_action` others; text comes from
+  `text!` (whose id is its source location, a footgun in loops); a custom element (a text
+  input) adds synthetic children (`TextRun`s with value and selection) through
+  `Element::a11y_synthetic_children`. Builders at `498af67` (main, 2026-11-12): `role`,
+  `aria_label`, `aria_description`, `aria_expanded`, `aria_toggled`, `aria_selected`,
+  `aria_level`, `aria_value`, `aria_placeholder`, numeric values, set positions and table
+  indices. There is none for disabled, required, invalid, described-by or a live region.
+- It is not on by default. Merging it caused panics in Zed's nightly; `Application::inaccessible()`
+  ([#57954](https://github.com/zed-industries/zed/pull/57954)) turns the adapters off, and Zed
+  itself runs with them off unless `ZED_EXPERIMENTAL_A11Y=1`. Open on 2026-11-12: views drawn from
+  GPUI's cache drop their nodes and focus falls back to the window
+  ([#66690](https://github.com/zed-industries/zed/issues/66690)); macOS reports the window, not
+  the focused control, as the focused element
+  ([#66691](https://github.com/zed-industries/zed/issues/66691)); X11 gives AT-SPI no window
+  position ([#66729](https://github.com/zed-industries/zed/issues/66729)); clipped elements are
+  reported visible ([#66730](https://github.com/zed-industries/zed/issues/66730)); and Windows'
+  screen-reader tracking issue ([#41138](https://github.com/zed-industries/zed/issues/41138))
+  is still open.
+- No GPUI release carries it: crates.io's newest is 0.2.2, from before the merge, and the
+  platform code has since moved into crates Zed does not publish (`gpui_platform`,
+  `gpui_macos`, `gpui_linux`, `gpui_windows`).
+
+**What adopting it would take**, as a later item:
+
+1. A git dependency on Zed pinned to a commit (no release to pin), with `gpui_platform` for the
+   window platform: `Application::with_platform(gpui_platform::current_platform(..))`, its
+   `font-kit`, `wayland`, `x11` and `runtime_shaders` features moved from `gpui` to
+   `gpui_platform` in each target's table above, and `test-support` likewise. Zed's main builds
+   with Rust 1.98.1 (edition 2024), so this crate's `rust-version` (1.89) rises. Every API
+   change since 0.2.2 is in the diff: the window code, `src/input.rs` (from 0.2.2's example)
+   and the scene's `RenderImage` would be ported, and `tests/text_system.rs` re-pinned.
+2. Ids and roles from the snapshot: each node's path (`n.0.1`) as its element id, stable and
+   unique by construction, and the role and label from its kind: heading (`Role::Heading`,
+   `aria_level`), button, link (and its URL), list and list item, table, row and cell, group,
+   checkbox (`aria_toggled`), the radio group's options (`aria_selected`, position in set),
+   disclosure (`aria_expanded`), meter (numeric value and bounds). Every `text!` in a loop takes
+   the node's id.
+3. What GPUI has no builder for, through a custom element's synthetic children, or upstream:
+   a field's hint and error as described-by (or, at the least, `aria_description`), required
+   and invalid, a busy button's disabled state, and the status line as a polite live region, so
+   a refusal or a radio choice is spoken as the html face's `#status` is.
+4. The text input as `Role::TextInput` (or `MultilineTextInput`), its value, `TextRun`s and
+   selection as synthetic children, so a screen reader echoes typing and the caret.
+5. Verification: the HEAR checks stay human (VoiceOver, Narrator, Orca), but the tree itself
+   can be tested. Zed's #56065 brought an AT-SPI test under Nix (`nix/tests/a11y_atspi_test.py`),
+   and a Linux job that reads the tree over AT-SPI could probe each criterion's `announce` role
+   and name, as `tests/criterion.rs` probes the html face. Then the criteria's `blocked` marks
+   come off check by check, and the settings that stay blocked (text size, platform contrast)
+   say so on their own until GPUI reports them.
+6. Off by default upstream, so on here only behind a flag until #66690 and #66691 are fixed:
+   a tree whose focus falls back to the window is worse for a screen-reader user than none.
+
 ## Verification
 
 ```sh

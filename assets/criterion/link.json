@@ -32,28 +32,48 @@
     {
       "target": "gpui",
       "source": [
-        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/controls/link.md",
-        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/link.md"
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility",
+        "https://developer.apple.com/documentation/appkit/nsaccessibility-swift.struct/role/link",
+        "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supporthyperlinkcontroltype",
+        "https://learn.microsoft.com/en-us/windows/apps/design/accessibility/keyboard-accessibility",
+        "https://learn.microsoft.com/en-us/windows/apps/design/accessibility/high-contrast-themes",
+        "https://docs.gtk.org/atspi2/enum.Role.html",
+        "https://docs.gtk.org/atspi2/enum.StateType.html",
+        "https://developer.gnome.org/hig/guidelines/keyboard.html",
+        "https://docs.rs/accesskit/latest/accesskit/enum.Role.html"
       ],
-      "semantics": "One focusable control in the window's tab order: its label in the accent color, underlined and ringed in the focus color while focused. A /page/{name} link loads that screen through the host's kernel. GPUI exposes no accessibility tree, so no link role reaches assistive technology.",
+      "semantics": "One focusable control in the window's tab order: its label in the accent color, underlined and ringed in the focus color while focused. A /page/{name} link loads that screen through the host's kernel; an http(s) or mail link opens in the system handler. Once GPUI exposes a tree: an AccessKit Link node named by its label, its URL as the node's URL, with a Click action that follows it (AXLink on macOS, the Hyperlink control type with the Invoke pattern on Windows, a link with the Hyperlink interface on AT-SPI).",
       "keyboard": [
-        { "key": "Tab", "outcome": "Focus moves to the link, in document order, and the focus ring and underline show." },
-        { "key": "Enter", "outcome": "Follows the link: the window loads the screen it names, or says in words why it cannot." }
+        {"key": "Tab", "outcome": "Focus moves to the link, in reading order, and the focus ring and underline show."},
+        {"key": "Shift+Tab", "outcome": "Focus moves back to the control before it, wrapping to the last."},
+        {"key": "Enter", "outcome": "Follows the link (Return on macOS): the window loads the screen it names, opens an http(s) or mail link in the system handler, or says in words why it cannot."}
       ],
       "name": "The link's label, the same words as its visible text.",
-      "role": "Link.",
+      "role": "Link (VoiceOver: link; Narrator: link; Orca: link).",
       "setting": [
-        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the link's label grow with it, with no loss of information." },
-        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the link's label and focus ring whole." }
+        {"mode": "see", "statement": "WHEN I set the system text size to 200% (Windows' Accessibility, Text size; GNOME's Large Text or text scaling factor) I SEE the link's label grow with it, with no loss of information.", "blocked": "toolkit"},
+        {"mode": "see", "statement": "WHEN I raise the display scale (macOS' Displays, Larger Text; Windows' Scale at 150% or 200%; GNOME's Scale at 200%) I SEE the link's label drawn sharp and larger, whole and without overlapping."},
+        {"mode": "see", "statement": "WHEN I turn on the platform's high contrast (macOS' Increase contrast, a Windows contrast theme, the desktop portal's contrast) I SEE the window switch to the high-contrast palette by itself, the link's label at 7:1.", "blocked": "toolkit"},
+        {"mode": "see", "statement": "WHEN I choose the high-contrast theme for the window I SEE the link's label and its focus ring drawn in the high-contrast palette, every pair at 7:1."},
+        {"mode": "see", "statement": "WHEN I magnify the screen (macOS Zoom, Windows Magnifier, GNOME's Zoom) with focus following I SEE the magnifier follow the keyboard focus to the link's label.", "blocked": "toolkit"}
       ],
       "check": [
-        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the link, its ring drawn in the focus color and its label underlined." },
-        { "mode": "see", "statement": "WHEN I press Enter on the focused link I SEE the screen it names load, and the window keep the keyboard focus." },
-        { "mode": "see", "statement": "WHEN the link names no screen the kernel has I SEE a refusal in words, and the screen shown stays." },
-        { "mode": "hear", "statement": "WHEN I Tab to the link with a screen reader (VoiceOver, Orca, Narrator) I HEAR its purpose is clear and I HEAR it identify itself as a link." },
-        { "mode": "hear", "statement": "WHEN I press Enter on the link I HEAR the new screen's heading." }
+        {"mode": "see", "statement": "WHEN the window opens or loads a screen I SEE it hold the keyboard focus, so Tab reaches the link without a click."},
+        {"mode": "see", "statement": "WHEN I use Tab and Shift+Tab I SEE focus reach the link in reading order, top to bottom, wrapping at either end, on every platform (macOS' Keyboard navigation setting does not change it: the window keeps its own tab order)."},
+        {"mode": "see", "statement": "WHEN the link has focus I SEE a 2px ring in the focus color drawn outside it, on the window's ground, a pair the palettes hold to 3:1."},
+        {"mode": "see", "statement": "WHEN I press Enter on the focused link I SEE the screen it names load, and the window keep the keyboard focus."},
+        {"mode": "see", "statement": "WHEN the link names no screen the kernel has I SEE a refusal in words, and the screen shown stays."},
+        {"mode": "see", "statement": "The link is drawn in the accent color on the ground, a pair the palettes hold to the text floor, and underlined when focused, so it is not told by color alone."},
+        {"mode": "hear", "statement": "WHEN I Tab to the link with VoiceOver (macOS), Narrator (Windows) or Orca (Linux) I HEAR its label and I HEAR it identify itself as a link.", "blocked": "toolkit"},
+        {"mode": "hear", "statement": "WHEN I list the window's links (VoiceOver's Rotor, Narrator's links list, Orca's list of links) I HEAR the link among them by its label.", "blocked": "toolkit"},
+        {"mode": "hear", "statement": "WHEN I follow the link I HEAR the new screen's level-1 heading, and the focus is in the new screen.", "blocked": "toolkit"}
       ],
-      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today, and no CI job verifies its SEE checks (the window tests in gpui/src/native.rs run by hand; ACCESSIBILITY.md)."
+      "announce": [
+        {"platform": "macos", "reader": "VoiceOver, over NSAccessibility", "api": "AXLink, its label as the AXTitle and its target as the AXURL (AccessKit Role::Link with its label and URL); AXPress follows it.", "says": "\"Gallery, link\"."},
+        {"platform": "windows", "reader": "Narrator (and NVDA), over UI Automation", "api": "ControlType Hyperlink, its label as the Name, its target as the Value, IsKeyboardFocusable; the Invoke pattern follows it.", "says": "\"Gallery, link\"."},
+        {"platform": "linux", "reader": "Orca, over AT-SPI", "api": "ATSPI_ROLE_LINK, its label as the name, STATE_FOCUSABLE; the Hyperlink interface gives its URI and the Action interface's jump follows it.", "says": "\"Gallery, link\"."}
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit, NSAccessibility, UI Automation or AT-SPI provider), so every HEAR check is blocked by the toolkit, and so are the system text size, the platform's high contrast and a magnifier following focus, which it does not report. GPUI's main branch has AccessKit (zed-industries/zed#56065), not yet released (gpui/README.md, \"Accessibility tree\"). No CI job runs the window tests that show the SEE checks; they run by hand (ACCESSIBILITY.md)."
     }
   ]
 }
