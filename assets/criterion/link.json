@@ -1,0 +1,59 @@
+{
+  "kind": "link",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/link.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/link.md"
+      ],
+      "semantics": "A native <a href> whose text is the link's label: it goes somewhere (another page or another place on this one), it never does something (that is a button).",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the link and is strongly visually indicated." },
+        { "key": "Enter", "outcome": "Follows the link: the browser goes to its href." }
+      ],
+      "name": "The link's label, the same words as its visible text; its purpose is clear from them alone.",
+      "role": "Link.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the link's label grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the link reflow with its text, whole and with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <a> element.", "probe": "element", "argument": "a" },
+        { "mode": "see", "statement": "The link goes where the model says: its href is the link's href.", "probe": "href" },
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the link: it has an href and no negative tabindex.", "probe": "focusable" },
+        { "mode": "see", "statement": "WHEN the link has focus I SEE a focus ring of at least 2px in the focus color.", "probe": "focus-visible" },
+        { "mode": "see", "statement": "The link's text is its label, so its accessible name matches what I see.", "probe": "name-from-content" },
+        { "mode": "hear", "statement": "WHEN I Tab to the link with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR its purpose is clear and I HEAR it identify itself as a link." },
+        { "mode": "hear", "statement": "WHEN I swipe to the link with a mobile screen reader (TalkBack, VoiceOver) I HEAR its name and its role of link, and a double tap follows it." },
+        { "mode": "hear", "statement": "WHEN I press Enter on the link I HEAR the browser go somewhere: the new page's title, or the place on this page." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/controls/link.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/link.md"
+      ],
+      "semantics": "One focusable control in the window's tab order: its label in the accent color, underlined and ringed in the focus color while focused. A /page/{name} link loads that screen through the host's kernel. GPUI exposes no accessibility tree, so no link role reaches assistive technology.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the link, in document order, and the focus ring and underline show." },
+        { "key": "Enter", "outcome": "Follows the link: the window loads the screen it names, or says in words why it cannot." }
+      ],
+      "name": "The link's label, the same words as its visible text.",
+      "role": "Link.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the link's label grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the link's label and focus ring whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the link, its ring drawn in the focus color and its label underlined." },
+        { "mode": "see", "statement": "WHEN I press Enter on the focused link I SEE the screen it names load, and the window keep the keyboard focus." },
+        { "mode": "see", "statement": "WHEN the link names no screen the kernel has I SEE a refusal in words, and the screen shown stays." },
+        { "mode": "hear", "statement": "WHEN I Tab to the link with a screen reader (VoiceOver, Orca, Narrator) I HEAR its purpose is clear and I HEAR it identify itself as a link." },
+        { "mode": "hear", "statement": "WHEN I press Enter on the link I HEAR the new screen's heading." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today, and no CI job verifies its SEE checks (the window tests in gpui/src/native.rs run by hand; ACCESSIBILITY.md)."
+    }
+  ]
+}

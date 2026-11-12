@@ -1,0 +1,69 @@
+{
+  "kind": "field",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/text-input.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/input-text.md"
+      ],
+      "semantics": "A native <input> of the field's input type, named by a visible <label for> (never a placeholder), its hint and its error in text the input points at with aria-describedby, required and invalid stated with aria-required and aria-invalid.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the input and is strongly visually indicated." },
+        { "key": "Typing", "outcome": "Enters text in the input; a checkbox field toggles with Space instead." },
+        { "key": "Enter", "outcome": "Submits the field's form." }
+      ],
+      "name": "The field's label, the same words as the visible label.",
+      "role": "The input's type: text input, email, password, checkbox and so on.",
+      "group": "The hint, then the error, read after the label; the form's label names the group the field is in.",
+      "state": "Required when the field is required, invalid when it carries an error.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the label, the input's text, the hint and the error grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the label above or beside its input, the hint and error under it, and no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <input> element.", "probe": "element", "argument": "input" },
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the input: it is in the tab order, not disabled and with no negative tabindex.", "probe": "focusable" },
+        { "mode": "see", "statement": "WHEN the input has focus I SEE a focus ring of at least 2px in the focus color.", "probe": "focus-visible" },
+        { "mode": "see", "statement": "I SEE a label that stays visible, tied to the input by for and id, with the field's label as its text.", "probe": "name-from-label" },
+        { "mode": "see", "statement": "I SEE the hint and the error as text after the input, which the input names in aria-describedby, hint first.", "probe": "described-by" },
+        { "mode": "see", "statement": "A required field says so: aria-required is true exactly when the field is required.", "probe": "required" },
+        { "mode": "see", "statement": "A field with an error says so: aria-invalid is true exactly when the field carries an error, and the error is in words, not only in color.", "probe": "invalid" },
+        { "mode": "hear", "statement": "WHEN I Tab to the input with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR its purpose is clear and I HEAR it identify itself as its input type (text input, email, checkbox)." },
+        { "mode": "hear", "statement": "WHEN I Tab to the input I HEAR the hint and any error read after the label, and the form's name when it is in a named group." },
+        { "mode": "hear", "statement": "WHEN the field is required or invalid I HEAR it expressed as required or invalid." },
+        { "mode": "hear", "statement": "WHEN I swipe to the input with a mobile screen reader (TalkBack, VoiceOver) I HEAR the same name, role, hint and state, and the on-screen keyboard appears on a double tap." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/controls/text-input.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/input-text.md"
+      ],
+      "semantics": "A text input in the window's tab order with its label above it (an asterisk when required; a click on the label focuses the input), its hint under it in text and its error in the danger color and in words; a checkbox field is one focusable control drawn ☐ or ☑ beside its label. GPUI exposes no accessibility tree, so no input role reaches assistive technology.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the input, in document order, and the focus ring shows." },
+        { "key": "Typing", "outcome": "Enters text in the input; a checkbox field toggles with Space instead." },
+        { "key": "Enter", "outcome": "A new line in a multi-line input; nothing in a one-line input, whose form submits from its button." }
+      ],
+      "name": "The field's label, the same words as the visible label.",
+      "role": "The input's type: text input or checkbox.",
+      "group": "The hint, then the error, read after the label; the form's label names the group the field is in.",
+      "state": "Required when the field is required, invalid when it carries an error, checked or not for a checkbox.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the label, the input's text, the hint and the error grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the label, the input and its focus ring whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the input and its ring drawn in the focus color." },
+        { "mode": "see", "statement": "I SEE the label stay visible above the input, an asterisk after it when the field is required." },
+        { "mode": "see", "statement": "I SEE the hint as text under the input and the error in words, not only in the danger color." },
+        { "mode": "see", "statement": "WHEN I press Space on a focused checkbox field I SEE it toggle between ☐ and ☑." },
+        { "mode": "hear", "statement": "WHEN I Tab to the input with a screen reader (VoiceOver, Orca, Narrator) I HEAR its purpose is clear and I HEAR it identify itself as its input type." },
+        { "mode": "hear", "statement": "WHEN I Tab to the input I HEAR the hint and any error read after the label, and I HEAR it expressed as required or invalid when it is." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today, and no CI job verifies its SEE checks (the window tests in gpui/src/native.rs run by hand; ACCESSIBILITY.md)."
+    }
+  ]
+}

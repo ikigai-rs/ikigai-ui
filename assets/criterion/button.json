@@ -1,0 +1,64 @@
+{
+  "kind": "button",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/button.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/button.md"
+      ],
+      "semantics": "A native <button type=\"submit\"> whose text is the button's label: it does something (submits its form), it never goes somewhere (that is a link).",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the button and is strongly visually indicated." },
+        { "key": "Space", "outcome": "Activates the button: its form submits." },
+        { "key": "Enter", "outcome": "Activates the button: its form submits." }
+      ],
+      "name": "The button's label, the same words as its visible text; its purpose is clear from them.",
+      "role": "Button.",
+      "state": "Dimmed or unavailable once the shell disables it after a refusal (a 403); otherwise none.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the button's label grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the button reflow into one column, its label whole and no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <button> element.", "probe": "element", "argument": "button" },
+        { "mode": "see", "statement": "The button submits its form: type=\"submit\".", "probe": "attribute", "argument": "type=submit" },
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the button: it is in the tab order, not disabled and with no negative tabindex.", "probe": "focusable" },
+        { "mode": "see", "statement": "WHEN the button has focus I SEE a focus ring of at least 2px in the focus color.", "probe": "focus-visible" },
+        { "mode": "see", "statement": "The button's text is its label, so its accessible name matches what I see.", "probe": "name-from-content" },
+        { "mode": "hear", "statement": "WHEN I Tab to the button with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR its purpose is clear and I HEAR it identify its role of button." },
+        { "mode": "hear", "statement": "WHEN I swipe to the button with a mobile screen reader (TalkBack, VoiceOver) I HEAR its name and its role of button, and a double tap activates it." },
+        { "mode": "hear", "statement": "WHEN I press Space or Enter on the button I HEAR the outcome: the status region says what happened, or a refusal names the control." },
+        { "mode": "hear", "statement": "WHEN the shell has disabled the button after a refusal I HEAR it expressed as dimmed or unavailable." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/controls/button.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/button.md"
+      ],
+      "semantics": "One focusable control in the window's tab order: its label in accent-fg on accent, ringed in the focus color while focused. GPUI exposes no accessibility tree, so no button role reaches assistive technology.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the button, in document order, and the focus ring shows." },
+        { "key": "Space", "outcome": "Submits the button's form." },
+        { "key": "Enter", "outcome": "Submits the button's form." }
+      ],
+      "name": "The button's label, the same words as its visible text.",
+      "role": "Button.",
+      "state": "Busy while its form submits: the label says (Submitting…) and the button takes no key or click.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the button's label grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the button's label and focus ring whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the button and its ring drawn in the focus color." },
+        { "mode": "see", "statement": "WHEN I press Space or Enter on the focused button I SEE its form submit and the label say (Submitting…) until it is answered." },
+        { "mode": "see", "statement": "The button's label is drawn in accent-fg on accent, a pair the palettes hold to the text floor." },
+        { "mode": "hear", "statement": "WHEN I Tab to the button with a screen reader (VoiceOver, Orca, Narrator) I HEAR its purpose is clear and I HEAR it identify its role of button." },
+        { "mode": "hear", "statement": "WHEN I activate the button I HEAR the outcome, and I HEAR it expressed as busy while its form submits." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today, and no test verifies its SEE checks in CI (ACCESSIBILITY.md, the native face's limitations)."
+    }
+  ]
+}
