@@ -312,12 +312,30 @@ struct Expander<'a> {
     definitions: &'a BTreeMap<String, Definition>,
     produced: usize,
     open: Vec<String>,
-    slots: Vec<Vec<Node>>,
+    /// The open elements' children, walked, and whether each has filled a slot yet.
+    slots: Vec<(Vec<Node>, bool)>,
+}
+
+/// The nodes in `nodes` and under them (the model's depth bound keeps the recursion shallow).
+fn size(nodes: &[Node]) -> usize {
+    nodes
+        .iter()
+        .map(|n| {
+            1 + size(&n.children)
+                + n.replacement
+                    .as_deref()
+                    .map_or(0, |r| size(std::slice::from_ref(r)))
+        })
+        .sum()
 }
 
 impl Expander<'_> {
     fn count(&mut self) -> Result<(), Error> {
-        self.produced += 1;
+        self.count_n(1)
+    }
+
+    fn count_n(&mut self, n: usize) -> Result<(), Error> {
+        self.produced = self.produced.saturating_add(n);
         if self.produced > MAX_NODES {
             return Err(Error::InvalidArgument {
                 name: "element".into(),
@@ -327,12 +345,26 @@ impl Expander<'_> {
         Ok(())
     }
 
+    /// The open element's children for one of its slots. They were counted when they were
+    /// walked; a template that names `{children}` again copies them, and every copy is a node
+    /// produced (a chain of elements that each repeat the slot grows exponentially otherwise).
+    fn slot(&mut self) -> Result<Vec<Node>, Error> {
+        let Some((filled, used)) = self.slots.last_mut() else {
+            return Ok(Vec::new());
+        };
+        let again = std::mem::replace(used, true).then(|| size(filled));
+        let filled = filled.clone();
+        if let Some(n) = again {
+            self.count_n(n)?;
+        }
+        Ok(filled)
+    }
+
     fn children(&mut self, children: &[Node], depth: usize) -> Result<Vec<Node>, Error> {
         let mut out = Vec::with_capacity(children.len());
         for child in children {
             if child.kind == SLOT {
-                let filled = self.slots.last().cloned().unwrap_or_default();
-                out.extend(filled);
+                out.extend(self.slot()?);
             } else {
                 out.push(self.walk(child, depth)?);
             }
@@ -348,7 +380,7 @@ impl Expander<'_> {
         let mut out = Vec::with_capacity(nodes.len());
         for n in nodes {
             if n.kind == SLOT {
-                out.extend(self.slots.last().cloned().unwrap_or_default());
+                out.extend(self.slot()?);
             } else {
                 self.count()?;
                 let mut c = n.clone();
@@ -414,7 +446,7 @@ impl Expander<'_> {
             let walked = self.children(&node.children, depth)?;
             let expanded = d.splice(element, node)?;
             self.open.push(element.to_string());
-            self.slots.push(walked);
+            self.slots.push((walked, false));
             let out = self.walk(&expanded, depth + 1);
             self.slots.pop();
             self.open.pop();
