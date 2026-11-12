@@ -10,6 +10,12 @@ repository = "https://github.com/ikigai-rs/ikigai-ui"
 # A spike in ikigai-ui's workspace; extracting it later is a move, not a rewrite.
 publish = false
 
+[features]
+# Linux and FreeBSD windows: ikigai-ui-gpui's features of the same names (its Cargo.toml says why
+# they are not yet default).
+wayland = ["ikigai-ui-gpui/wayland"]
+x11 = ["ikigai-ui-gpui/x11"]
+
 # Nothing here builds for wasm32: the layer host links a store, and the app is native.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ikigai-ui = { path = "../.." }
@@ -25,9 +31,18 @@ rcgen = "0.13"
 # An entry's Markdown, read into the model's text kinds. Raw HTML events are dropped.
 pulldown-cmark = { version = "0.12", default-features = false }
 
-[target.'cfg(target_os = "macos")'.dependencies]
+# The window, on each target GPUI has a window platform for, naming that target's backends as
+# ikigai-ui-gpui does (gpui/Cargo.toml; its tests/text_system.rs pins them here too). Linux and
+# FreeBSD take theirs through the `wayland` and `x11` features above.
+[target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
 ikigai-ui-gpui = { path = "../../gpui" }
+gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
 gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "font-kit"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "windows-manifest"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 age = { version = "0.11.1", default-features = false }

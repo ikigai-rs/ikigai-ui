@@ -1,11 +1,20 @@
-//! The demo host's native companion: one shared Store, a web door and GPUI windows.
-#[cfg(target_os = "macos")]
+//! The demo host's native companion: one shared Store, a web door and GPUI windows, on macOS,
+//! Linux and FreeBSD (Wayland or X11) and Windows.
+#[cfg(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "windows"
+))]
 fn main() {
     use gpui::{px, size, App, AppContext, Application, Bounds, WindowBounds, WindowOptions};
     use ikigai_core::{Capability, Fallback, Scope};
     use ikigai_ui_gpui::{descriptor_space, native::Screen, theme::Theme, worker::Worker};
     use std::sync::Arc;
 
+    ikigai_ui_gpui::native::require_window_platform(
+        "cargo run -p ikigai-ui-gpui --features wayland,x11 --bin ikigai-ui-demo-native",
+    );
     let store = ikigai_ui_demo::Store::default();
     let root = Arc::new(Fallback::new(vec![
         Arc::new(descriptor_space()),
@@ -76,8 +85,13 @@ fn main() {
     });
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "windows"
+)))]
 fn main() {
-    eprintln!("The native demo currently requires macOS. The snapshot worker is portable.");
+    eprintln!("GPUI has no window platform here. The snapshot worker is portable.");
     std::process::exit(1);
 }

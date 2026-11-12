@@ -2,7 +2,7 @@
 //!
 //! Install [`descriptor_space`] before the base UI space so the GPUI face retains
 //! forms and inputs. [`worker::Worker`] resolves faces and submits to Sinks on OS
-//! threads. The macOS [`native::Screen`] only reads snapshots and local input state.
+//! threads. The native [`native::Screen`] (macOS, Linux and FreeBSD, Windows) only reads snapshots and local input state.
 #![forbid(unsafe_code)]
 
 use std::sync::Arc;
@@ -94,9 +94,22 @@ pub fn text<'a>(node: &'a Node, property: &str) -> Option<&'a str> {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "windows"
+))]
 pub mod native;
-#[cfg(all(feature = "scene", any(target_os = "macos", target_os = "linux")))]
+#[cfg(all(
+    feature = "scene",
+    any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "windows"
+    )
+))]
 pub mod scene;
 pub mod theme;
 #[cfg(not(target_arch = "wasm32"))]

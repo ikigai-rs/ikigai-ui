@@ -1,6 +1,11 @@
 //! The reader's native window, over a LOCAL layer host only (a development spike: the live
 //! edge is never joined from here). `ikigai-reader <host config dir> <host state dir> <age key>`.
-#[cfg(target_os = "macos")]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "windows"
+))]
 fn main() {
     use gpui::{px, size, App, AppContext, Application, Bounds, WindowBounds, WindowOptions};
     use ikigai_core::{Fallback, Scope};
@@ -8,6 +13,9 @@ fn main() {
     use ikigai_ui_gpui::{descriptor_space, native::Screen, theme::Theme, worker::Worker};
     use std::sync::Arc;
 
+    ikigai_ui_gpui::native::require_window_platform(
+        "cargo run -p ikigai-reader --features wayland,x11 -- <arguments>",
+    );
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [config, state, key, descriptor] = &args[..] else {
         eprintln!("usage: ikigai-reader <host config> <host state> <host age key> <layers.json>");
@@ -51,8 +59,13 @@ fn main() {
     });
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "windows"
+)))]
 fn main() {
-    eprintln!("The reader's window needs macOS.");
+    eprintln!("GPUI has no window platform here.");
     std::process::exit(1);
 }
