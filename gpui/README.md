@@ -164,7 +164,7 @@ only, where it is a system panel (Linux and Windows reach their emoji pickers th
 Windows+Period, or the input method's own key). Composition goes through GPUI's platform input
 handler on each: macOS text input, XIM or the `zwp_text_input_v3` protocol on Linux, IMM32 on
 Windows. Other field input hints use text editing, leaving authoritative value
-validation to the Sink. Choices use selectable options, and a choice with the `urn:iki:ui:hint:choice:radio` hint is one radio group: one tab stop, the arrow keys move the selection (wrapping), and the status line announces it ("Lens: graph, checked, 4 of 4"); Tab/Shift-Tab traverse
+validation to the Sink. Choices use selectable options, and a choice with the `urn:iki:ui:hint:choice:radio` hint is one radio group: one tab stop, the arrow keys move the selection (wrapping), and the status line announces it ("Lens: graph, checked, 5 of 5"); Tab/Shift-Tab traverse
 controls, and Enter/Space activate options and submit buttons. Native forms
 require a `resource` and `verb: sink` (Sink is the default). HTML-only `action`
 URLs and other form verbs are refused visibly. Successful Sink responses show a

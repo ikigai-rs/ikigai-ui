@@ -1,0 +1,48 @@
+# A small dashboard of counts, built as the UI model itself (ledger #3520): a group holding a
+# table of how many nodes the graph has of each type, each type linking through the home
+# mapping, and a line on how many fields are required. Every node is named under the focus;
+# `ui:order` places a child among its siblings.
+PREFIX schema: <http://schema.org/>
+PREFIX kind: <urn:iki:ui:kind:name:>
+PREFIX ui: <urn:iki:ui:property:name:>
+CONSTRUCT {
+  ?board a kind:group ; ui:label "At a glance" ; ui:child ?table, ?required .
+  ?table a kind:table ; ui:caption "Nodes by type" ; ui:order 0 ; ui:child ?head .
+  ?head a kind:group ; ui:label "Columns" ; ui:header "column" ; ui:order 0 ;
+    ui:child ?headType, ?headCount .
+  ?headType a kind:text ; ui:content "Type" ; ui:order 0 .
+  ?headCount a kind:text ; ui:content "Count" ; ui:order 1 .
+  ?table ui:child ?row .
+  ?row a kind:group ; ui:label ?name ; ui:header "row" ; ui:order 1 ; ui:child ?typeCell, ?countCell .
+  ?typeCell a kind:link ; ui:label ?name ; ui:href ?type ; ui:order 0 .
+  ?countCell a kind:text ; ui:content ?count ; ui:order 1 .
+  ?required a kind:text ; ui:content ?requiredWords ; ui:order 1 .
+} WHERE {
+  {
+    # One row per type: how many nodes of it.
+    SELECT ?focus ?type (COUNT(DISTINCT ?node) AS ?n) WHERE { GRAPH ?focus { ?node a ?type } }
+    GROUP BY ?focus ?type
+  }
+  {
+    # The fields, and the required ones among them.
+    SELECT ?focus (COUNT(DISTINCT ?field) AS ?fields) (COUNT(DISTINCT ?must) AS ?musts) WHERE {
+      GRAPH ?focus {
+        ?field a schema:PropertyValueSpecification .
+        OPTIONAL { ?field schema:valueRequired "true" . BIND(?field AS ?must) }
+      }
+    }
+    GROUP BY ?focus
+  }
+  BIND(IRI(CONCAT(STR(?focus), ":dashboard")) AS ?board)
+  BIND(IRI(CONCAT(STR(?board), ":types")) AS ?table)
+  BIND(IRI(CONCAT(STR(?table), ":head")) AS ?head)
+  BIND(IRI(CONCAT(STR(?head), ":type")) AS ?headType)
+  BIND(IRI(CONCAT(STR(?head), ":count")) AS ?headCount)
+  BIND(IRI(CONCAT(STR(?board), ":required")) AS ?required)
+  BIND(CONCAT(STR(?musts), " of ", STR(?fields), " fields are required.") AS ?requiredWords)
+  BIND(REPLACE(STR(?type), "^.*[/#:]", "") AS ?name)
+  BIND(STR(?n) AS ?count)
+  BIND(IRI(CONCAT(STR(?table), ":row:", ENCODE_FOR_URI(STR(?type)))) AS ?row)
+  BIND(IRI(CONCAT(STR(?row), ":type")) AS ?typeCell)
+  BIND(IRI(CONCAT(STR(?row), ":count")) AS ?countCell)
+}

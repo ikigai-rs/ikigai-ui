@@ -2120,9 +2120,63 @@ mod tests {
         cx.update(|window, _| window.focus(&group));
         cx.simulate_keystrokes("down");
         screen.update(cx, |s, _| {
-            assert_eq!(s.choices[&path], "graph");
+            assert_eq!(s.choices[&path], "contact-dashboard");
             assert_eq!(s.message, radio_announcement(&lens, 3));
-            assert_eq!(s.message, "Lens: graph, checked, 4 of 4");
+            assert_eq!(s.message, "Lens: contact-dashboard, checked, 4 of 5");
         });
+    }
+
+    /// The dashboard a `construct` lens builds as the model (ledger #3520) is an ordinary
+    /// screen to the native face: its GPUI face validates as a snapshot, installs in a window,
+    /// and each type it links is a tab stop.
+    #[gpui::test]
+    fn a_constructed_dashboard_is_an_ordinary_native_screen(cx: &mut TestAppContext) {
+        let kernel = ikigai_ui_demo::kernel(Arc::new(Fallback::new(vec![
+            Arc::new(crate::descriptor_space()) as Arc<dyn ikigai_core::Space>,
+            ikigai_ui_demo::root(Default::default()),
+        ])));
+        let iri = ikigai_core::Iri::parse(format!(
+            "urn:iki:ui:face:target:gpui:screen:lens:contact-dashboard:resource:{}",
+            ikigai_ui::scene::EXAMPLE_GRAPH
+        ))
+        .unwrap();
+        let rep = futures::executor::block_on(kernel.issue(
+            ikigai_core::Request::new(Verb::Source, iri),
+            &Capability::root(),
+        ))
+        .unwrap();
+        let snapshot = Snapshot::from_face(&rep.bytes).unwrap();
+        let root = snapshot.root();
+        let board = root.children.last().unwrap();
+        assert_eq!(board.kind, "group", "{board:?}");
+        let table = &board.children[0];
+        assert_eq!(table.kind, "table");
+        let at = format!("//{}/0", root.children.len() - 1);
+        let worker = demo_worker(None);
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "gallery", Theme::Auto, window, cx));
+        settle(&screen, cx);
+        screen.update(cx, |s, cx| {
+            s.tab_order.clear();
+            s.focus.clear();
+            s.choices.clear();
+            s.install(root, "/", cx);
+            s.snapshot = Some(snapshot.clone());
+            let links: Vec<&String> = s
+                .tab_order
+                .iter()
+                .map(|(p, _)| p)
+                .filter(|p| p.starts_with(&format!("{at}/")))
+                .collect();
+            assert_eq!(
+                links,
+                [
+                    &format!("{at}/1/0"),
+                    &format!("{at}/2/0"),
+                    &format!("{at}/3/0")
+                ]
+            );
+        });
+        cx.run_until_parked();
     }
 }

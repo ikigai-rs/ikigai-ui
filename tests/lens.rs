@@ -185,7 +185,13 @@ fn the_table_lens_shows_each_field_of_the_contact_graph() {
         .collect();
     assert_eq!(
         options,
-        ["contact-graph", "contact-table", "contact-list", "graph"]
+        [
+            "contact-graph",
+            "contact-table",
+            "contact-list",
+            "contact-dashboard",
+            "graph"
+        ]
     );
 }
 
@@ -453,7 +459,13 @@ fn a_resource_with_lenses_offers_them_and_one_without_does_not() {
         .collect();
     assert_eq!(
         options,
-        ["contact-graph", "contact-table", "contact-list", "graph"]
+        [
+            "contact-graph",
+            "contact-table",
+            "contact-list",
+            "contact-dashboard",
+            "graph"
+        ]
     );
     let form = of(&n, "form")
         .into_iter()
@@ -553,6 +565,7 @@ fn a_lensed_views_chooser_is_radio_buttons_in_a_fieldset() {
             ("contact-graph".to_string(), false),
             ("contact-table".to_string(), false),
             ("contact-list".to_string(), true),
+            ("contact-dashboard".to_string(), false),
             ("graph".to_string(), false),
         ],
         "{page}"
@@ -606,6 +619,7 @@ fn a_resource_views_lens_chooser_is_radio_buttons() {
             ("contact-graph".to_string(), true),
             ("contact-table".to_string(), false),
             ("contact-list".to_string(), false),
+            ("contact-dashboard".to_string(), false),
             ("graph".to_string(), false),
         ],
         "{page}"
@@ -737,4 +751,210 @@ fn a_lensed_view_is_a_page_in_the_shell() {
         &[]
     )
     .is_err());
+}
+
+// Lenses 3 (ledger #3520): a lens whose renderer is `construct` builds the UI model itself.
+
+/// The rendered view's body: the node after the lensed view's heading, link and form.
+fn body(n: &Node) -> &Node {
+    n.children.last().expect("the renderer's node")
+}
+
+#[test]
+fn a_construct_lens_builds_the_dashboard_as_the_model() {
+    let n = view(
+        &common::host(None),
+        "contact-dashboard",
+        EXAMPLE_GRAPH,
+        &Capability::root(),
+    )
+    .unwrap();
+    let board = body(&n);
+    assert_eq!(board.kind, "group", "{board:?}");
+    assert_eq!(text(&board.properties["label"]), "At a glance");
+    // Children in their stated order: the table, then the line under it.
+    let kinds: Vec<&str> = board.children.iter().map(|c| c.kind.as_str()).collect();
+    assert_eq!(kinds, ["table", "text"]);
+    let table = &board.children[0];
+    let rows: Vec<Vec<String>> = table
+        .children
+        .iter()
+        .map(|g| {
+            g.children
+                .iter()
+                .map(|c| {
+                    text(
+                        c.properties
+                            .get("content")
+                            .unwrap_or_else(|| &c.properties["label"]),
+                    )
+                })
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ["Type", "Count"],
+            ["Enumeration", "3"],
+            ["PropertyValueSpecification", "4"],
+            ["Service", "1"],
+        ],
+        "the header first, then the rows by IRI: {table:?}"
+    );
+    assert_eq!(text(&table.children[0].properties["header"]), "column");
+    // Every rendered type keeps its IRI and links through the home mapping.
+    let hrefs: Vec<String> = of(table, "link")
+        .iter()
+        .map(|l| text(&l.properties["href"]))
+        .collect();
+    assert_eq!(
+        hrefs,
+        [
+            ikigai_ui::view::href("http://schema.org/Enumeration"),
+            ikigai_ui::view::href("http://schema.org/PropertyValueSpecification"),
+            ikigai_ui::view::href("http://schema.org/Service"),
+        ]
+    );
+    assert_eq!(
+        text(&board.children[1].properties["content"]),
+        "3 of 4 fields are required."
+    );
+}
+
+/// A host whose lens `name` is a `construct` over `query`, bound `bound`.
+fn construct_host(name: &str, bound: usize, query: &str) -> ikigai_core::Kernel {
+    let mut space = lens(
+        EndpointSpace::new(),
+        name,
+        &format!(
+            r#"{{"renderer": "construct", "bound": {bound}, "legend": "Built", "graphs": ["{{focus}}"]}}"#
+        ),
+        query,
+    );
+    space = space.bind(
+        Exact::new(SECRET),
+        FnEndpoint::new("host-secret", |_: &Invocation<'_>| {
+            Ok(Representation::new(
+                ReprType::new("text/turtle"),
+                b"<urn:a> <urn:b> <urn:c> .".to_vec(),
+            ))
+        })
+        .with_description(
+            Description::new("host-secret")
+                .title("A secret graph")
+                .summary("A graph only a holder of its capability reads.")
+                .verb(Verb::Source)
+                .requires(SECRET_READ)
+                .output("text/turtle"),
+        ),
+    );
+    common::host_with(None, vec![Arc::new(space) as Arc<dyn Space>])
+}
+
+const PREFIXES: &str =
+    "PREFIX kind: <urn:iki:ui:kind:name:>\nPREFIX ui: <urn:iki:ui:property:name:>\n";
+/// The store refuses a binding its query never names, so each names the focus.
+const FOCUS: &str = "OPTIONAL { GRAPH ?focus { ?focus ?seen ?it } }";
+
+#[test]
+fn a_constructed_model_is_validated_as_any_screen_is() {
+    // A heading with no level, a kind that is not one, a property the context does not name,
+    // a link whose href is script, a table whose child is not a group, two roots, a cycle: each
+    // is a screen no screen could be, refused, never shown.
+    for (what, template) in [
+        ("a missing required property", "<urn:x:h> a kind:heading ; ui:content \"Hi\" ."),
+        ("not a kind", "<urn:x:h> a <urn:x:widget> ; ui:content \"Hi\" ."),
+        ("an unnamed predicate", "<urn:x:h> a kind:text ; ui:content \"Hi\" ; <urn:x:p> \"x\" ."),
+        ("an unsafe href", "<urn:x:h> a kind:link ; ui:label \"Go\" ; ui:href \"javascript:alert(1)\" ."),
+        ("a wrong child", "<urn:x:t> a kind:table ; ui:caption \"T\" ; ui:child <urn:x:c> . <urn:x:c> a kind:text ; ui:content \"c\" ."),
+        ("two roots", "<urn:x:a> a kind:text ; ui:content \"a\" . <urn:x:b> a kind:text ; ui:content \"b\" ."),
+        ("a cycle", "<urn:x:r> a kind:list ; ui:label \"r\" . <urn:x:a> a kind:list ; ui:label \"a\" ; ui:child <urn:x:b> . <urn:x:b> a kind:list ; ui:label \"b\" ; ui:child <urn:x:a> ."),
+        ("a shared child", "<urn:x:r> a kind:list ; ui:label \"r\" ; ui:child <urn:x:a>, <urn:x:b> . <urn:x:a> a kind:list ; ui:label \"a\" ; ui:child <urn:x:c> . <urn:x:b> a kind:list ; ui:label \"b\" ; ui:child <urn:x:c> . <urn:x:c> a kind:text ; ui:content \"c\" ."),
+        ("a child not constructed", "<urn:x:r> a kind:list ; ui:label \"r\" ; ui:child <urn:x:gone> ."),
+    ] {
+        let q = format!("{PREFIXES}CONSTRUCT {{ {template} }} WHERE {{ {FOCUS} }}");
+        let e = view(&construct_host("bad", 20, &q), "bad", EXAMPLE_GRAPH, &Capability::root())
+            .unwrap_err();
+        assert!(
+            matches!(&e, Error::InvalidArgument { name, .. } if name == "construct" || name == "model"),
+            "{what}: {e:?}"
+        );
+    }
+    // The same vocabulary, well formed, is shown: a heading's level is its integer.
+    let q = format!("{PREFIXES}CONSTRUCT {{ <urn:x:h> a kind:heading ; ui:content \"Hi\" ; ui:level 3 . }} WHERE {{ {FOCUS} }}");
+    let n = view(
+        &construct_host("ok", 20, &q),
+        "ok",
+        EXAMPLE_GRAPH,
+        &Capability::root(),
+    )
+    .unwrap();
+    assert_eq!(body(&n).kind, "heading");
+    assert_eq!(body(&n).properties["level"], Value::Number(3));
+}
+
+#[test]
+fn past_its_bound_a_construct_lens_shows_nothing_and_says_so() {
+    let q = format!(
+        "{PREFIXES}CONSTRUCT {{ <urn:x:r> a kind:list ; ui:label \"r\" ; ui:child ?i . ?i a kind:text ; ui:content ?o }}
+         WHERE {{ {FOCUS} VALUES ?o {{ \"a\" \"b\" \"c\" \"d\" }} BIND(IRI(CONCAT(\"urn:x:i:\", ?o)) AS ?i) }}"
+    );
+    let n = view(
+        &construct_host("many", 3, &q),
+        "many",
+        EXAMPLE_GRAPH,
+        &Capability::root(),
+    )
+    .unwrap();
+    let words = said(&n);
+    assert!(
+        words.contains("constructed 5 nodes") && words.contains("bound of 3"),
+        "{words}"
+    );
+    assert!(of(&n, "list").is_empty(), "whole or not at all: {n:?}");
+    // Within its bound, the whole model.
+    let n = view(
+        &construct_host("many", 5, &q),
+        "many",
+        EXAMPLE_GRAPH,
+        &Capability::root(),
+    )
+    .unwrap();
+    let list = body(&n);
+    let items: Vec<String> = list
+        .children
+        .iter()
+        .map(|c| text(&c.properties["content"]))
+        .collect();
+    assert_eq!(items, ["a", "b", "c", "d"]);
+}
+
+#[test]
+fn a_construct_lens_over_a_withheld_graph_says_so_in_words() {
+    let q = format!("{PREFIXES}CONSTRUCT {{ ?s a kind:text ; ui:content \"seen\" }} WHERE {{ GRAPH ?focus {{ ?s ?p ?o }} }}");
+    let host = construct_host("peek", 10, &q);
+    let n = view(
+        &host,
+        "peek",
+        SECRET,
+        &Capability::scoped(["urn:cap:nothing"]),
+    )
+    .unwrap();
+    assert!(said(&n).contains("withheld"), "{}", said(&n));
+    let n = view(&host, "peek", SECRET, &Capability::root()).unwrap();
+    assert_eq!(text(&body(&n).properties["content"]), "seen");
+}
+
+#[test]
+fn a_construct_lens_is_a_construct_and_read_only() {
+    for q in [
+        "SELECT ?s WHERE { ?s ?p ?o }",
+        "DELETE WHERE { ?s ?p ?o }",
+        "PREFIX kind: <urn:iki:ui:kind:name:>\nCONSTRUCT { ?s a kind:text } WHERE { SERVICE <http://evil.example/sparql> { ?s ?p ?o } }",
+    ] {
+        let e = view(&construct_host("odd", 10, q), "odd", EXAMPLE_GRAPH, &Capability::root())
+            .unwrap_err();
+        assert!(matches!(e, Error::InvalidArgument { .. }), "{q}: {e:?}");
+    }
 }

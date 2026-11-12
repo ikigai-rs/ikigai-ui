@@ -499,3 +499,28 @@ fn the_structural_shapes_and_the_validator_agree() {
         assert!(!shacl_conforms(&n), "the shapes refuse {json}");
     }
 }
+
+/// A lens that constructs the model (ledger #3520) builds what the kind shapes accept, as any
+/// screen is: the example dashboard's whole lensed view conforms in Rust and in the shapes.
+#[test]
+fn a_constructed_dashboard_conforms_to_the_kind_shapes() {
+    let kernel = Kernel::new(Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(ikigai_ui::space()) as Arc<dyn ikigai_core::Space>,
+        Arc::new(ikigai_ui::lens::examples()),
+        Arc::new(ikigai_sparql::space()),
+    ])));
+    let (_, bytes) = read(
+        &kernel,
+        &format!(
+            "urn:iki:ui:view:lens:contact-dashboard:resource:{}",
+            ikigai_ui::scene::EXAMPLE_GRAPH
+        ),
+        None,
+    )
+    .unwrap();
+    let view = model::parse(&bytes).unwrap();
+    let board = view.children.last().unwrap();
+    assert_eq!(board.kind, "group", "{board:?}");
+    assert_eq!(board.children[0].kind, "table");
+    assert!(shacl_conforms(&view));
+}
