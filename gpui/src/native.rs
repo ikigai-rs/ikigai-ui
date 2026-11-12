@@ -2198,7 +2198,7 @@ mod tests {
         screen.update(cx, |s, _| {
             assert_eq!(s.choices[&path], "contact-dashboard");
             assert_eq!(s.message, radio_announcement(&lens, 3));
-            assert_eq!(s.message, "Lens: contact-dashboard, checked, 4 of 5");
+            assert_eq!(s.message, "Lens: contact-dashboard, checked, 4 of 6");
         });
     }
 
