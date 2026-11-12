@@ -108,7 +108,9 @@ await check("a 403 leaves its control focusable, aria-disabled, and inert; marku
   );
   await page.click("#deny");
   await page.locator("#deny + p.ui-note").waitFor();
-  if (await page.locator("#deny").isDisabled()) return "the button is disabled, so out of the tab order";
+  // The DOM property, not isDisabled(): Playwright counts aria-disabled as disabled too.
+  if (await page.evaluate(() => document.getElementById("deny").disabled))
+    return "the button is disabled, so out of the tab order";
   if ((await page.getAttribute("#deny", "aria-disabled")) !== "true") return "no aria-disabled";
   const note = await page.textContent("#deny + p.ui-note");
   if (!note.includes("urn:cap:example:403")) return `the note says ${JSON.stringify(note)}`;
@@ -134,7 +136,8 @@ await check("a 403 leaves its control focusable, aria-disabled, and inert; marku
   const at = page.url();
   await page.keyboard.press("Enter");
   await page.keyboard.press("Space");
-  await page.click("#deny");
+  // force: Playwright waits for an aria-disabled control to be enabled before it clicks.
+  await page.click("#deny", { force: true });
   await page.evaluate(() => document.getElementById("deny-form").requestSubmit(document.getElementById("deny")));
   await page.waitForTimeout(300);
   if (sent.length) return `activating the refused button sent ${JSON.stringify(sent)}`;

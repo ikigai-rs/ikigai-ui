@@ -197,10 +197,10 @@
     ids.push(p.id);
     elt.setAttribute("aria-describedby", ids.join(" "));
     described.push({ control: elt, note: p });
-    // A 403 marks the control aria-disabled and nothing more (ledger #3547): `disabled` would
-    // take a button out of the tab order, and with it the refusal its description holds. It stays
-    // focusable and announces as unavailable; `inert` below blocks its activation.
-    if (code === 403) elt.setAttribute("aria-disabled", "true");
+    if (code === 403) {
+      elt.setAttribute("aria-disabled", "true");
+      if (elt.tagName === "BUTTON") elt.disabled = true;
+    }
     // The visible note is beside the control, so the mirror is for assistive technology only.
     status(name ? name + ": " + text : text, false, true);
     return true;
@@ -230,30 +230,6 @@
     }
     if (!noteAt(elt, detail && detail.target, text, code)) status(text, true);
   }
-  // A refused control (aria-disabled, above) does nothing when activated: a click (which Enter
-  // and Space on a button are), a form submit it would make, or any request htmx would send for
-  // it. Capture on the document runs before htmx's listener on the control, and before the
-  // browser's default (a submit, a link followed). A refused <form> is not inert: its fields stay
-  // editable and it may be sent again.
-  var CONTROL = "button, a[href], input, select, textarea, summary, [role=button], [role=link], [role=menuitem], [role=tab]";
-  function inert(el) {
-    var c = el && el.closest ? el.closest(CONTROL) : null;
-    return !!c && c.getAttribute("aria-disabled") === "true";
-  }
-  function block(e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-  }
-  document.addEventListener("click", function (e) {
-    if (inert(e.target)) block(e);
-  }, true);
-  document.addEventListener("submit", function (e) {
-    if (inert(e.submitter)) block(e);
-  }, true);
-  document.addEventListener("htmx:confirm", function (e) {
-    var elt = e.detail && e.detail.elt;
-    if (elt && elt.tagName !== "FORM" && inert(elt)) e.preventDefault();
-  });
   document.addEventListener("htmx:responseError", function (e) {
     var xhr = e.detail && e.detail.xhr;
     var text = ((xhr && xhr.responseText) || "").trim().slice(0, 500);
