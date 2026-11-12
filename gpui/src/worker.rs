@@ -10,7 +10,7 @@ use std::{
 use ikigai_core::{ArgRef, Capability, Error, Iri, Kernel, Request, Scope, Verb};
 use ikigai_ui::model::Node;
 
-use crate::{text, Snapshot};
+use crate::{text, theme::Tokens, Snapshot};
 
 /// Nonblocking result of resource work. Poll it from the UI's timer/task.
 pub struct Pending<T>(Receiver<Result<T, Error>>);
@@ -78,6 +78,37 @@ impl Worker {
                 this.scope,
             ))?;
             Snapshot::from_face(&rep.bytes)
+        })
+    }
+
+    /// Read the palette `urn:iki:ui:palette:{name}` through the kernel, so a host's override of
+    /// a palette reaches the native face as it reaches the HTML face.
+    pub fn palette(&self, name: &str) -> Pending<Tokens> {
+        let this = self.clone();
+        let name = name.to_string();
+        spawn(move || {
+            if name.is_empty()
+                || !name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            {
+                return Err(Error::InvalidArgument {
+                    name: "palette".into(),
+                    detail: "expected a palette name".into(),
+                });
+            }
+            let iri = Iri::parse(format!("urn:iki:ui:palette:{name}"))
+                .map_err(|e| Error::Endpoint(e.to_string()))?;
+            let rep = futures::executor::block_on(this.kernel.issue_in(
+                Request::new(Verb::Source, iri),
+                &this.capability,
+                this.scope,
+            ))?;
+            let text = std::str::from_utf8(&rep.bytes).map_err(|e| Error::InvalidArgument {
+                name: "palette".into(),
+                detail: e.to_string(),
+            })?;
+            Tokens::parse(&name, text)
         })
     }
 

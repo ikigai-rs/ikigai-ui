@@ -1,17 +1,89 @@
 //! GPUI elements (macOS windows; the same walker also compiles on Linux). Rendering never invokes a kernel or waits for a composition.
 use std::{collections::BTreeMap, time::Duration};
 
-use gpui::{div, prelude::*, px, rgb, App, Context, Entity, Focusable, Window};
+use gpui::{
+    div, prelude::*, px, rgb, transparent_black, App, Context, Entity, Focusable, Hsla,
+    Subscription, Window, WindowAppearance,
+};
 use ikigai_ui::model::{Node, Value};
 
 use crate::{
     text,
+    theme::{Theme, Tokens},
     worker::{Feedback, Pending, Worker},
     Snapshot,
 };
 #[path = "input.rs"]
 mod input;
 use input::TextInput;
+
+/// The palette tokens the native face draws with, by the role the HTML face gives each.
+/// Every foreground/ground pair drawn from these is one `ikigai_ui::palette::PAIRS` tests.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Colors {
+    /// The window's ground.
+    pub bg: Hsla,
+    /// Text on `bg`.
+    pub fg: Hsla,
+    /// Placeholder text on `bg`.
+    pub muted: Hsla,
+    /// Links on `bg`; the ground of buttons, selected options and selected text.
+    pub accent: Hsla,
+    /// Text on `accent`.
+    pub accent_fg: Hsla,
+    /// Field errors on `bg`.
+    pub danger: Hsla,
+    /// A control's border (inputs, options, forms) on `bg`.
+    pub line: Hsla,
+    /// A decorative divider (table rows) on `bg`.
+    pub rule: Hsla,
+    /// The focus ring and the text cursor, on `bg`.
+    pub focus: Hsla,
+}
+
+impl Colors {
+    /// The colors of one palette.
+    pub fn new(tokens: &Tokens) -> Self {
+        let c = |token| Hsla::from(rgb(tokens.get(token)));
+        Self {
+            bg: c("bg"),
+            fg: c("fg"),
+            muted: c("muted"),
+            accent: c("accent"),
+            accent_fg: c("accent-fg"),
+            danger: c("danger"),
+            line: c("line"),
+            rule: c("rule"),
+            focus: c("focus"),
+        }
+    }
+}
+
+/// A focus ring drawn outside its control, on the window's ground, as the HTML face's
+/// `outline-offset` does: a transparent 2px border that takes `focus` when focused.
+fn ring(
+    child: impl IntoElement,
+    focus: &gpui::FocusHandle,
+    id: impl Into<gpui::ElementId>,
+    colors: Colors,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .track_focus(focus)
+        .p(px(2.))
+        .border_2()
+        .rounded_md()
+        .border_color(transparent_black())
+        .focus(move |s| s.border_color(colors.focus))
+        .child(child)
+}
+
+fn dark(appearance: WindowAppearance) -> bool {
+    matches!(
+        appearance,
+        WindowAppearance::Dark | WindowAppearance::VibrantDark
+    )
+}
 
 struct FormState {
     feedback: Feedback,
@@ -29,13 +101,42 @@ pub struct Screen {
     forms: BTreeMap<String, FormState>,
     focus: BTreeMap<String, gpui::FocusHandle>,
     tab_order: Vec<gpui::FocusHandle>,
+    theme: Theme,
+    dark: bool,
+    /// The palette drawn with now, and the colors read from it.
+    palette: Tokens,
+    colors: Colors,
+    /// Palettes already read through the kernel, by name.
+    palettes: BTreeMap<String, Tokens>,
+    palette_loading: Option<(String, Pending<Tokens>)>,
+    _appearance: Subscription,
 }
 
 impl Screen {
     /// Start loading without blocking the window. Polling is driven by a foreground
     /// timer; all composition and Sink calls run on the worker's OS threads.
-    pub fn new(worker: Worker, screen: &str, cx: &mut Context<Self>) -> Self {
+    ///
+    /// The window draws with `theme`'s palette, read as `urn:iki:ui:palette:{name}` on the
+    /// worker; until it arrives (or if the kernel refuses it) the compiled table of the same
+    /// name stands in. [`Theme::Auto`] follows the window's appearance as it changes.
+    pub fn new(
+        worker: Worker,
+        screen: &str,
+        theme: Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         input::bind_keys(cx);
+        let appearance = cx.observe_window_appearance(window, |this, window, cx| {
+            this.set_appearance(window.appearance(), cx)
+        });
+        let dark = dark(window.appearance());
+        let name = theme.palette(dark);
+        let palette = Tokens::compiled(
+            ikigai_ui::palette::palette(name).expect("a theme names a compiled palette"),
+        );
+        let colors = Colors::new(&palette);
+        let palette_loading = Some((name.to_string(), worker.palette(name)));
         cx.spawn(async move |this, cx| loop {
             cx.background_executor()
                 .timer(Duration::from_millis(16))
@@ -56,7 +157,59 @@ impl Screen {
             forms: BTreeMap::new(),
             focus: BTreeMap::new(),
             tab_order: Vec::new(),
+            theme,
+            dark,
+            palette,
+            colors,
+            palettes: BTreeMap::new(),
+            palette_loading,
+            _appearance: appearance,
         }
+    }
+
+    /// The colors this window draws with now.
+    pub fn colors(&self) -> Colors {
+        self.colors
+    }
+
+    /// The name of the palette this window draws with now.
+    pub fn palette(&self) -> &str {
+        &self.palette.palette
+    }
+
+    /// Choose another theme; the window repaints when its palette is read.
+    pub fn set_theme(&mut self, theme: Theme, cx: &mut Context<Self>) {
+        self.theme = theme;
+        self.choose_palette(cx);
+    }
+
+    /// The window's system appearance changed (the window's observer calls this).
+    pub fn set_appearance(&mut self, appearance: WindowAppearance, cx: &mut Context<Self>) {
+        self.dark = dark(appearance);
+        self.choose_palette(cx);
+    }
+
+    fn choose_palette(&mut self, cx: &mut Context<Self>) {
+        let name = self.theme.palette(self.dark);
+        if let Some(tokens) = self.palettes.get(name).cloned() {
+            self.palette_loading = None;
+            self.apply(tokens, cx);
+        } else if self.palette_loading.as_ref().map(|(n, _)| n.as_str()) != Some(name) {
+            self.palette_loading = Some((name.to_string(), self.worker.palette(name)));
+        }
+    }
+
+    fn apply(&mut self, tokens: Tokens, cx: &mut Context<Self>) {
+        self.colors = Colors::new(&tokens);
+        self.palette = tokens;
+        let colors = self.colors;
+        for input in self.inputs.values() {
+            input.update(cx, |input, cx| {
+                input.colors = colors;
+                cx.notify();
+            });
+        }
+        cx.notify();
     }
 
     fn load(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -66,6 +219,28 @@ impl Screen {
     }
 
     fn poll(&mut self, cx: &mut Context<Self>) {
+        if let Some((name, result)) = self
+            .palette_loading
+            .as_ref()
+            .and_then(|(name, p)| Some((name.clone(), p.poll()?)))
+        {
+            self.palette_loading = None;
+            match result {
+                Ok(tokens) => {
+                    self.palettes.insert(name, tokens.clone());
+                    self.apply(tokens, cx);
+                }
+                Err(error) => {
+                    // Keep the compiled table of the same name, and say why.
+                    let tokens = Tokens::compiled(
+                        ikigai_ui::palette::palette(&name).expect("a theme names a palette"),
+                    );
+                    self.palettes.insert(name, tokens.clone());
+                    self.apply(tokens, cx);
+                    self.message = error.to_string();
+                }
+            }
+        }
         if let Some(result) = self.loading.as_ref().and_then(Pending::poll) {
             self.loading = None;
             match result {
@@ -106,8 +281,9 @@ impl Screen {
                         ""
                     }
                 });
+                let colors = self.colors;
                 let input = cx.new(|cx| {
-                    let mut input = TextInput::new(value, cx);
+                    let mut input = TextInput::new(value, colors, cx);
                     input.multiline = text(node, "input") == Some("textarea");
                     input
                 });
@@ -203,6 +379,7 @@ impl Screen {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let label = || text(node, "label").unwrap_or_default().to_string();
+        let colors = self.colors;
         let mut body = div()
             .id(gpui::SharedString::from(path.to_string()))
             .flex()
@@ -234,7 +411,11 @@ impl Screen {
                     let key_input = input.clone();
                     body = body
                         .track_focus(&focus)
-                        .focus(|s| s.border_1().border_color(rgb(0x2563eb)))
+                        .p(px(2.))
+                        .border_2()
+                        .rounded_md()
+                        .border_color(transparent_black())
+                        .focus(move |s| s.border_color(colors.focus))
                         .child(format!("{} {}", if checked { "☑" } else { "☐" }, label()))
                         .cursor_pointer()
                         .on_click(cx.listener(move |_, _, window, cx| {
@@ -278,20 +459,28 @@ impl Screen {
                     let path = path.to_string();
                     let key_path = path.clone();
                     let key_value = value.clone();
+                    // A selected option is accent-fg on accent, edged by its own ground; an
+                    // unselected one is fg on bg, edged by line. The ring sits outside, on bg.
+                    let (ground, ink, edge) = if selected {
+                        (colors.accent, colors.accent_fg, colors.accent)
+                    } else {
+                        (colors.bg, colors.fg, colors.line)
+                    };
+                    let option_view = div()
+                        .p_2()
+                        .border_1()
+                        .rounded_md()
+                        .border_color(edge)
+                        .bg(ground)
+                        .text_color(ink)
+                        .child(format!(
+                            "{} {}",
+                            if selected { "●" } else { "○" },
+                            text(option, "label").unwrap_or_default()
+                        ));
                     body = body.child(
-                        div()
-                            .id(i)
-                            .p_2()
-                            .border_1()
+                        ring(option_view, &focus, i, colors)
                             .cursor_pointer()
-                            .track_focus(&focus)
-                            .focus(|s| s.border_color(rgb(0x2563eb)))
-                            .bg(rgb(if selected { 0xdbeafe } else { 0xffffff }))
-                            .child(format!(
-                                "{} {}",
-                                if selected { "●" } else { "○" },
-                                text(option, "label").unwrap_or_default()
-                            ))
                             .on_key_down(cx.listener(
                                 move |this, event: &gpui::KeyDownEvent, _, cx| {
                                     if event.keystroke.key == "space"
@@ -312,17 +501,24 @@ impl Screen {
             }
             "button" => {
                 let focus = self.focus[path].clone();
-                let mut button = div()
-                    .id(gpui::SharedString::from(path.to_string()))
-                    .track_focus(&focus)
+                let mut caption = div()
                     .p_2()
                     .rounded_md()
-                    .bg(rgb(0x1e40af))
-                    .text_color(rgb(0xffffff))
-                    .child(label())
-                    .focus(|s| s.border_2().border_color(rgb(0x60a5fa)));
+                    .bg(colors.accent)
+                    .text_color(colors.accent_fg)
+                    .child(label());
+                let busy =
+                    form.is_some_and(|(_, form_path)| self.forms[form_path].pending.is_some());
+                if busy {
+                    caption = caption.child(" (Submitting…)");
+                }
+                let mut button = ring(
+                    caption,
+                    &focus,
+                    gpui::SharedString::from(path.to_string()),
+                    colors,
+                );
                 if let Some((form, form_path)) = form {
-                    let busy = self.forms[form_path].pending.is_some();
                     if !busy {
                         let (form, form_path, node) =
                             (form.clone(), form_path.to_string(), node.clone());
@@ -330,7 +526,7 @@ impl Screen {
                             (form.clone(), form_path.clone(), node.clone());
                         button = button
                             .cursor_pointer()
-                            .hover(|s| s.bg(rgb(0x1d4ed8)))
+                            .hover(|s| s.underline())
                             .on_key_down(cx.listener(
                                 move |this, event: &gpui::KeyDownEvent, _, cx| {
                                     if event.keystroke.key == "space"
@@ -343,8 +539,6 @@ impl Screen {
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.submit(&form, &form_path, &node, cx)
                             }));
-                    } else {
-                        button = button.child(" (Submitting…)");
                     }
                 }
                 return button.into_any_element();
@@ -356,9 +550,13 @@ impl Screen {
                 return body
                     .track_focus(&focus)
                     .child(label())
-                    .text_color(rgb(0x1d4ed8))
+                    .text_color(colors.accent)
                     .cursor_pointer()
-                    .focus(|s| s.underline())
+                    .p(px(2.))
+                    .border_2()
+                    .rounded_md()
+                    .border_color(transparent_black())
+                    .focus(move |s| s.underline().border_color(colors.focus))
                     .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
                         if event.keystroke.key == "enter" {
                             this.follow(&key_href, cx);
@@ -378,11 +576,7 @@ impl Screen {
                     label()
                 });
                 if node.kind == "form" {
-                    body = body
-                        .p_4()
-                        .border_1()
-                        .border_color(rgb(0x94a3b8))
-                        .rounded_md();
+                    body = body.p_4().border_1().border_color(colors.line).rounded_md();
                 }
                 let form = if node.kind == "form" {
                     Some((node, path))
@@ -395,7 +589,12 @@ impl Screen {
                 for (i, child) in node.children.iter().enumerate() {
                     if node.kind == "table" {
                         // A row's group children are laid out as native cells, not markup.
-                        let mut row = div().flex().flex_row().gap_4().border_b_1();
+                        let mut row = div()
+                            .flex()
+                            .flex_row()
+                            .gap_4()
+                            .border_b_1()
+                            .border_color(colors.rule);
                         for (j, cell) in child.children.iter().enumerate() {
                             let mut cell_view = div().flex_1().child(self.walk(
                                 cell,
@@ -436,7 +635,7 @@ impl Screen {
             .map(String::as_str)
             .or_else(|| text(node, "error"));
         if let Some(error) = error {
-            body = body.child(div().text_color(rgb(0xb91c1c)).child(error.to_string()));
+            body = body.child(div().text_color(colors.danger).child(error.to_string()));
         }
         body.into_any_element()
     }
@@ -469,8 +668,8 @@ impl Render for Screen {
                     cx.stop_propagation();
                 }
             }))
-            .bg(rgb(0xf8fafc))
-            .text_color(rgb(0x0f172a))
+            .bg(self.colors.bg)
+            .text_color(self.colors.fg)
             .text_size(px(16.))
             .child(
                 div()
@@ -512,6 +711,136 @@ mod tests {
         time::Instant,
     };
 
+    fn demo_worker(extra: Option<EndpointSpace>) -> Worker {
+        let mut spaces: Vec<Arc<dyn ikigai_core::Space>> = Vec::new();
+        if let Some(extra) = extra {
+            spaces.push(Arc::new(extra));
+        }
+        spaces.push(Arc::new(crate::descriptor_space()));
+        spaces.push(ikigai_ui_demo::root(Default::default()));
+        Worker::new(
+            Arc::new(ikigai_ui_demo::kernel(Arc::new(Fallback::new(spaces)))),
+            Capability::root(),
+            Scope::empty(),
+        )
+    }
+
+    /// Poll until the screen and its palette have both been read.
+    fn settle(screen: &Entity<Screen>, cx: &mut gpui::VisualTestContext) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !screen.update(cx, |s, cx| {
+            s.poll(cx);
+            s.loading.is_none() && s.palette_loading.is_none()
+        }) {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        cx.run_until_parked();
+    }
+
+    fn painted(palette: &ikigai_ui::palette::Palette) -> Colors {
+        Colors::new(&Tokens::compiled(palette))
+    }
+
+    #[gpui::test]
+    fn each_theme_paints_its_palettes_ground_and_text(cx: &mut TestAppContext) {
+        use ikigai_ui::palette::{DARK, HIGH_CONTRAST, LIGHT};
+        for (theme, palette) in [
+            (Theme::Light, LIGHT),
+            (Theme::Dark, DARK),
+            (Theme::HighContrast, HIGH_CONTRAST),
+        ] {
+            let worker = demo_worker(None);
+            let (screen, cx) =
+                cx.add_window_view(|window, cx| Screen::new(worker, "gallery", theme, window, cx));
+            settle(&screen, cx);
+            screen.update(cx, |s, _| {
+                assert!(s.snapshot.is_some(), "{}", s.message);
+                assert_eq!(s.palette(), palette.name);
+                assert_eq!(s.colors(), painted(&palette), "{}", palette.name);
+                let bg = Hsla::from(rgb(u32::from_str_radix(
+                    &palette.get("bg").unwrap()[1..],
+                    16,
+                )
+                .unwrap()));
+                let fg = Hsla::from(rgb(u32::from_str_radix(
+                    &palette.get("fg").unwrap()[1..],
+                    16,
+                )
+                .unwrap()));
+                assert_eq!((s.colors().bg, s.colors().fg), (bg, fg), "{}", palette.name);
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn a_hosts_palette_override_reaches_the_native_face(cx: &mut TestAppContext) {
+        use ikigai_ui::palette::{DARK, HIGH_CONTRAST};
+        // The host repaints the dark palette's ground; nothing else changes.
+        let overridden = DARK
+            .declarations()
+            .replace(DARK.get("bg").unwrap(), HIGH_CONTRAST.get("bg").unwrap());
+        let served = overridden.clone();
+        let host = EndpointSpace::new().bind(
+            Exact::new("urn:iki:ui:palette:dark"),
+            FnEndpoint::new("host-dark", move |_: &Invocation<'_>| {
+                Ok(Representation::new(
+                    ReprType::new("text/plain"),
+                    served.clone().into_bytes(),
+                ))
+            }),
+        );
+        let worker = demo_worker(Some(host));
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "gallery", Theme::Dark, window, cx));
+        settle(&screen, cx);
+        let expected = Colors::new(&Tokens::parse("dark", &overridden).unwrap());
+        screen.update(cx, |s, _| {
+            assert_eq!(s.colors(), expected);
+            assert_ne!(s.colors(), painted(&DARK));
+        });
+    }
+
+    #[gpui::test]
+    fn auto_follows_the_window_appearance_and_explicit_themes_hold(cx: &mut TestAppContext) {
+        use ikigai_ui::palette::{DARK, HIGH_CONTRAST, LIGHT};
+        let worker = demo_worker(None);
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "gallery", Theme::Auto, window, cx));
+        settle(&screen, cx);
+        // GPUI's test window reports a light appearance.
+        screen.update(cx, |s, _| assert_eq!(s.colors(), painted(&LIGHT)));
+        // The window's appearance observer calls set_appearance; the test platform cannot
+        // change a window's appearance, so the test calls it as the observer does.
+        for (appearance, palette) in [
+            (WindowAppearance::Dark, DARK),
+            (WindowAppearance::Light, LIGHT),
+            (WindowAppearance::VibrantDark, DARK),
+            (WindowAppearance::VibrantLight, LIGHT),
+        ] {
+            screen.update(cx, |s, cx| s.set_appearance(appearance, cx));
+            settle(&screen, cx);
+            screen.update(cx, |s, _| {
+                assert_eq!(s.palette(), palette.name, "{appearance:?}");
+                assert_eq!(s.colors(), painted(&palette), "{appearance:?}");
+            });
+        }
+        // An explicit theme does not follow the appearance.
+        screen.update(cx, |s, cx| s.set_theme(Theme::HighContrast, cx));
+        settle(&screen, cx);
+        for appearance in [WindowAppearance::Light, WindowAppearance::Dark] {
+            screen.update(cx, |s, cx| s.set_appearance(appearance, cx));
+            settle(&screen, cx);
+            screen.update(cx, |s, _| assert_eq!(s.colors(), painted(&HIGH_CONTRAST)));
+        }
+        // Inputs installed earlier repaint with the window.
+        screen.update(cx, |s, cx| {
+            for input in s.inputs.values() {
+                assert_eq!(input.read(cx).colors, painted(&HIGH_CONTRAST));
+            }
+        });
+    }
+
     #[gpui::test]
     fn gallery_walks_every_native_kind_and_boolean_fields_toggle(cx: &mut TestAppContext) {
         let root = Arc::new(Fallback::new(vec![
@@ -523,7 +852,8 @@ mod tests {
             Capability::root(),
             Scope::empty(),
         );
-        let (screen, cx) = cx.add_window_view(|_, cx| Screen::new(worker, "gallery", cx));
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "gallery", Theme::Auto, window, cx));
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if screen.update(cx, |s, cx| {
@@ -589,7 +919,8 @@ mod tests {
             Capability::root(),
             Scope::empty(),
         );
-        let (screen, cx) = cx.add_window_view(|_, cx| Screen::new(worker, "slow", cx));
+        let (screen, cx) =
+            cx.add_window_view(|window, cx| Screen::new(worker, "slow", Theme::Auto, window, cx));
         signal.recv_timeout(Duration::from_secs(2)).unwrap();
         // An already visible input must remain usable while the new screen resolves.
         let snapshot = Snapshot::from_face(
@@ -663,7 +994,8 @@ mod tests {
             Capability::root(),
             Scope::empty(),
         );
-        let (screen, cx) = cx.add_window_view(|_, cx| Screen::new(worker, "old", cx));
+        let (screen, cx) =
+            cx.add_window_view(|window, cx| Screen::new(worker, "old", Theme::Auto, window, cx));
         start.recv_timeout(Duration::from_secs(2)).unwrap();
         screen.update(cx, |s, cx| s.load("new", cx));
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -703,7 +1035,8 @@ mod tests {
             Capability::scoped([ikigai_ui_demo::CONTACT_WRITE]),
             Scope::empty(),
         );
-        let (screen, cx) = cx.add_window_view(|_, cx| Screen::new(worker, "contact", cx));
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "contact", Theme::Auto, window, cx));
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if screen.update(cx, |s, cx| {

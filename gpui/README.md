@@ -19,6 +19,31 @@ can build and test the portable snapshot/worker API, but this crate does not yet
 supply windows on those platforms. No webview, JavaScript runtime or HTML renderer
 is embedded in the native windows.
 
+## Themes
+
+The windows draw only with the shared palettes (`src/palette.rs`), never a color of their own.
+`native::Screen::new` takes a `theme::Theme`: `Auto` (the default) follows the window's system
+appearance and switches live when it changes; `Light`, `Dark` and `HighContrast` are chosen
+explicitly, as the HTML chooser offers. The demo takes the theme as its second argument:
+
+```sh
+cargo run -p ikigai-ui-gpui --bin ikigai-ui-demo-native -- 127.0.0.1:8080 dark
+```
+
+The palette is a resource: `Worker::palette` reads `urn:iki:ui:palette:{name}` through the
+host's kernel on a worker thread, so a host that overrides a palette repaints the native windows
+as it repaints the HTML face. Until it arrives, or if the kernel refuses it (the refusal is
+shown), the compiled table of the same name stands in. Colors go by role, as the HTML face
+uses them: text `fg` on `bg`, placeholders `muted`, links `accent`, errors `danger`, buttons,
+selected options and selected text `accent-fg` on `accent`, control borders `line`, table
+rules `rule`, the focus ring and the text cursor `focus` (drawn outside the control, on `bg`).
+Each is a pair `palette::PAIRS` holds to the contrast floor. `tests/palette_source.rs` fails if
+a color is written anywhere in `src`.
+
+Known limitation: GPUI 0.2.2 reports a window's appearance as light or dark only. It does not
+expose macOS "Increase contrast", so `auto` never selects high contrast by itself, unlike the
+HTML face's `prefers-contrast: more`. Choose `high-contrast` explicitly.
+
 ## Host integration
 
 Place `ikigai_ui_gpui::descriptor_space()` **before** the base UI space in the
@@ -72,6 +97,12 @@ traversal. Input regressions cover stale layout byte offsets after Unicode edits
 IME selection direction, grapheme deletion and large multiline pastes. Navigation
 tests ensure a late older load cannot replace a newer snapshot. These pass locally
 with the same test command.
+
+Theme tests draw the same screen in each palette and check it draws with that palette's
+`bg` and `fg`, that a host's override of `urn:iki:ui:palette:dark` reaches the window, and that
+`auto` switches between light and dark on an appearance change while explicit themes hold. The
+test platform cannot change a window's appearance, so the test calls the handler the window's
+appearance observer calls; nor can it show pixels, so look at the windows in each theme.
 
 The test platform shapes text with its own text system, so these tests cannot see
 whether a real window draws any. That depends on GPUI's `font-kit` feature, which

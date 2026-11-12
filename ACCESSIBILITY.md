@@ -20,12 +20,20 @@ test, not a review.
 | `prefers-color-scheme`, `prefers-contrast: more` and `prefers-reduced-motion` honored | `tests/palettes.rs`, `axe/shell-smoke.mjs` |
 | Touch targets of 24 px for navigation links (SC 2.5.8) | axe |
 | WCAG 2.0/2.1/2.2 A and AA rules on every demo page, in light, dark and more-contrast media, under the door default CSP | `axe/check.mjs` in CI |
+| The native (GPUI) face draws only with the palettes, read as `urn:iki:ui:palette:{name}` through the kernel: light, dark and high contrast, `auto` following the window's light/dark appearance live; no color is written in `gpui/src`, and every pair it draws (`fg`, `muted`, `accent`, `danger` on `bg`; `accent-fg` on `accent`; `line`, `rule`, `focus` on `bg`) is one `PAIRS` holds | `gpui/src/native.rs` window tests (each theme's `bg`/`fg`, a host's palette override, `auto` on an appearance change), `gpui/tests/palette_source.rs`, `tests/palettes.rs` |
 
 Known limitation: on a page composed over the shell that FIXES its theme (a no-Rust host's
 names file, `theme=auto`), the chooser's no-script Apply asks for the page with `theme=`, and
 the host refuses it, so without script a viewer cannot change the theme there (ledger #2885,
 part 2, a design question). With script the choice applies at once, and a page built with
 `pages()` or `Pages` takes `theme=` and has no such gap.
+
+Known limitations of the native face: GPUI 0.2.2 reports a window's appearance as light or
+dark only, not macOS "Increase contrast", so `auto` never picks high contrast there (choose
+`high-contrast` explicitly). Its window tests run on GPUI's test platform, which can neither
+change a window's appearance (the test calls the appearance observer's handler) nor show the
+pixels a real window paints; they check the colors the window draws with, not a screenshot.
+Native windows are not checked by axe or any screen-reader test.
 
 What a page puts inside the shell is the host's to keep accessible: name each `<nav>` with
 `aria-label` when there is more than one, label every control, and run the test kit and the axe

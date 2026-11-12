@@ -78,5 +78,6 @@ pub fn text<'a>(node: &'a Node, property: &str) -> Option<&'a str> {
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub mod native;
+pub mod theme;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod worker;
