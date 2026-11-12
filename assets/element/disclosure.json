@@ -1,0 +1,47 @@
+{
+  "arguments": [
+    {
+      "name": "summary",
+      "summary": "the summary line, always shown: the control that opens and closes the body, or its heading when expanded",
+      "required": true
+    },
+    {
+      "name": "level",
+      "summary": "the summary's heading level when expanded, 1 to 6, a number",
+      "required": true
+    },
+    {
+      "name": "body",
+      "summary": "the body's text, shown when open (always, when expanded)",
+      "required": true
+    },
+    {
+      "name": "open",
+      "summary": "whether the body starts open, a boolean; only the initial state, which a native face then keeps in its window",
+      "required": false,
+      "default": "false"
+    }
+  ],
+  "expansion": {
+    "kind": "group",
+    "properties": {
+      "label": "{summary}"
+    },
+    "children": [
+      {
+        "kind": "heading",
+        "properties": {
+          "content": "{summary}",
+          "level": "{level}"
+        }
+      },
+      {
+        "kind": "text",
+        "properties": {
+          "content": "{body}"
+        }
+      },
+      "{children}"
+    ]
+  }
+}

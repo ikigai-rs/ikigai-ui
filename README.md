@@ -20,7 +20,7 @@ behavior, and the same tests.
 | `urn:iki:ui:target:name:{target}` | the `html` or `gpui` descriptor: versioned capabilities, rendered kinds, fallbacks and target limits |
 | `urn:iki:ui:support` | every target against every kind, plus capabilities, composed from descriptors; JSON by default, `as=text/html` for the support page |
 | `urn:iki:ui:face:target:{target}:screen:{screen}` | `urn:iki:ui:screen:name:{screen}` with the descriptor's fallbacks applied; model JSON by default, `as=application/ld+json` for named JSON-LD nodes |
-| `urn:iki:ui:element:name:{name}` | a custom element's definition (ledger #3358): its argument contract and its expansion, a model template over core kinds and other elements; a face renders an element natively when its descriptor claims it, else expands it (bounded by depth and nodes produced, a cycle refused), else its declared `replacement`, else its `fallback` text. `rating`, `card`, `key-value` and `tag-list` are this crate's, shown at `urn:iki:ui:screen:name:elements` (the demo's `/page/elements`) and expanded on every face |
+| `urn:iki:ui:element:name:{name}` | a custom element's definition (ledger #3358): its argument contract and its expansion, a model template over core kinds and other elements; a face renders an element natively when its descriptor claims it, else expands it (bounded by depth and nodes produced, a cycle refused), else its declared `replacement`, else its `fallback` text. `rating`, `card`, `key-value`, `tag-list` and `disclosure` are this crate's, shown at `urn:iki:ui:screen:name:elements` (the demo's `/page/elements`); `disclosure` is native on both faces (HTML `<details>`/`<summary>` from `urn:iki:ui:template:element:disclosure`, GPUI a toggle whose state is the window's), the others expanded on every face |
 | `urn:iki:ui:scene:graph:{graph}` | an embedded 3D scene's DATUM (ledger #3514), `application/vnd.ikigai.ui.scene+json`: `{graph}`'s nodes (labels, types, positions), its edges (labels) and a camera; data, never code (no shaders, no scripts: the datum is closed). `{graph}` is read under the CALLER's capability, in its own face when that is JSON(-LD), else `as=application/ld+json` |
 | `urn:iki:ui:layout:graph:{graph}` | 3D positions for `{graph}`'s nodes: a force-directed layout from a fixed seed, fitted to the unit sphere; cacheable and golden-threaded from the graph, so an unchanged graph is laid out once and an edit to it cuts the layout |
 | `urn:iki:ui:shape:scene` | the scene datum's SHACL shape (Turtle); `ikigai_ui::scene::validate` says the same in Rust |
@@ -228,8 +228,8 @@ One binary (`demo/`, the workspace member `ikigai-ui-demo`, never published), on
 one ikigai-web door. It serves four pages in the shared shell:
 
 - `/` or `/page/gallery`: the gallery screen, every node kind rendered by the html target.
-- `/page/elements`: the custom elements (`rating`, `card`, `key-value`, `tag-list`), each
-  expanded into core kinds by the html target.
+- `/page/elements`: the custom elements (`rating`, `card`, `key-value`, `tag-list`, each
+  expanded into core kinds by the html target, and `disclosure`, native as `<details>`).
 - `/page/contact`: a contact form. **The form is a client generated from the service's
   model, not written by hand.** The model is the contact service's own contract (the
   one its OpenAPI description is projected from). `urn:iki:ui:screen:name:contact` is an alias

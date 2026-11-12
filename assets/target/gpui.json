@@ -31,6 +31,9 @@
     "scene": "text"
   },
   "limits": {},
+  "elements": [
+    "urn:iki:ui:element:name:disclosure"
+  ],
   "hints": [
     "urn:iki:ui:hint:gpui:"
   ]

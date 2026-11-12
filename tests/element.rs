@@ -495,3 +495,172 @@ fn the_elements_html_face_matches_its_snapshots_expanded_and_as_fallback_text() 
         ],
     );
 }
+
+// --- disclosure (ledger #3512): native on both faces, expanded where a face does not claim it --
+
+const DISCLOSURE: &str = "urn:iki:ui:element:name:disclosure";
+
+/// The html descriptor with no element claimed: the native renderer turned off, from the UI
+/// directory the way a host overrides it.
+fn html_without_native(dir: &std::path::Path) -> ikigai_core::Kernel {
+    let kernel = common::host(Some(dir));
+    let mut descriptor: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../assets/target/html.json")).unwrap();
+    descriptor.as_object_mut().unwrap().remove("elements");
+    common::issue(
+        &kernel,
+        Verb::Sink,
+        "urn:iki:ui:dir:target/html.json",
+        &[("content", &serde_json::to_vec(&descriptor).unwrap())],
+    )
+    .unwrap();
+    kernel
+}
+
+/// A screen holding only `node`, at `urn:iki:ui:screen:name:disclosure-test`.
+fn host_with_screen(node: serde_json::Value) -> ikigai_core::Kernel {
+    use ikigai_core::{EndpointSpace, Exact, FnEndpoint, Invocation, ReprType, Representation};
+    use std::sync::Arc;
+    let bytes = serde_json::to_vec(&node).unwrap();
+    common::host_with(
+        None,
+        vec![Arc::new(EndpointSpace::new().bind(
+            Exact::new("urn:iki:ui:screen:name:disclosure-test"),
+            FnEndpoint::new("test-screen", move |_: &Invocation<'_>| {
+                Ok(
+                    Representation::new(ReprType::new(model::MEDIA_TYPE), bytes.clone())
+                        .cacheable(),
+                )
+            }),
+        ))],
+    )
+}
+
+fn disclosure_html(html: &str) -> &str {
+    let start = html
+        .find("<details")
+        .or_else(|| html.find("<section class=\"ui-group\" aria-label=\"How often"))
+        .expect(html);
+    &html[start..]
+}
+
+#[test]
+fn a_disclosure_is_a_definition_of_core_kinds_and_both_faces_claim_it() {
+    let kernel = common::host(None);
+    let def = common::source(&kernel, DISCLOSURE).unwrap();
+    let def = Definition::parse(&def.bytes, DISCLOSURE).unwrap();
+    let text = def.expansion.to_string();
+    assert!(!text.contains("urn:") && !text.contains('<'), "{text}");
+    // The model carries only the initial state: a boolean argument, closed by default.
+    let open = def.arguments.iter().find(|a| a.name == "open").unwrap();
+    assert_eq!(
+        (open.required, open.default.as_deref()),
+        (false, Some("false"))
+    );
+    let screen = model::parse(&common::source(&kernel, element::SCREEN).unwrap().bytes).unwrap();
+    assert_eq!(screen.children[5].kind, DISCLOSURE);
+    for target in ["html", "gpui"] {
+        let face = common::source(
+            &kernel,
+            &format!("urn:iki:ui:face:target:{target}:screen:elements"),
+        )
+        .unwrap();
+        let face = model::parse(&face.bytes).unwrap();
+        // Kept whole for the native renderer, the same pure value the screen holds.
+        assert_eq!(face.children[5], screen.children[5], "{target}");
+    }
+    let support: serde_json::Value =
+        serde_json::from_slice(&common::source(&kernel, "urn:iki:ui:support").unwrap().bytes)
+            .unwrap();
+    for target in ["html", "gpui"] {
+        assert_eq!(support[target]["element"][DISCLOSURE], true, "{target}");
+    }
+    let page = common::text(&kernel, "urn:iki:ui:support", &[("as", "text/html")]);
+    assert!(
+        page.contains(&format!(
+            "<tr><th scope=\"row\">{DISCLOSURE}</th><td>Native</td><td>Native</td></tr>"
+        )),
+        "{page}"
+    );
+}
+
+#[test]
+fn the_html_face_renders_a_disclosure_natively_as_details_and_summary() {
+    let html = common::text(&common::host(None), "urn:iki:ui:html:screen:elements", &[]);
+    let details = disclosure_html(&html);
+    // Closed (the example's `open` is false): no `open` attribute; no script, no ARIA needed.
+    assert!(
+        details.starts_with(
+            "<details class=\"ui-disclosure\"><summary>How often is the gauge read?</summary>\
+             <p>Gauge 14 is read every morning"
+        ),
+        "{details}"
+    );
+    // The body's link is a real <a> inside the <details>: in the tab order when it is open.
+    assert!(
+        details.contains("<a href=\"/page/contact\">Ask the hydrology desk</a></details>"),
+        "{details}"
+    );
+    assert!(!details.contains("<script") && !details.contains("aria-"));
+    // Initially open when the model says so; text stays escaped.
+    let kernel = host_with_screen(serde_json::json!({
+        "kind": DISCLOSURE,
+        "properties": { "fallback": "Notes", "summary": "Notes <b>", "level": 2,
+                        "body": "Read & kept.", "open": true }
+    }));
+    let open = common::text(&kernel, "urn:iki:ui:html:screen:disclosure-test", &[]);
+    assert_eq!(
+        open,
+        "<details class=\"ui-disclosure\" open><summary>Notes &lt;b&gt;</summary><p>Read &amp; kept.</p></details>"
+    );
+}
+
+#[test]
+fn with_the_native_renderer_off_a_disclosure_expands_to_a_heading_and_its_body_always_shown() {
+    let dir = common::scratch("disclosure-expanded");
+    let kernel = html_without_native(&dir);
+    let html = common::text(&kernel, "urn:iki:ui:html:screen:elements", &[]);
+    assert!(!html.contains("<details"), "{html}");
+    let section = disclosure_html(&html);
+    assert!(
+        section.starts_with(
+            "<section class=\"ui-group\" aria-label=\"How often is the gauge read?\">\
+             <h3>How often is the gauge read?</h3><p>Gauge 14 is read every morning"
+        ),
+        "{section}"
+    );
+    // Nothing is hidden: the body's link is always in the page.
+    assert!(section.contains("<a href=\"/page/contact\">Ask the hydrology desk</a></section>"));
+    let face = common::source(&kernel, "urn:iki:ui:face:target:html:screen:elements").unwrap();
+    let face = model::parse(&face.bytes).unwrap();
+    assert_eq!(face.children[5].kind, "group");
+    assert_eq!(face.children[5].children[0].kind, "heading");
+    assert_eq!(
+        face.children[5].children[0].properties["level"],
+        model::Value::Number(3)
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_disclosure_html_matches_its_snapshots_native_and_expanded() {
+    let native = common::text(
+        &common::host(None),
+        "urn:iki:ui:html:screen:elements:node:n.5",
+        &[],
+    );
+    let dir = common::scratch("disclosure-snapshot");
+    let expanded = common::text(
+        &html_without_native(&dir),
+        "urn:iki:ui:html:screen:elements:node:n.5",
+        &[],
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+    ikigai_ui::testkit::snapshot::assert_snapshots(
+        &common::snapshots(),
+        vec![
+            ("disclosure-native.html".to_string(), native),
+            ("disclosure-expanded.html".to_string(), expanded),
+        ],
+    );
+}

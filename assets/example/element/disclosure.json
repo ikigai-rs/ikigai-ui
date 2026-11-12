@@ -1,0 +1,19 @@
+{
+  "kind": "urn:iki:ui:element:name:disclosure",
+  "properties": {
+    "fallback": "Gauge 14 is read every morning at 06:00; ask the hydrology desk about late readings.",
+    "summary": "How often is the gauge read?",
+    "level": 3,
+    "body": "Gauge 14 is read every morning at 06:00 and again after any flood warning. A reading later than 07:00 is marked late.",
+    "open": false
+  },
+  "children": [
+    {
+      "kind": "link",
+      "properties": {
+        "label": "Ask the hydrology desk",
+        "href": "/page/contact"
+      }
+    }
+  ]
+}

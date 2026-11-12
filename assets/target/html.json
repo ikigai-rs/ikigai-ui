@@ -35,5 +35,8 @@
       "max_rows": 1000,
       "max_columns": 100
     }
-  }
+  },
+  "elements": [
+    "urn:iki:ui:element:name:disclosure"
+  ]
 }

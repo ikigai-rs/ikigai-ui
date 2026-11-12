@@ -68,6 +68,22 @@ pub const TEMPLATES: [crate::Artifact; 16] = template!(
     "nav", "status", "image", "group", "visual", "scene"
 );
 
+/// An element's native template is this plus the element's name.
+pub const ELEMENT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:element:";
+
+/// The disclosure element's IRI, the one element the html face claims natively.
+pub const DISCLOSURE: &str = "urn:iki:ui:element:name:disclosure";
+
+/// The compiled-in native templates of the elements the html descriptor claims
+/// (`elements`), one per element: `<details>`/`<summary>` for `disclosure` (ledger #3512).
+pub const ELEMENT_TEMPLATES: [crate::Artifact; 1] = [crate::Artifact {
+    iri: "urn:iki:ui:template:element:disclosure",
+    id: "ui-template-element",
+    file: "template/element/disclosure.html",
+    media_type: crate::HTML,
+    bytes: include_bytes!("../assets/template/element/disclosure.html"),
+}];
+
 fn argument(name: &str, summary: &str) -> ArgSpec {
     ArgSpec::new(name)
         .summary(summary)
@@ -112,6 +128,46 @@ pub(crate) fn template_endpoint() -> AsyncFnEndpoint {
     )
 }
 
+pub(crate) fn element_template_endpoint() -> AsyncFnEndpoint {
+    AsyncFnEndpoint::new(
+        "ui-template-element",
+        |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let name = inv.bindings.get("name").unwrap_or_default();
+                let artifact = ELEMENT_TEMPLATES
+                    .iter()
+                    .find(|a| a.iri.strip_prefix(ELEMENT_TEMPLATE_PREFIX) == Some(name))
+                    .ok_or_else(|| Error::NotFound(format!("{name}: no native html template")))?;
+                let file = Iri::parse(format!("{}{}", crate::DIR, artifact.file))
+                    .map_err(|e| Error::Endpoint(e.to_string()))?;
+                crate::artifact_endpoint(*artifact, file, crate::DIR)
+                    .invoke(inv)
+                    .await
+            })
+        },
+    )
+    .with_description(
+        Description::new("ui-template-element")
+            .title("A UI element's native HTML template")
+            .summary(
+                "The ikigai-fn compose template the html target fills for a custom element it \
+                 claims natively (its descriptor's elements): values splice escaped ($h), child \
+                 views raw ($r). From template/element/{name}.html in the UI directory, else \
+                 compiled in.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(
+                argument("name", "the element's name").one_of(
+                    ELEMENT_TEMPLATES
+                        .iter()
+                        .map(|a| &a.iri[ELEMENT_TEMPLATE_PREFIX.len()..]),
+                ),
+            )
+            .output(crate::HTML),
+    )
+}
+
 pub(crate) fn empty_endpoint() -> FnEndpoint {
     FnEndpoint::new("ui-html-empty", |_: &Invocation<'_>| {
         Ok(Representation::new(ReprType::new(crate::TEXT), Vec::new()).cacheable())
@@ -141,8 +197,8 @@ async fn screen(inv: &Invocation<'_>) -> Result<Node, Error> {
     let node = model::parse(&rep.bytes)?;
     // Composed for the html descriptor (ledger #3358, #3361): references resolved under the
     // caller's capability (withheld when denied), regions in their narrowed spaces, custom
-    // elements down the ladder (the html face claims none natively, so each is expanded, falls
-    // back or shows its fallback text) and write-only fields made their own forms.
+    // elements down the ladder (kept whole when the descriptor claims them, `disclosure` by
+    // its <details> template; else expanded, else their fallback, else their fallback text) and write-only fields made their own forms.
     let descriptor = crate::target::read_descriptor(inv, "html").await?;
     let node = crate::target::compose(inv, &node, &descriptor).await?;
     // A descriptor that does not claim `scene` (a host serving no WebGPU renderer) takes the
@@ -210,17 +266,23 @@ fn html_rep(bytes: Vec<u8>) -> Representation {
     Representation::new(ReprType::new(crate::HTML), bytes).cacheable()
 }
 
-/// One composer per kind template.
+/// One composer per kind template, and one per native element template keyed by the
+/// element's IRI.
 fn composers() -> Arc<BTreeMap<&'static str, ikigai_fn::ComposeOver>> {
-    Arc::new(
-        model::KINDS
-            .iter()
-            .map(|k| {
-                let iri = Iri::parse(format!("{TEMPLATE_PREFIX}{}", k.name)).expect("an IRI");
-                (k.name, ikigai_fn::compose_over(iri).named("ui-html-node"))
-            })
-            .collect(),
-    )
+    let kinds = model::KINDS.iter().map(|k| {
+        let iri = Iri::parse(format!("{TEMPLATE_PREFIX}{}", k.name)).expect("an IRI");
+        (k.name, ikigai_fn::compose_over(iri).named("ui-html-node"))
+    });
+    let elements = ELEMENT_TEMPLATES.iter().map(|a| {
+        let name = &a.iri[ELEMENT_TEMPLATE_PREFIX.len()..];
+        let element: &'static str = match name {
+            "disclosure" => DISCLOSURE,
+            _ => unreachable!("every native template names its element"),
+        };
+        let iri = Iri::parse(a.iri).expect("an IRI");
+        (element, ikigai_fn::compose_over(iri).named("ui-html-node"))
+    });
+    Arc::new(kinds.chain(elements).collect())
 }
 
 async fn view(
@@ -301,12 +363,16 @@ pub(crate) fn node_endpoint() -> AsyncFnEndpoint {
 
 /// A property's text, with the defaults a template relies on.
 fn property(node: &Node, name: &str) -> Option<String> {
-    let kind = model::kind(&node.kind)?;
     let text = |v: &Value| match v {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Text(s) => s.clone(),
     };
+    // A claimed element (kept whole by the ladder): its own arguments, as text.
+    if model::is_element(&node.kind) {
+        return node.properties.get(name).map(text);
+    }
+    let kind = model::kind(&node.kind)?;
     match name {
         "fallback" => node.properties.get(kind.fallback).map(text),
         "invalid" => Some(node.properties.contains_key("error").to_string()),
@@ -380,6 +446,16 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                             .submit_url(datum),
                         None => None,
                     },
+                    // A boolean HTML attribute: only these fixed strings enter markup. The model
+                    // carries only the initial state; the browser keeps it from then on.
+                    (DISCLOSURE, "open") => Some(
+                        if node.properties.get("open") == Some(&Value::Bool(true)) {
+                            " open"
+                        } else {
+                            ""
+                        }
+                        .to_string(),
+                    ),
                     ("option", "selected") => {
                         let selected = at
                             .rsplit_once('.')

@@ -7,5 +7,6 @@
   "renders": ["heading", "text", "button", "link", "list", "status", "group", "field", "choice", "option", "form", "nav", "table"],
   "fallback": { "image": "text", "visual": "text", "scene": "text" },
   "limits": {},
+  "elements": ["urn:iki:ui:element:name:disclosure"],
   "hints": ["urn:iki:ui:hint:gpui:"]
 }
