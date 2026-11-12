@@ -664,3 +664,43 @@ fn the_disclosure_html_matches_its_snapshots_native_and_expanded() {
         ],
     );
 }
+
+#[test]
+fn copies_into_a_slot_count_against_the_node_bound() {
+    // Security audit (ledger #3525). Each level passes ten copies of its children to the next
+    // through `{children}`: a small input whose output is 10^levels leaves. Every copy is a node
+    // PRODUCED, so it counts against MAX_NODES even though it was walked once.
+    let chain = |levels: usize| -> BTreeMap<String, Definition> {
+        (0..levels)
+            .map(|i| {
+                let slots: Vec<_> = (0..10).map(|_| serde_json::json!("{children}")).collect();
+                let expansion = if i + 1 == levels {
+                    serde_json::json!({ "kind": "list", "properties": { "label": "fan" }, "children": slots })
+                } else {
+                    let mut next = use_of(&format!("s{}", i + 1));
+                    next["children"] = serde_json::json!(slots);
+                    next
+                };
+                (
+                    el(&format!("s{i}")),
+                    definition(serde_json::json!({ "arguments": [], "expansion": expansion })),
+                )
+            })
+            .collect()
+    };
+    let leaf = serde_json::json!({ "kind": "text", "properties": { "content": "leaf" } });
+    let mut screen = use_of("s0");
+    screen["children"] = serde_json::json!([leaf]);
+    let screen = node(screen);
+    // Three levels: 1000 leaves, within the bound.
+    let ok = element::expand_with(&screen, &html(), &chain(3)).unwrap();
+    assert_eq!(ok.children.len(), 1000);
+    // Five: 100 000 leaves, past it, and refused before they are all built.
+    match element::expand_with(&screen, &html(), &chain(5)) {
+        Err(Error::InvalidArgument { detail, .. }) => {
+            assert!(detail.contains(&MAX_NODES.to_string()), "{detail}")
+        }
+        Ok(out) => panic!("{} leaves produced past the bound", out.children.len()),
+        Err(e) => panic!("not InvalidArgument: {e:?}"),
+    }
+}
