@@ -1,0 +1,25 @@
+# The shapes the example lens `shacl-violations` holds the contact graph to: every field says
+# whether it is required, and every topic has a description. `topic` and its three topics fail.
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix schema: <http://schema.org/> .
+@prefix ui: <urn:iki:ui:example:graph:contact:> .
+
+ui:FieldShape a sh:NodeShape ;
+  sh:targetClass schema:PropertyValueSpecification ;
+  sh:property ui:FieldSaysIfRequired .
+
+ui:FieldSaysIfRequired a sh:PropertyShape ;
+  sh:name "A field says whether it is required" ;
+  sh:path schema:valueRequired ;
+  sh:minCount 1 ;
+  sh:message "The field does not say whether it is required." .
+
+ui:TopicShape a sh:NodeShape ;
+  sh:targetClass schema:Enumeration ;
+  sh:property ui:TopicDescribed .
+
+ui:TopicDescribed a sh:PropertyShape ;
+  sh:name "A topic has a description" ;
+  sh:path schema:description ;
+  sh:minCount 1 ;
+  sh:message "The topic has no description." .

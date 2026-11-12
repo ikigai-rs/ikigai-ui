@@ -1,0 +1,25 @@
+{"kind": "group", "properties": {"label": "{legend}"}, "children": [
+  {"kind": "text", "properties": {"content": "Each node below fails a SHACL shape. It is drawn in the danger color and says so in words: its severity, the report's message and the shape it failed."}},
+  {"kind": "scene", "properties": {"label": "{legend}, as a graph", "datum": "urn:iki:ui:scene:graph:urn:iki:ui:lens:name:{lens}:focus:{focus}"},
+   "replacement": {"kind": "text", "properties": {"content": "The failing nodes as a picture, each labeled with its severity; the list and the table below say the same in words."}}},
+  {"kind": "list", "properties": {"label": "Failing nodes"}, "children": [
+    {"repeat": "rows", "each": {"kind": "link", "hint": {"urn:iki:ui:hint:role:mark": "{?role}"}, "properties": {"label": "{?label}. {?message} Shape: {?shapeName}.", "href": "{home:?node}"}}}
+  ]},
+  {"kind": "table", "properties": {"caption": "{legend}, as a table"}, "children": [
+    {"kind": "group", "properties": {"label": "Columns", "header": "column"}, "children": [
+      {"kind": "text", "properties": {"content": "Node"}},
+      {"kind": "text", "properties": {"content": "Severity"}},
+      {"kind": "text", "properties": {"content": "Message"}},
+      {"kind": "text", "properties": {"content": "Shape it failed"}},
+      {"kind": "text", "properties": {"content": "Path"}}
+    ]},
+    {"repeat": "rows", "each": {"kind": "group", "hint": {"urn:iki:ui:hint:role:mark": "{?role}"}, "properties": {"label": "Failure"}, "children": [
+      {"kind": "link", "properties": {"label": "{?name}", "href": "{home:?node}"}},
+      {"kind": "text", "properties": {"content": "{?severity}"}},
+      {"kind": "text", "properties": {"content": "{?message}"}},
+      {"kind": "link", "properties": {"label": "{?shapeName}", "href": "{home:?shape}"}},
+      {"kind": "text", "properties": {"content": "{?path}"}}
+    ]}}
+  ]},
+  {"past": "Showing the first {shown} failures of more; the lens's bound is {bound}."}
+]}

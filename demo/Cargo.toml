@@ -31,6 +31,12 @@ ikigai-web = "0.5.0"
 tokio = { version = "1", features = ["rt", "net", "macros"] }
 # `DynamicSpace::refresh`, which binds a prefix table read through the kernel (ledger #3365).
 ikigai-core = { version = "0.3.0", features = ["declare"] }
+# Lenses 4 (ledger #3521): `shacl-violations` and `asserted-vs-derived` join
+# `urn:shacl:validate`'s report (the subset validator, no rudof) and `urn:reason:inferred`'s
+# entailments. Native only: the wasm32 lib job lints the
+# workspace, and the reasoner is not held to wasm32 here. The releases on ikigai-core 0.3.0.
+ikigai-shacl = { version = "0.6.0", default-features = false }
+ikigai-reason = "0.5.0"
 
 [dev-dependencies]
 ikigai-ui = { path = "..", features = ["testkit"] }

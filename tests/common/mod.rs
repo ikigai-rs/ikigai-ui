@@ -152,6 +152,10 @@ pub fn root(dir: Option<&Path>, extra: Vec<Arc<dyn Space>>) -> Arc<dyn Space> {
     // The example lenses over the contact graph and a real SPARQL store to run them (#3518).
     spaces.push(Arc::new(ikigai_ui::lens::examples()));
     spaces.push(Arc::new(ikigai_sparql::space()));
+    // What the SHACL and asserted-vs-derived lenses join (#3521): the report, and the
+    // reasoner's entailments.
+    spaces.push(Arc::new(ikigai_shacl::space()));
+    spaces.push(Arc::new(ikigai_reason::space()));
     if let Some(dir) = dir {
         spaces.push(Arc::new(EndpointSpace::new().bind(
             UriTemplate::parse("urn:iki:ui:dir:{path}").unwrap(),

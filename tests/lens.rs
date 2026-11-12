@@ -190,6 +190,7 @@ fn the_table_lens_shows_each_field_of_the_contact_graph() {
             "contact-table",
             "contact-list",
             "contact-dashboard",
+            "shacl-violations",
             "graph"
         ]
     );
@@ -464,6 +465,7 @@ fn a_resource_with_lenses_offers_them_and_one_without_does_not() {
             "contact-table",
             "contact-list",
             "contact-dashboard",
+            "shacl-violations",
             "graph"
         ]
     );
@@ -566,6 +568,7 @@ fn a_lensed_views_chooser_is_radio_buttons_in_a_fieldset() {
             ("contact-table".to_string(), false),
             ("contact-list".to_string(), true),
             ("contact-dashboard".to_string(), false),
+            ("shacl-violations".to_string(), false),
             ("graph".to_string(), false),
         ],
         "{page}"
@@ -620,6 +623,7 @@ fn a_resource_views_lens_chooser_is_radio_buttons() {
             ("contact-table".to_string(), false),
             ("contact-list".to_string(), false),
             ("contact-dashboard".to_string(), false),
+            ("shacl-violations".to_string(), false),
             ("graph".to_string(), false),
         ],
         "{page}"
@@ -957,4 +961,324 @@ fn a_construct_lens_is_a_construct_and_read_only() {
             .unwrap_err();
         assert!(matches!(e, Error::InvalidArgument { .. }), "{q}: {e:?}");
     }
+}
+
+// Lenses 4 (ledger #3521): SHACL violations, and asserted beside derived.
+
+const ROLE: &str = ikigai_ui::model::ROLE;
+
+fn role(n: &Node) -> Option<&'static str> {
+    ikigai_ui::model::role(n)
+}
+
+fn label(n: &Node) -> String {
+    text(&n.properties["label"])
+}
+
+/// A table's rows past its header, each as its cells' words.
+fn rows(table: &Node) -> Vec<(&Node, Vec<String>)> {
+    table
+        .children
+        .iter()
+        .skip(1)
+        .map(|row| {
+            let cells = row
+                .children
+                .iter()
+                .map(|c| match c.kind.as_str() {
+                    "link" => label(c),
+                    _ => text(&c.properties["content"]),
+                })
+                .collect();
+            (row, cells)
+        })
+        .collect()
+}
+
+#[test]
+fn the_shacl_lens_marks_each_failing_node_by_the_danger_role_and_in_words() {
+    let n = view(
+        &common::host(None),
+        "shacl-violations",
+        EXAMPLE_GRAPH,
+        &Capability::root(),
+    )
+    .unwrap();
+    // The table form: one row per failure, each in the danger role AND saying what failed.
+    let tables = of(&n, "table");
+    assert_eq!(tables.len(), 1, "{n:?}");
+    let rows = rows(tables[0]);
+    let mut nodes: Vec<&str> = rows.iter().map(|(_, c)| c[0].as_str()).collect();
+    nodes.sort();
+    // `topic` says nothing of being required; its three topics have no description. The
+    // fields that conform (name, email, message) are not here.
+    assert_eq!(nodes, ["bug", "other", "question", "topic"], "{rows:?}");
+    for (row, cells) in &rows {
+        assert_eq!(role(row), Some("danger"), "{row:?}");
+        assert_eq!(cells[1], "Violation", "the severity, in words: {cells:?}");
+    }
+    let topic = rows.iter().find(|(_, c)| c[0] == "topic").unwrap();
+    assert_eq!(topic.1[2], "The field does not say whether it is required.");
+    assert_eq!(
+        topic.1[3], "A field says whether it is required",
+        "the shape it failed"
+    );
+    assert_eq!(topic.1[4], "http://schema.org/valueRequired");
+    // Every rendered node keeps its IRI: the node and the shape link through the home mapping.
+    let links: Vec<String> = of(tables[0], "link")
+        .iter()
+        .map(|l| text(&l.properties["href"]))
+        .collect();
+    assert!(
+        links
+            .iter()
+            .any(|h| h.contains("contact%3Atopic") || h.contains("contact:topic")),
+        "{links:?}"
+    );
+    assert!(
+        links.iter().any(|h| h.contains("TopicDescribed")),
+        "the shape links too: {links:?}"
+    );
+    // The graph form: a scene of the failing nodes beside the same nodes as links, each in the
+    // danger role, saying its severity, its message and its shape.
+    assert_eq!(of(&n, "scene").len(), 1, "{n:?}");
+    let list = of(&n, "list")
+        .into_iter()
+        .find(|l| label(l) == "Failing nodes")
+        .expect("the failing nodes as a list");
+    assert_eq!(list.children.len(), 4);
+    for item in &list.children {
+        assert_eq!(item.kind, "link");
+        assert_eq!(role(item), Some("danger"));
+        let words = label(item);
+        assert!(words.starts_with("Violation: "), "{words}");
+        assert!(words.contains("Shape: "), "{words}");
+    }
+    // The scene draws exactly those nodes, each labeled with its severity.
+    let scene = scene_of(&common::host(None), &n);
+    assert_eq!(scene.nodes.len(), 4, "{scene:?}");
+    assert!(scene
+        .nodes
+        .iter()
+        .all(|s| s.label.starts_with("Violation: ")));
+    // Each severity is a checkbox, bound into the query as a term.
+    let severities: Vec<String> = of(&n, "field")
+        .iter()
+        .filter(|f| text(&f.properties["name"]) == "severity")
+        .map(|f| text(&f.properties["value"]))
+        .collect();
+    assert_eq!(
+        severities,
+        [
+            "http://www.w3.org/ns/shacl#Violation",
+            "http://www.w3.org/ns/shacl#Warning",
+            "http://www.w3.org/ns/shacl#Info"
+        ]
+    );
+}
+
+#[test]
+fn a_severity_facet_keeps_only_that_severity() {
+    let host = common::host(None);
+    let violations = view_with(
+        &host,
+        "shacl-violations",
+        EXAMPLE_GRAPH,
+        &[("severity", "http://www.w3.org/ns/shacl#Violation")],
+    )
+    .unwrap();
+    assert_eq!(rows(of(&violations, "table")[0]).len(), 4);
+    // The subset validator reports every failure as a violation: there are no warnings, and the
+    // lens says so in words rather than drawing an empty table.
+    let warnings = view_with(
+        &host,
+        "shacl-violations",
+        EXAMPLE_GRAPH,
+        &[("severity", "http://www.w3.org/ns/shacl#Warning")],
+    )
+    .unwrap();
+    assert!(of(&warnings, "table").is_empty(), "{warnings:?}");
+    assert!(
+        said(&warnings).contains("found nothing"),
+        "{}",
+        said(&warnings)
+    );
+}
+
+#[test]
+fn a_withheld_graph_is_said_in_words_by_the_shacl_lens_too() {
+    let shapes = EndpointSpace::new().bind(
+        Exact::new(format!("urn:iki:ui:lens:shapes:{SECRET}")),
+        fixed(
+            "host-secret-shapes",
+            "text/turtle",
+            "@prefix sh: <http://www.w3.org/ns/shacl#> . <urn:s> a sh:NodeShape ; sh:targetNode <urn:a> ; sh:property [ sh:path <urn:z> ; sh:minCount 1 ] .".into(),
+        ),
+    );
+    let host = common::host_with(
+        None,
+        vec![
+            Arc::new(host_lenses()) as Arc<dyn Space>,
+            Arc::new(shapes) as Arc<dyn Space>,
+        ],
+    );
+    let n = view(
+        &host,
+        "shacl-violations",
+        SECRET,
+        &Capability::scoped(["urn:cap:nothing"]),
+    )
+    .unwrap();
+    assert!(said(&n).contains("withheld"), "{}", said(&n));
+    assert!(of(&n, "table").is_empty(), "never an empty renderer");
+    // Its holder sees the one failure.
+    let n = view(&host, "shacl-violations", SECRET, &Capability::root()).unwrap();
+    assert_eq!(rows(of(&n, "table")[0]).len(), 1, "{n:?}");
+}
+
+#[test]
+fn the_asserted_vs_derived_lens_draws_asserted_solid_and_derived_dashed_and_says_which() {
+    let log = ikigai_ui::lens::EXAMPLE_LOG;
+    let n = view(
+        &common::host(None),
+        "asserted-vs-derived",
+        log,
+        &Capability::root(),
+    )
+    .unwrap();
+    // The legend says, in words, what each line means.
+    let legend = of(&n, "list")
+        .into_iter()
+        .find(|l| label(l) == "Legend")
+        .expect("a legend");
+    let marks: Vec<_> = legend.children.iter().map(role).collect();
+    assert_eq!(marks, [Some("asserted"), Some("derived")]);
+    assert!(said(legend).contains("Solid rule: asserted"));
+    assert!(said(legend).contains("Dashed rule: derived"));
+    let rows = rows(of(&n, "table")[0]);
+    // Every row has a role, and its last cell says the same split in words.
+    for (row, cells) in &rows {
+        let how = &cells[3];
+        match role(row) {
+            Some("asserted") => assert_eq!(how, "asserted"),
+            Some("derived") => assert!(how.starts_with("derived: "), "{how}"),
+            other => panic!("a row with no role: {other:?} {cells:?}"),
+        }
+    }
+    let find = |subject: &str, property: &str, value: &str| {
+        rows.iter()
+            .find(|(_, c)| c[0] == subject && c[1] == property && c[2] == value)
+            .map(|(r, c)| (role(r), c[3].clone()))
+    };
+    // The entries are asserted.
+    assert_eq!(
+        find("entry 1, the contact form opened", "type", "Entry"),
+        Some((Some("asserted"), "asserted".into()))
+    );
+    // OWL 2 RL derives each entry a prov:Entity, from the asserted axiom: derived only.
+    assert_eq!(
+        find("entry 1, the contact form opened", "type", "Entity"),
+        Some((Some("derived"), "derived: OWL 2 RL entails it".into())),
+        "{rows:?}"
+    );
+    // PROV-O records the summary as derived from the entries, each named.
+    let summary: Vec<_> = rows
+        .iter()
+        .filter(|(_, c)| c[0] == "summary, one message today" && c[1] == "label")
+        .map(|(r, c)| (role(r), c[3].as_str()))
+        .collect();
+    assert_eq!(summary.len(), 1, "one row per triple: {summary:?}");
+    assert_eq!(summary[0].0, Some("derived"));
+    for entry in ["entry-1", "entry-2"] {
+        assert!(
+            summary[0]
+                .1
+                .contains(&format!("urn:iki:ui:example:graph:log:{entry}")),
+            "{summary:?}"
+        );
+    }
+    // OWL RL's own axioms about its vocabulary are not shown as the graph's.
+    assert!(rows
+        .iter()
+        .all(|(_, c)| !c[0].starts_with("http://www.w3.org/2002/07/owl#")));
+    // Nothing the graph asserts is drawn as derived by reasoning.
+    assert!(find("entry 1, the contact form opened", "type", "Entry")
+        .is_some_and(|(r, _)| r == Some("asserted")));
+}
+
+#[test]
+fn a_role_the_query_leaves_empty_is_no_hint() {
+    // `tidy` drops a hint that fills to nothing: only the query marks a row.
+    let template = serde_json::json!({"kind": "list", "properties": {"label": "L"}, "children": [
+        {"repeat": "rows", "each": {"kind": "text", "hint": {ROLE: "{?role}"}, "properties": {"content": "{?x}"}}}
+    ]});
+    let rows = ikigai_ui::lens::Rows {
+        vars: vec!["x".into(), "role".into()],
+        rows: vec![
+            [
+                ("x".to_string(), "a".to_string()),
+                ("role".to_string(), "danger".to_string()),
+            ]
+            .into(),
+            [("x".to_string(), "b".to_string())].into(),
+        ],
+        past: false,
+    };
+    let fill = ikigai_ui::lens::Fill {
+        lens: "l",
+        legend: "L",
+        focus: "urn:x",
+        bound: 5,
+        rows: &rows,
+        edges: &Default::default(),
+        home: &Default::default(),
+    };
+    let n = ikigai_ui::lens::expand(&template, &fill).unwrap();
+    assert_eq!(role(&n.children[0]), Some("danger"));
+    assert!(n.children[1].hint.is_empty(), "{:?}", n.children[1]);
+}
+
+#[test]
+fn the_html_face_draws_each_role_as_a_class_beside_its_words() {
+    let host = common::host(None);
+    let page = html(
+        &host,
+        &format!("lens:shacl-violations:resource:{EXAMPLE_GRAPH}"),
+        &[],
+    );
+    // Four failures, each a danger row in the table and a danger item in the list.
+    assert_eq!(
+        page.matches("<tr class=\"ui-role-danger\">").count(),
+        4,
+        "{page}"
+    );
+    assert_eq!(
+        page.matches("<li class=\"ui-role-danger\">").count(),
+        4,
+        "{page}"
+    );
+    assert!(page.contains(">Violation: topic. The field does not say whether it is required. Shape: A field says whether it is required.</a>"), "{page}");
+    let page = html(
+        &host,
+        &format!(
+            "lens:asserted-vs-derived:resource:{}",
+            ikigai_ui::lens::EXAMPLE_LOG
+        ),
+        &[],
+    );
+    assert!(
+        page.contains("<li class=\"ui-role-asserted\"><p>Solid rule: asserted"),
+        "{page}"
+    );
+    assert!(
+        page.contains("<li class=\"ui-role-derived\"><p>Dashed rule: derived"),
+        "{page}"
+    );
+    assert!(page.contains("<tr class=\"ui-role-derived\">"), "{page}");
+    assert!(page.contains("<tr class=\"ui-role-asserted\">"), "{page}");
+    // The header row plays no role.
+    assert!(
+        page.contains("<tr><th scope=\"col\"><p>Subject</p></th>"),
+        "{page}"
+    );
 }

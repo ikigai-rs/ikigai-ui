@@ -40,6 +40,7 @@
     "urn:iki:ui:element:name:disclosure", "urn:iki:ui:element:name:meter"
   ],
   "hints": [
-    "urn:iki:ui:hint:choice:"
+    "urn:iki:ui:hint:choice:",
+    "urn:iki:ui:hint:role:"
   ]
 }

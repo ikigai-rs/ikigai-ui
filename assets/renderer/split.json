@@ -1,0 +1,21 @@
+{"kind": "group", "properties": {"label": "{legend}"}, "children": [
+  {"kind": "list", "properties": {"label": "Legend"}, "children": [
+    {"kind": "text", "hint": {"urn:iki:ui:hint:role:mark": "asserted"}, "properties": {"content": "Solid rule: asserted, stated in the graph itself."}},
+    {"kind": "text", "hint": {"urn:iki:ui:hint:role:mark": "derived"}, "properties": {"content": "Dashed rule: derived, entailed by reasoning or recorded by PROV-O as derived. The last column says which."}}
+  ]},
+  {"kind": "table", "properties": {"caption": "{legend}"}, "children": [
+    {"kind": "group", "properties": {"label": "Columns", "header": "column"}, "children": [
+      {"kind": "text", "properties": {"content": "Subject"}},
+      {"kind": "text", "properties": {"content": "Property"}},
+      {"kind": "text", "properties": {"content": "Value"}},
+      {"kind": "text", "properties": {"content": "Asserted or derived"}}
+    ]},
+    {"repeat": "rows", "each": {"kind": "group", "hint": {"urn:iki:ui:hint:role:mark": "{?role}"}, "properties": {"label": "Triple"}, "children": [
+      {"kind": "link", "properties": {"label": "{?subject}", "href": "{home:?s}"}},
+      {"kind": "text", "properties": {"content": "{?property}"}},
+      {"kind": "link", "properties": {"label": "{?value}", "href": "{home:?o}"}},
+      {"kind": "text", "properties": {"content": "{?how}"}}
+    ]}}
+  ]},
+  {"past": "Showing the first {shown} triples of more; the lens's bound is {bound}."}
+]}

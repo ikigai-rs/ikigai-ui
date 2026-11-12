@@ -1,0 +1,26 @@
+# Each node of the focus graph that fails a SHACL shape: urn:shacl:validate's report
+# (urn:iki:ui:lens:report:{focus}) joined to the data for the node's label and to the shapes
+# for the shape's name, with the report's message and severity. Every row is a failure, so
+# every row's role is `danger`; its words say the same.
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+SELECT ?focus ?node ?name ?label ?sev ?severity ?message ?shape ?shapeName ?path ?role WHERE {
+  GRAPH ?report {
+    ?result a sh:ValidationResult ;
+      sh:focusNode ?node ;
+      sh:resultSeverity ?sev ;
+      sh:sourceShape ?shape .
+    OPTIONAL { ?result sh:resultMessage ?m }
+    OPTIONAL { ?result sh:resultPath ?p }
+  }
+  OPTIONAL { GRAPH ?focus { ?node rdfs:label ?l } }
+  OPTIONAL { GRAPH ?shapes { ?shape sh:name ?n } }
+  BIND(COALESCE(STR(?l), STR(?node)) AS ?name)
+  BIND(STRAFTER(STR(?sev), "#") AS ?severity)
+  BIND(CONCAT(?severity, ": ", ?name) AS ?label)
+  BIND(COALESCE(STR(?m), "(the report gives no message)") AS ?message)
+  BIND(COALESCE(STR(?n), STR(?shape)) AS ?shapeName)
+  BIND(COALESCE(STR(?p), "(the node itself)") AS ?path)
+  BIND("danger" AS ?role)
+}
+ORDER BY ?name ?message
