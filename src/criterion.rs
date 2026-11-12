@@ -1,8 +1,10 @@
-//! Accessibility acceptance criteria per node kind and target, as data (ledger #3541).
+//! Accessibility acceptance criteria per node kind, custom element and target, as data (ledger
+//! #3541, every kind and this crate's elements ledger #3542).
 //!
 //! | name | what it is |
 //! |---|---|
 //! | `urn:iki:ui:criterion:kind:{kind}:target:{target}` | `{kind}`'s criterion on the `{target}` face (`html` or `gpui`): Turtle by default, `as=text/plain` for the same in words |
+//! | `urn:iki:ui:criterion:element:{element}:target:{target}` | the same for one of this crate's custom elements ([`ELEMENTS`]) |
 //! | `urn:iki:ui:shape:criterion` | the vocabulary and the closed SHACL shapes of a criterion, Turtle ([`SHAPE`]); [`validate`] says the same in Rust |
 //!
 //! A criterion says what a face must do for keyboard and assistive-technology users: the element
@@ -10,13 +12,14 @@
 //! announces as Name, Role, Group (hint, error and group name, read after the label) and State,
 //! its device-settings checks (`setting`: text at 200%, zoom, high contrast) and its other checks
 //! (`check`). Every check is SEE (a face or a test can verify it, and its `probe` names how; see
-//! [`PROBES`]) or HEAR (it needs assistive technology, and has no probe). A check that cannot
-//! pass today names what it is `blocked` by ([`BLOCKERS`]): on the gpui face, every HEAR check
-//! is blocked by the toolkit, because GPUI 0.2.2 exposes no accessibility tree (ledger #3546).
-//! A gpui criterion also says what each desktop platform's screen reader should announce once
-//! there is one (`announce`, one per [`PLATFORMS`]: the platform's API role and the reader's
-//! words). A kind's descriptor
-//! (`urn:iki:ui:kind:name:{kind}`) links each of its criteria by
+//! [`PROBES`] for the html face and [`GPUI_PROBES`] for the gpui face) or HEAR (it needs
+//! assistive technology, and has no probe). A SEE check with a probe is verified by a test; one
+//! without is reported as not verified ([`tally`], which the support matrix shows). A check that
+//! cannot pass today names what it is `blocked` by ([`BLOCKERS`]): on the gpui face, every HEAR
+//! check is blocked by the toolkit, because GPUI 0.2.2 exposes no accessibility tree (ledger
+//! #3546). A gpui criterion also says what each desktop platform's screen reader should announce
+//! once there is one (`announce`, one per [`PLATFORMS`]: the platform's API role and the reader's
+//! words). A kind's descriptor (`urn:iki:ui:kind:name:{kind}`) links each of its criteria by
 //! `urn:iki:ui:criterion:term:criterion`.
 //!
 //! The criteria are written as one closed JSON sheet per kind (`assets/criterion/{kind}.json`),
@@ -25,12 +28,16 @@
 //! and atomica11y-skills (Apache-2.0, see `NOTICE`). They cover the web, iOS and Android, not
 //! desktop-native apps, so the gpui criteria are our own, drawn from each platform's guidance
 //! (Apple's, Windows UI Automation's, AT-SPI's). Each criterion names its sources.
+//! Neither covers a meter, nor a 3D scene whose replacement is its accessible form, so the html
+//! criteria of those two are written from what this repository's `ACCESSIBILITY.md` promises,
+//! and name it.
 //!
 //! ```
 //! use ikigai_ui::criterion;
 //! let html = criterion::criterion("button", "html").unwrap();
 //! assert_eq!(html.role, "Button.");
-//! assert!(criterion::criterion("heading", "html").is_none()); // a follow-up's
+//! assert!(criterion::criterion("meter", "gpui").is_some()); // an element's
+//! assert!(criterion::criterion("rating", "html").is_none()); // an example, not ours
 //! ```
 
 use std::fmt::Write as _;
@@ -39,7 +46,9 @@ use std::sync::OnceLock;
 use ikigai_core::{
     ArgSpec, Description, Error, FnEndpoint, Invocation, ReprType, Representation, Verb,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+
+use crate::model::Node;
 
 /// The prefix of every criterion's name.
 pub const PREFIX: &str = "urn:iki:ui:criterion:";
@@ -54,18 +63,45 @@ pub const TEXT: &str = "text/plain";
 /// The targets a criterion is written for, in the order a sheet states them.
 pub const TARGETS: [&str; 2] = ["html", "gpui"];
 
-/// How a test verifies a SEE check on the html face. A SEE check with no probe is reported as
-/// not verified, never skipped.
+/// How a test verifies a SEE check on the html face (`tests/criterion.rs`). A SEE check with
+/// no probe is reported as not verified, never skipped.
 ///
-/// - `element` (argument: an element name): the node's control is that element.
-/// - `attribute` (argument: `name=value`): the control carries the attribute with that value.
-/// - `focusable`: the control is in the tab order natively: a `<button>`, an `<a href>` or an
-///   `<input>`, not `disabled`, with no negative `tabindex`.
+/// The node's SUBJECT is its HTML's outermost element, or, when that is a `<div>` wrapper (a
+/// field, a choice, a meter), the control in it the label names. Its CONTROL is the subject, or
+/// a `<details>`'s `<summary>`.
+///
+/// - `element` (argument: an element name): the subject is that element.
+/// - `attribute` (argument: `name=value`): the subject carries the attribute with that value.
+/// - `contains` (argument: `tag`, `tag[name]` or `tag[name=value]`): an element in the node's
+///   HTML matches.
+/// - `focusable`: the control is in the tab order natively: a `<button>`, an `<a href>`, an
+///   `<input>`, a `<select>` or a `<summary>`, not `disabled`, with no negative `tabindex`.
+/// - `no-tab-stop`: nothing in the node's HTML is in the tab order: no control, no
+///   `tabindex` of 0 or more.
 /// - `focus-visible`: the token stylesheet draws a `:focus-visible` outline of at least 2px in
-///   `--focus`.
-/// - `name-from-content`: the control's text is the node's `label`.
-/// - `name-from-label`: a `<label for>` whose text is the node's `label` names the control's
+///   `--focus`, and no rule takes it from the control.
+/// - `name-from-content`: the control's text is the node's `label` (else its `content`), with
+///   no `aria-label` over it.
+/// - `name-from-label`: a `<label for>` whose text is the node's `label` names the subject's
 ///   `id`.
+/// - `labelled-by`: the subject's `aria-labelledby` names an element in its HTML whose text is
+///   the node's `label`.
+/// - `aria-label`: the first element in the node's HTML with an `aria-label` is named by the
+///   node's `label`, alone or followed by `:` and the keys.
+/// - `heading-level`: the subject is `<h{level}>`, the node's `level`.
+/// - `content`: the subject's text is the node's `content`, as text (markup in it escaped).
+/// - `caption`: the table's `<caption>` says the node's `caption`.
+/// - `header-scope`: the table has header cells, and every `<th>` has `scope` `row` or `col`.
+/// - `items`: one `<li>` per child of the node.
+/// - `alt`: the subject's `alt` is the node's `alt`, not empty.
+/// - `value`: the subject's `value` is the node's `value`.
+/// - `quiet`: nothing in the node's HTML is a live region: no `aria-live`, no `role` of
+///   `status`, `alert` or `log` (the page's one live region is the shell's `#status`).
+/// - `open-state`: the `<details>` is `open` exactly when the node's `open` is true.
+/// - `range`: the `<meter>`'s `value`, `min` and `max` are the node's (`min` 0 and `max` 1 by
+///   default).
+/// - `replacement`: a link in the node's HTML points (`#id`) at an element after the
+///   `<canvas>`, which holds the replacement, and the canvas is `hidden` until it has drawn.
 /// - `href`: the link's `href` is the node's.
 /// - `described-by`: `aria-describedby` names the hint and then the error, both in the node's
 ///   HTML, and each holds the node's text for it.
@@ -73,19 +109,46 @@ pub const TARGETS: [&str; 2] = ["html", "gpui"];
 /// - `invalid`: `aria-invalid` is `true` exactly when the node carries an `error`.
 /// - `text-scales`: no stylesheet the page loads sets a font size in `px`, so text follows the
 ///   reader's text size.
-pub const PROBES: [&str; 11] = [
+pub const PROBES: [&str; 26] = [
     "element",
     "attribute",
+    "contains",
     "focusable",
+    "no-tab-stop",
     "focus-visible",
     "name-from-content",
     "name-from-label",
+    "labelled-by",
+    "aria-label",
+    "heading-level",
+    "content",
+    "caption",
+    "header-scope",
+    "items",
+    "alt",
+    "value",
+    "quiet",
+    "open-state",
+    "range",
+    "replacement",
     "href",
     "described-by",
     "required",
     "invalid",
     "text-scales",
 ];
+
+/// How a window test verifies a SEE check on the gpui face, on GPUI's test platform
+/// (`gpui/src/native.rs`, `every_gpui_see_check_with_a_probe_holds`): the gallery's and the
+/// elements screen's windows, each node of the kind or element. Those tests run where GPUI's
+/// `test-support` is taken (macOS, and Linux by hand), not in CI (`gpui/README.md`).
+///
+/// - `tab-stop`: the node is one stop in the window's tab order, shown, and focusing it puts
+///   the keyboard focus there.
+/// - `no-tab-stop`: the node adds no stop of its own to the window's tab order.
+/// - `toggles`: Space on the focused node opens it and Enter closes it again, its model
+///   unchanged (the state is the window's).
+pub const GPUI_PROBES: [&str; 3] = ["tab-stop", "no-tab-stop", "toggles"];
 
 /// What a check can be blocked by. `toolkit`: the face's toolkit cannot do it yet (GPUI 0.2.2
 /// exposes no accessibility tree and reports no system text size or high contrast), so the
@@ -96,20 +159,61 @@ pub const BLOCKERS: [&str; 1] = ["toolkit"];
 pub const PLATFORMS: [&str; 3] = ["macos", "windows", "linux"];
 
 /// The probes that take an argument.
-const PROBES_WITH_ARGUMENT: [&str; 2] = ["element", "attribute"];
+const PROBES_WITH_ARGUMENT: [&str; 3] = ["element", "attribute", "contains"];
 
-/// The kinds that have criteria, with their sheets. The rest are a follow-up's (ledger #3541).
-const SHEETS: [(&str, &str); 3] = [
-    ("button", include_str!("../assets/criterion/button.json")),
+/// `target`'s probes.
+pub fn probes(target: &str) -> &'static [&'static str] {
+    match target {
+        "html" => &PROBES,
+        "gpui" => &GPUI_PROBES,
+        _ => &[],
+    }
+}
+
+/// This crate's custom elements that have criteria (`urn:iki:ui:element:name:{name}`). The
+/// `rating` example is a test's, not a face's, and has none.
+pub const ELEMENTS: [&str; 5] = ["card", "key-value", "tag-list", "disclosure", "meter"];
+
+/// Every kind's sheet, in [`crate::model::KINDS`] order, then every element's, in
+/// [`ELEMENTS`] order.
+const SHEETS: [(&str, &str); 21] = [
+    ("heading", include_str!("../assets/criterion/heading.json")),
+    ("text", include_str!("../assets/criterion/text.json")),
     ("field", include_str!("../assets/criterion/field.json")),
+    ("choice", include_str!("../assets/criterion/choice.json")),
+    ("option", include_str!("../assets/criterion/option.json")),
+    ("button", include_str!("../assets/criterion/button.json")),
     ("link", include_str!("../assets/criterion/link.json")),
+    ("list", include_str!("../assets/criterion/list.json")),
+    ("table", include_str!("../assets/criterion/table.json")),
+    ("form", include_str!("../assets/criterion/form.json")),
+    ("nav", include_str!("../assets/criterion/nav.json")),
+    ("status", include_str!("../assets/criterion/status.json")),
+    ("image", include_str!("../assets/criterion/image.json")),
+    ("group", include_str!("../assets/criterion/group.json")),
+    ("visual", include_str!("../assets/criterion/visual.json")),
+    ("scene", include_str!("../assets/criterion/scene.json")),
+    ("card", include_str!("../assets/criterion/card.json")),
+    (
+        "key-value",
+        include_str!("../assets/criterion/key-value.json"),
+    ),
+    (
+        "tag-list",
+        include_str!("../assets/criterion/tag-list.json"),
+    ),
+    (
+        "disclosure",
+        include_str!("../assets/criterion/disclosure.json"),
+    ),
+    ("meter", include_str!("../assets/criterion/meter.json")),
 ];
 
-/// One kind's criteria, one per target.
+/// One kind's or element's criteria, one per target.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Sheet {
-    /// The kind's name.
+    /// The kind's name, or the element's (its IRI's last segment).
     pub kind: String,
     /// Its criteria, one per target, in [`TARGETS`] order.
     pub criteria: Vec<Criterion>,
@@ -202,7 +306,7 @@ pub struct Check {
     pub mode: Mode,
     /// The check in words.
     pub statement: String,
-    /// How a test verifies a SEE check ([`PROBES`]).
+    /// How a test verifies a SEE check ([`PROBES`] on html, [`GPUI_PROBES`] on gpui).
     #[serde(default)]
     pub probe: Option<String>,
     /// The probe's argument.
@@ -239,13 +343,15 @@ pub fn parse(json: &str) -> Result<Sheet, String> {
 }
 
 /// What [`SHAPE`] says of a sheet's criteria, plus what a shape cannot say: one criterion per
-/// target in [`TARGETS`] order, every setting a SEE check, a probe only on a SEE check and an
-/// argument exactly when its probe takes one, no probe on a blocked check, and an announcement
-/// per [`PLATFORMS`], in order, on the gpui face and none on the html face.
+/// target in [`TARGETS`] order, every setting a SEE check, a probe only on a SEE check and one
+/// of its target's, an argument exactly when its probe takes one, no probe on a blocked check,
+/// and an announcement per [`PLATFORMS`], in order, on the gpui face and none on the html face.
 pub fn validate(sheet: &Sheet) -> Result<(), String> {
     let kind = &sheet.kind;
-    if crate::model::kind(kind).is_none() {
-        return Err(format!("{kind}: not a kind"));
+    if crate::model::kind(kind).is_none() && !ELEMENTS.contains(&kind.as_str()) {
+        return Err(format!(
+            "{kind}: not a kind or one of this crate's elements"
+        ));
     }
     let targets: Vec<&str> = sheet.criteria.iter().map(|c| c.target.as_str()).collect();
     if targets != TARGETS {
@@ -310,8 +416,12 @@ pub fn validate(sheet: &Sheet) -> Result<(), String> {
                         "{at}: a HEAR check needs assistive technology, no probe"
                     ))
                 }
-                (Some(p), Mode::See) if !PROBES.contains(&p.as_str()) => {
-                    return Err(format!("{at}: {p} is not a probe ({PROBES:?})"))
+                (Some(p), Mode::See) if !probes(&c.target).contains(&p.as_str()) => {
+                    return Err(format!(
+                        "{at}: {p} is not a {} probe ({:?})",
+                        c.target,
+                        probes(&c.target)
+                    ))
                 }
                 _ => {}
             }
@@ -354,9 +464,14 @@ fn sheets() -> &'static [Sheet] {
     })
 }
 
-/// The kinds that have criteria.
+/// The kinds and elements that have criteria: every kind, then [`ELEMENTS`].
 pub fn kinds() -> impl Iterator<Item = &'static str> {
     SHEETS.iter().map(|(name, _)| *name)
+}
+
+/// Whether `name` is one of [`ELEMENTS`], not a kind.
+pub fn is_element(name: &str) -> bool {
+    ELEMENTS.contains(&name)
 }
 
 /// `kind`'s criteria, if it has any.
@@ -369,9 +484,80 @@ pub fn criterion(kind: &str, target: &str) -> Option<&'static Criterion> {
     sheet(kind)?.criteria.iter().find(|c| c.target == target)
 }
 
-/// A criterion's name: `urn:iki:ui:criterion:kind:{kind}:target:{target}`.
+/// A criterion's name: `urn:iki:ui:criterion:kind:{kind}:target:{target}`, or
+/// `urn:iki:ui:criterion:element:{element}:target:{target}` for one of [`ELEMENTS`].
 pub fn iri(kind: &str, target: &str) -> String {
-    format!("{PREFIX}kind:{kind}:target:{target}")
+    let what = if is_element(kind) { "element" } else { "kind" };
+    format!("{PREFIX}{what}:{kind}:target:{target}")
+}
+
+/// What a kind's (or element's) criterion on one target leaves to be verified: the support
+/// matrix's accessibility column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Tally {
+    /// Its SEE checks, settings included.
+    pub see: usize,
+    /// … of which a test verifies (those with a probe).
+    pub see_verified: usize,
+    /// … of which cannot pass today, whatever the face does ([`BLOCKERS`]).
+    pub see_blocked: usize,
+    /// Its HEAR checks, none of which a test verifies: each needs a person with a screen
+    /// reader.
+    pub hear_untested: usize,
+}
+
+/// `kind`'s [`Tally`] on `target`, if it has a criterion there.
+pub fn tally(kind: &str, target: &str) -> Option<Tally> {
+    let c = criterion(kind, target)?;
+    let see = || c.checks().filter(|(_, _, k)| k.mode == Mode::See);
+    Some(Tally {
+        see: see().count(),
+        see_verified: see().filter(|(_, _, k)| k.probe.is_some()).count(),
+        see_blocked: see().filter(|(_, _, k)| k.blocked.is_some()).count(),
+        hear_untested: c.checks().filter(|(_, _, k)| k.mode == Mode::Hear).count(),
+    })
+}
+
+/// The nodes of a screen a criterion is checked on: each node of `face` (the screen as a
+/// target's face projected it) whose kind has criteria, and each node of `source` (the same
+/// screen before its elements were expanded) that is one of [`ELEMENTS`], with the face's node
+/// at its place. Each comes with its child indices from the root and the criterion's name.
+///
+/// An element's own nodes are its, and a table's rows its, not checked again as kinds; an
+/// `option` is checked only in its `choice` (on its own, a face draws it as text). The walk
+/// follows a node's children only where the source and the face have the same number of them.
+pub fn subjects<'a>(source: &Node, face: &'a Node) -> Vec<(Vec<usize>, &'static str, &'a Node)> {
+    type Found<'a> = Vec<(Vec<usize>, &'static str, &'a Node)>;
+    fn walk<'a>(
+        source: &Node,
+        face: &'a Node,
+        parent: &str,
+        at: &mut Vec<usize>,
+        out: &mut Found<'a>,
+    ) {
+        let element = source
+            .kind
+            .strip_prefix(crate::element::PREFIX)
+            .and_then(|name| ELEMENTS.iter().find(|e| **e == name));
+        if let Some(name) = element {
+            out.push((at.clone(), name, face));
+            return;
+        }
+        let kind = SHEETS.iter().find(|(name, _)| *name == face.kind);
+        if let Some((name, _)) = kind.filter(|(name, _)| *name != "option" || parent == "choice") {
+            out.push((at.clone(), name, face));
+        }
+        if face.kind != "table" && source.children.len() == face.children.len() {
+            for (i, (s, f)) in source.children.iter().zip(&face.children).enumerate() {
+                at.push(i);
+                walk(s, f, &face.kind, at, out);
+                at.pop();
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(source, face, "", &mut Vec::new(), &mut out);
+    out
 }
 
 /// A Turtle string literal.
@@ -397,7 +583,12 @@ fn literal(s: &str) -> String {
 pub fn turtle(kind: &str, c: &Criterion) -> String {
     let me = iri(kind, &c.target);
     let mut out = format!("@prefix c: <{TERM}> .\n\n<{me}> a c:Criterion ;\n");
-    let _ = writeln!(out, "  c:kind <{}{kind}> ;", crate::model::KIND_PREFIX);
+    let prefix = if is_element(kind) {
+        crate::element::PREFIX
+    } else {
+        crate::model::KIND_PREFIX
+    };
+    let _ = writeln!(out, "  c:kind <{prefix}{kind}> ;");
     let _ = writeln!(out, "  c:target <urn:iki:ui:target:name:{}> ;", c.target);
     for s in &c.source {
         let _ = writeln!(out, "  c:source <{s}> ;");
@@ -521,17 +712,36 @@ pub fn text(kind: &str, c: &Criterion) -> String {
 
 /// `urn:iki:ui:criterion:kind:{kind}:target:{target}`.
 pub(crate) fn endpoint() -> FnEndpoint {
-    FnEndpoint::new("ui-criterion", |inv: &Invocation<'_>| {
-        let kind = inv.bindings.get("kind").unwrap_or_default();
+    endpoint_for(false)
+}
+
+/// `urn:iki:ui:criterion:element:{element}:target:{target}`.
+pub(crate) fn element_endpoint() -> FnEndpoint {
+    endpoint_for(true)
+}
+
+/// The kinds' endpoint (`ui-criterion`, bound `kind`) or the elements' (`ui-criterion-element`,
+/// bound `element`): the same criteria, each under its own name only.
+fn endpoint_for(elements: bool) -> FnEndpoint {
+    let (id, binding, what) = if elements {
+        ("ui-criterion-element", "element", "custom element")
+    } else {
+        ("ui-criterion", "kind", "node kind")
+    };
+    let names = move || kinds().filter(move |k| is_element(k) == elements);
+    FnEndpoint::new(id, move |inv: &Invocation<'_>| {
+        let kind = inv.bindings.get(binding).unwrap_or_default();
         let target = inv.bindings.get("target").unwrap_or_default();
-        let c = criterion(kind, target).ok_or_else(|| {
-            Error::NotFound(format!(
-                "{}: no criterion (the kinds with criteria are {}, the targets {})",
-                inv.request.target.as_str(),
-                kinds().collect::<Vec<_>>().join(", "),
-                TARGETS.join(", ")
-            ))
-        })?;
+        let c = criterion(kind, target)
+            .filter(|_| is_element(kind) == elements)
+            .ok_or_else(|| {
+                Error::NotFound(format!(
+                    "{}: no criterion (the {what}s with criteria are {}, the targets {})",
+                    inv.request.target.as_str(),
+                    names().collect::<Vec<_>>().join(", "),
+                    TARGETS.join(", ")
+                ))
+            })?;
         let (media_type, body) = if crate::wants(inv, TEXT) {
             (TEXT, text(kind, c))
         } else {
@@ -540,22 +750,22 @@ pub(crate) fn endpoint() -> FnEndpoint {
         Ok(Representation::new(ReprType::new(media_type), body.into_bytes()).cacheable())
     })
     .with_description(
-        Description::new("ui-criterion")
-            .title("A UI node kind's accessibility acceptance criterion")
-            .summary(
-                "What one node kind's face on one target must do for keyboard and \
+        Description::new(id)
+            .title(format!("A UI {what}'s accessibility acceptance criterion"))
+            .summary(format!(
+                "What one {what}'s face on one target must do for keyboard and \
                  assistive-technology users: semantics, keys, what a screen reader announces \
                  (name, role, group, state), device-settings checks and SEE and HEAR checks. \
-                 Turtle by default, as=text/plain in words.",
-            )
+                 Turtle by default, as=text/plain in words."
+            ))
             .verb(Verb::Source)
             .verb(Verb::Meta)
             .input(
-                ArgSpec::new("kind")
-                    .summary("the node kind")
+                ArgSpec::new(binding)
+                    .summary(format!("the {what}"))
                     .class(crate::XSD_STRING)
                     .binding()
-                    .one_of(kinds()),
+                    .one_of(names()),
             )
             .input(
                 ArgSpec::new("target")

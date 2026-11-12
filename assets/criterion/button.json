@@ -64,6 +64,7 @@
       ],
       "check": [
         {"mode": "see", "statement": "WHEN the window opens or loads a screen I SEE it hold the keyboard focus, so Tab reaches the button without a click."},
+        {"mode": "see", "statement": "The button is one stop in the window's tab order, and focusing it puts the keyboard focus there.", "probe": "tab-stop"},
         {"mode": "see", "statement": "WHEN I use Tab and Shift+Tab I SEE focus reach the button in reading order, top to bottom, wrapping at either end, on every platform (macOS' Keyboard navigation setting does not change it: the window keeps its own tab order)."},
         {"mode": "see", "statement": "WHEN the button has focus I SEE a 2px ring in the focus color drawn outside it, on the window's ground, a pair the palettes hold to 3:1."},
         {"mode": "see", "statement": "WHEN I press Space or Enter on the focused button I SEE its form submit and the label say (Submitting…) until it is answered."},

@@ -1,0 +1,66 @@
+{
+  "kind": "text",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/page-level/basic-web-page.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/html.md"
+      ],
+      "semantics": "A native <p> whose text is the node's content, escaped: markup in the content stays text and never becomes an element.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Passes it by: it is not a stop in the tab order." },
+        { "key": "Screen reader reading keys (arrows)", "outcome": "Read the paragraph line by line, and word by word." }
+      ],
+      "name": "None: a paragraph is read, not named.",
+      "role": "None (text); some screen readers say paragraph.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the text grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the text wrap to the width of the window, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <p> element.", "probe": "element", "argument": "p" },
+        { "mode": "see", "statement": "The paragraph's text is the node's content, markup in it shown as text.", "probe": "content" },
+        { "mode": "see", "statement": "Text is not a control: nothing in it is a stop in the tab order.", "probe": "no-tab-stop" },
+        { "mode": "hear", "statement": "WHEN I read the page with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR the text in its place in the reading order, every word of it." },
+        { "mode": "hear", "statement": "WHEN I swipe through the page with a mobile screen reader (TalkBack, VoiceOver) I HEAR the paragraph as one item, whole." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility",
+        "https://developer.apple.com/documentation/appkit/nsaccessibility/role",
+        "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supporttextcontroltype",
+        "https://docs.gtk.org/atspi2/enum.Role.html",
+        "https://docs.gtk.org/atspi2/enum.StateType.html",
+        "https://developer.gnome.org/hig/guidelines/keyboard.html",
+        "https://docs.rs/accesskit/latest/accesskit/enum.Role.html"
+      ],
+      "semantics": "The node's content as text in fg on bg, wrapped to the window's width. Once GPUI exposes a tree: an AccessKit Paragraph of static text (AXStaticText on macOS, a Text control on Windows, a paragraph on AT-SPI).",
+      "keyboard": [
+        { "key": "Tab and Shift+Tab", "outcome": "Pass the text by: it is no stop of its own; the controls before and after it are." }
+      ],
+      "name": "None: text is read, not named.",
+      "role": "None (text).",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set the system text size to 200% (Windows' Accessibility, Text size; GNOME's Large Text or text scaling factor) I SEE the text grow with it, with no loss of information.", "blocked": "toolkit" },
+        { "mode": "see", "statement": "WHEN I raise the display scale (macOS' Displays, Larger Text; Windows' Scale at 150% or 200%; GNOME's Scale at 200%) I SEE the text drawn sharp and larger, whole and without overlapping." },
+        { "mode": "see", "statement": "WHEN I turn on the platform's high contrast (macOS' Increase contrast, a Windows contrast theme, the desktop portal's contrast) I SEE the window switch to the high-contrast palette by itself, the text at 7:1.", "blocked": "toolkit" },
+        { "mode": "see", "statement": "WHEN I choose the high-contrast theme for the window I SEE the text drawn in the high-contrast palette, every pair at 7:1." },
+        { "mode": "see", "statement": "WHEN I magnify the screen (macOS Zoom, Windows Magnifier, GNOME's Zoom) I SEE the text whole and legible in the magnified view." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "Text adds no stop of its own to the window's tab order.", "probe": "no-tab-stop" },
+        { "mode": "see", "statement": "I SEE the content drawn as text, markup in it shown as written." },
+        { "mode": "hear", "statement": "WHEN I read the window with VoiceOver (macOS), Narrator (Windows) or Orca (Linux) I HEAR the text in its place in the reading order, every word of it.", "blocked": "toolkit" }
+      ],
+      "announce": [
+        { "platform": "macos", "reader": "VoiceOver, over NSAccessibility", "api": "AXStaticText, its content as the AXValue (AccessKit Role::Paragraph).", "says": "The text itself, \"Three items need review.\"." },
+        { "platform": "windows", "reader": "Narrator (and NVDA), over UI Automation", "api": "ControlType Text, its content as the Name.", "says": "The text itself." },
+        { "platform": "linux", "reader": "Orca, over AT-SPI", "api": "ATSPI_ROLE_PARAGRAPH, its content through the Text interface.", "says": "The text itself." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit, NSAccessibility, UI Automation or AT-SPI provider), so every HEAR check is blocked by the toolkit, and so are the system text size and the platform's high contrast, which it does not report. GPUI's main branch has AccessKit (zed-industries/zed#56065), not yet released (gpui/README.md, \"Accessibility tree\"). Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs, every_gpui_see_check_with_a_probe_holds), which no CI job runs yet; the rest are reported as not verified."
+    }
+  ]
+}

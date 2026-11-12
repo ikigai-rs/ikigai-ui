@@ -2199,6 +2199,127 @@ mod tests {
         });
     }
 
+    /// Every SEE check with a probe on the gpui face's accessibility criteria (ledger #3542),
+    /// on every node of its kind or element on the gallery and elements windows. A check with
+    /// no probe is reported, not skipped; a criterion with a probe and no node to check it on
+    /// fails, and so does a probe this test does not know.
+    #[gpui::test]
+    fn every_gpui_see_check_with_a_probe_holds(cx: &mut TestAppContext) {
+        use ikigai_core::{Iri, Request};
+        use ikigai_ui::criterion::{self, Mode};
+        let mut found = std::collections::BTreeSet::new();
+        let mut report = Vec::new();
+        let mut failures = Vec::new();
+        for name in ["gallery", "elements"] {
+            // The screen before its elements expand, to find them in the window's snapshot.
+            let kernel = ikigai_ui_demo::kernel(Arc::new(Fallback::new(vec![
+                Arc::new(crate::descriptor_space()),
+                ikigai_ui_demo::root(Default::default()),
+            ])));
+            let iri = Iri::parse(format!("urn:iki:ui:screen:name:{name}")).unwrap();
+            let source = futures::executor::block_on(
+                kernel.issue(Request::new(Verb::Source, iri), &Capability::root()),
+            )
+            .unwrap();
+            let source = ikigai_ui::model::parse(&source.bytes).unwrap();
+            let worker = demo_worker(None);
+            let (screen, cx) =
+                cx.add_window_view(|window, cx| Screen::new(worker, name, Theme::Auto, window, cx));
+            settle(&screen, cx);
+            let face = screen.update(cx, |s, _| s.snapshot.as_ref().unwrap().root().clone());
+            for (at, kind, node) in criterion::subjects(&source, &face) {
+                let path = format!(
+                    "/{}",
+                    at.iter().map(|i| format!("/{i}")).collect::<String>()
+                );
+                let c = criterion::criterion(kind, "gpui").unwrap();
+                for (under, n, check) in c.checks() {
+                    let Some(probe) = check.probe.as_deref().filter(|_| check.mode == Mode::See)
+                    else {
+                        continue;
+                    };
+                    found.insert(kind);
+                    let stop = |s: &Screen| s.tab_order.iter().any(|(p, _)| p == &path);
+                    let result: Result<(), String> = match probe {
+                        "tab-stop" => {
+                            let focus = screen.update(cx, |s, _| {
+                                (stop(s) && s.shown(&path)).then(|| s.focus[&path].clone())
+                            });
+                            match focus {
+                                None => Err("not a shown stop in the tab order".into()),
+                                Some(focus) => {
+                                    cx.update(|window, _| window.focus(&focus));
+                                    if cx.update(|window, _| focus.is_focused(window)) {
+                                        Ok(())
+                                    } else {
+                                        Err("focusing it does not put the focus there".into())
+                                    }
+                                }
+                            }
+                        }
+                        "no-tab-stop" => {
+                            if screen.update(cx, |s, _| stop(s)) {
+                                Err("a stop of its own in the tab order".into())
+                            } else {
+                                Ok(())
+                            }
+                        }
+                        "toggles" => {
+                            let (focus, before) = screen.update(cx, |s, _| {
+                                (s.focus[&path].clone(), s.open.get(&path).copied())
+                            });
+                            match before {
+                                None => Err("no open state".to_string()),
+                                Some(before) => {
+                                    cx.update(|window, _| window.focus(&focus));
+                                    cx.simulate_keystrokes(if before { "enter" } else { "space" });
+                                    let mid = screen.update(cx, |s, _| s.open[&path]);
+                                    cx.simulate_keystrokes(if before { "space" } else { "enter" });
+                                    let after = screen.update(cx, |s, _| {
+                                        (s.open[&path], s.snapshot.as_ref().unwrap().root().clone())
+                                    });
+                                    if mid == before || after.0 != before {
+                                        Err(format!("open {before}, then {mid}, then {}", after.0))
+                                    } else if after.1 != face {
+                                        Err("the model changed".into())
+                                    } else {
+                                        Ok(())
+                                    }
+                                }
+                            }
+                        }
+                        other => Err(format!("{other}: no such probe")),
+                    };
+                    match result {
+                        Ok(()) => report.push(format!("ok {kind} gpui {under} {n} ({probe}) at {name} {path}")),
+                        Err(e) => failures.push(format!(
+                            "FAILED {kind} gpui {under} {n} ({probe}) at {name} {path} ({:?}): {e}: {}",
+                            node.kind, check.statement
+                        )),
+                    }
+                }
+            }
+        }
+        for kind in criterion::kinds() {
+            let c = criterion::criterion(kind, "gpui").unwrap();
+            for (under, n, check) in c.checks() {
+                if check.mode != Mode::See {
+                    continue;
+                }
+                if check.probe.is_none() {
+                    report.push(format!(
+                        "NOT VERIFIED {kind} gpui {under} {n}: no probe: {}",
+                        check.statement
+                    ));
+                } else if !found.contains(kind) {
+                    failures.push(format!("no {kind} in the windows to check {under} {n} on"));
+                }
+            }
+        }
+        println!("{}", report.join("\n"));
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
     fn tab_paths(screen: &Entity<Screen>, cx: &mut gpui::VisualTestContext) -> Vec<String> {
         screen.update(cx, |s, _| {
             s.tab_order.iter().map(|(p, _)| p.clone()).collect()

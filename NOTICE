@@ -4,8 +4,8 @@ Licensed under the MIT license or the Apache License, Version 2.0, at your optio
 
 The vendored htmx carries its own license beside it in vendor/.
 
-Accessibility acceptance criteria (assets/criterion/*.json, ledger #3541)
--------------------------------------------------------------------------
+Accessibility acceptance criteria (assets/criterion/*.json, ledgers #3541 and #3542)
+------------------------------------------------------------------------------------
 
 The wording of the html face's accessibility acceptance criteria for the node kinds is seeded
 from the two works below and adapted: mapped to ikigai-ui's node kinds and its html face,
@@ -13,18 +13,24 @@ rewritten in American spelling, and cut to the checks that apply. No page is cop
 criterion names the pages it was seeded from (its `source`). The gpui face's criteria (ledger
 #3546) are ikigai-ui's own: neither work covers desktop-native apps, so they draw on each
 platform's published accessibility guidance (Apple, Microsoft, GNOME, AT-SPI, AccessKit), which
-their `source` names, and copy from none of it.
+their `source` names, and copy from none of it. Neither work covers a meter, nor a 3D scene whose replacement is its accessible form: the html
+criteria of those two (ledger #3542) are written from this repository's own ACCESSIBILITY.md,
+which they name.
 
 MagentaA11y, published by T-Mobile (its repository states no copyright line)
   https://github.com/tmobile/magentaA11y
   at commit f5132b4fc73cfa700c236a8da88f0276024b68c3
-  (public/content/documentation/web/component/{button,link,text-input}.md)
+  (public/content/documentation/web/component/{alert-notification,button,complex-graphics,
+  expander-accordion,heading,informative-image,link,list,radio-button,select-dropdown,table,
+  text-input}.md and
+  public/content/documentation/web/page-level/{basic-web-page,form,navigation-landmark}.md)
   Licensed under the Apache License, Version 2.0.
 
 atomica11y-skills, Copyright 2026 Charlie Triplett LLC
   https://github.com/charlietriplett/atomica11y-skills
   at commit 4b8b1e712fd924517a2f2fd75b5479f123ba9704
-  (atomica11y-skills/accessible-web/{button,link,input-text}.md)
+  (atomica11y-skills/accessible-web/{aria-live,button,card,expander,figure,form,heading,html,
+  image,input-text,link,list,nav,radio,section-region,select,table}.md)
   Licensed under the Apache License, Version 2.0.
 
 A copy of the Apache License, Version 2.0, is in LICENSE-APACHE.

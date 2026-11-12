@@ -1,0 +1,67 @@
+{
+  "kind": "key-value",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/table.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/table.md"
+      ],
+      "semantics": "Expanded from its definition: a native <table> whose <caption> names it and whose terms are row headers (<th scope=\"row\">), so each value is announced with its term.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Passes it by: it is not a stop in the tab order." },
+        { "key": "Screen reader table keys", "outcome": "Move from term to value, each value read with its term." }
+      ],
+      "name": "The key-value's label, its caption.",
+      "role": "Table.",
+      "group": "Each value's term, read with it.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the terms and values grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the table whole, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <table> element.", "probe": "element", "argument": "table" },
+        { "mode": "see", "statement": "I SEE a caption that names it.", "probe": "caption" },
+        { "mode": "see", "statement": "Every term is a row header, a <th> with a scope.", "probe": "header-scope" },
+        { "mode": "hear", "statement": "WHEN I move through it with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR each value with its term." },
+        { "mode": "hear", "statement": "WHEN I reach it I HEAR its caption and its number of rows." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility",
+        "https://developer.apple.com/documentation/appkit/nsaccessibility/role",
+        "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supporttablecontroltype",
+        "https://docs.gtk.org/atspi2/enum.Role.html",
+        "https://docs.gtk.org/atspi2/enum.StateType.html",
+        "https://developer.gnome.org/hig/guidelines/keyboard.html",
+        "https://docs.rs/accesskit/latest/accesskit/enum.Role.html"
+      ],
+      "semantics": "Expanded: a row per term and value, the term in bold (a list of rows when the face takes the table's fallback). Once GPUI exposes a tree: an AccessKit Table whose terms are RowHeaders, named by its label.",
+      "keyboard": [
+        { "key": "Tab and Shift+Tab", "outcome": "Pass the key-value by: it is no stop of its own; the controls before and after it are." }
+      ],
+      "name": "The key-value's label.",
+      "role": "Table, its terms row headers.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set the system text size to 200% (Windows' Accessibility, Text size; GNOME's Large Text or text scaling factor) I SEE the terms and values grow with it, with no loss of information.", "blocked": "toolkit" },
+        { "mode": "see", "statement": "WHEN I raise the display scale (macOS' Displays, Larger Text; Windows' Scale at 150% or 200%; GNOME's Scale at 200%) I SEE the terms and values drawn sharp and larger, whole and without overlapping." },
+        { "mode": "see", "statement": "WHEN I turn on the platform's high contrast (macOS' Increase contrast, a Windows contrast theme, the desktop portal's contrast) I SEE the window switch to the high-contrast palette by itself, the terms and values at 7:1.", "blocked": "toolkit" },
+        { "mode": "see", "statement": "WHEN I choose the high-contrast theme for the window I SEE the terms and values drawn in the high-contrast palette, every pair at 7:1." },
+        { "mode": "see", "statement": "WHEN I magnify the screen (macOS Zoom, Windows Magnifier, GNOME's Zoom) I SEE the terms and values whole and legible in the magnified view." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "A key-value adds no stop of its own to the window's tab order.", "probe": "no-tab-stop" },
+        { "mode": "see", "statement": "I SEE each term beside its value, the term in bold." },
+        { "mode": "hear", "statement": "WHEN I move through it with VoiceOver (macOS), Narrator (Windows) or Orca (Linux) I HEAR each value with its term.", "blocked": "toolkit" }
+      ],
+      "announce": [
+        { "platform": "macos", "reader": "VoiceOver, over NSAccessibility", "api": "AXTable with AXRowHeaderUIElements the terms (AccessKit Role::Table, RowHeader).", "says": "\"Gauge 14, table\"; on a value, \"Station, Mill Lane\"." },
+        { "platform": "windows", "reader": "Narrator (and NVDA), over UI Automation", "api": "ControlType Table, its terms HeaderItems of the row header.", "says": "\"Gauge 14, table\"." },
+        { "platform": "linux", "reader": "Orca, over AT-SPI", "api": "ATSPI_ROLE_TABLE, its terms ATSPI_ROLE_ROW_HEADER.", "says": "\"Gauge 14, table\"." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit, NSAccessibility, UI Automation or AT-SPI provider), so every HEAR check is blocked by the toolkit, and so are the system text size and the platform's high contrast, which it does not report. GPUI's main branch has AccessKit (zed-industries/zed#56065), not yet released (gpui/README.md, \"Accessibility tree\"). Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs, every_gpui_see_check_with_a_probe_holds), which no CI job runs yet; the rest are reported as not verified."
+    }
+  ]
+}

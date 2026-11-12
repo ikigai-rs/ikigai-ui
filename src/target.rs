@@ -480,6 +480,26 @@ struct Support<'a> {
     hints: &'a [String],
     limits: &'a Limits,
     capabilities: &'a [Capability],
+    /// Each kind's and element's accessibility criterion on this target (ledger #3542): how
+    /// many SEE checks a test verifies, and how many HEAR checks no test does.
+    a11y: BTreeMap<&'static str, crate::criterion::Tally>,
+}
+
+/// A kind's or element's accessibility tally on a target, in words, for the support page.
+fn a11y_words(tally: Option<&crate::criterion::Tally>) -> String {
+    match tally {
+        Some(t) => {
+            let blocked = match t.see_blocked {
+                0 => String::new(),
+                n => format!(", {n} blocked by the toolkit"),
+            };
+            format!(
+                "SEE: {} of {} verified by a test{blocked}; HEAR: {} untested",
+                t.see_verified, t.see, t.hear_untested
+            )
+        }
+        None => "No criteria".into(),
+    }
 }
 
 pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
@@ -495,14 +515,16 @@ pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
                     fallback: descriptor.fallback.get(kind.name).map(String::as_str),
                 })).collect();
                 let element = crate::element::ELEMENTS.iter().map(|e| (e.iri, descriptor.elements.iter().any(|n| n == e.iri))).collect();
-                (descriptor.name.as_str(), Support { kind, element, hints: &descriptor.hints, limits: &descriptor.limits, capabilities: &descriptor.capabilities })
+                let a11y = crate::criterion::kinds().filter_map(|name| Some((name, crate::criterion::tally(name, &descriptor.name)?))).collect();
+                (descriptor.name.as_str(), Support { kind, element, hints: &descriptor.hints, limits: &descriptor.limits, capabilities: &descriptor.capabilities, a11y })
             }).collect();
             if inv.inline_str("as").ok().is_some_and(|as_type| {
                 as_type.split(';').next().unwrap_or_default().trim() == "text/html"
             }) {
-                let mut html = String::from("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>UI target support</title></head><body><h1>UI target support</h1><p>What each target's descriptor says it renders. Where it does not, the fallback names the kind it renders instead; text is the kind's required fallback text.</p><table><caption>Every target against every kind</caption><thead><tr><th scope=\"col\">Kind</th>");
+                let mut html = String::from("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>UI target support</title></head><body><h1>UI target support</h1><p>What each target's descriptor says it renders. Where it does not, the fallback names the kind it renders instead; text is the kind's required fallback text.</p><p>Each target's accessibility column counts its face's acceptance criterion (urn:iki:ui:criterion:): the SEE checks a test verifies, of all of them, those blocked by the face's toolkit (they cannot pass today, whatever the face does), and the HEAR checks, which need a person with a screen reader and no test verifies. The html face's are verified against the rendered HTML in CI; the gpui face's run on GPUI's test platform, which CI does not run yet.</p><table><caption>Every target against every kind</caption><thead><tr><th scope=\"col\">Kind</th>");
                 for name in matrix.keys() {
-                    html.push_str(&format!("<th scope=\"col\">{}</th>", ikigai_fn::html::html_text(name)));
+                    let name = ikigai_fn::html::html_text(name);
+                    html.push_str(&format!("<th scope=\"col\">{name}</th><th scope=\"col\">{name} accessibility</th>"));
                 }
                 html.push_str("</tr></thead><tbody>");
                 for kind in model::KINDS {
@@ -515,20 +537,22 @@ pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
                             (false, Some(name)) => format!("Fallback: {name}"),
                             (false, None) => unreachable!("validated complete descriptor"),
                         };
-                        html.push_str(&format!("<td>{}</td>", ikigai_fn::html::html_text(&label)));
+                        html.push_str(&format!("<td>{}</td><td>{}</td>", ikigai_fn::html::html_text(&label), a11y_words(support.a11y.get(kind.name))));
                     }
                     html.push_str("</tr>");
                 }
                 html.push_str("</tbody></table><h2>Custom elements</h2><table><caption>Every target against every example element</caption><thead><tr><th scope=\"col\">Element</th>");
                 for name in matrix.keys() {
-                    html.push_str(&format!("<th scope=\"col\">{}</th>", ikigai_fn::html::html_text(name)));
+                    let name = ikigai_fn::html::html_text(name);
+                    html.push_str(&format!("<th scope=\"col\">{name}</th><th scope=\"col\">{name} accessibility</th>"));
                 }
                 html.push_str("</tr></thead><tbody>");
                 for element in crate::element::ELEMENTS {
                     html.push_str(&format!("<tr><th scope=\"row\">{}</th>", ikigai_fn::html::html_text(element.iri)));
                     for support in matrix.values() {
                         let label = if support.element[element.iri] { "Native" } else { "Expanded from its definition" };
-                        html.push_str(&format!("<td>{label}</td>"));
+                        let name = element.iri.strip_prefix(crate::element::PREFIX).unwrap_or_default();
+                        html.push_str(&format!("<td>{label}</td><td>{}</td>", a11y_words(support.a11y.get(name))));
                     }
                     html.push_str("</tr>");
                 }
@@ -571,7 +595,7 @@ pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
     }).with_description(
         Description::new("ui-support")
             .title("UI target support")
-            .summary("Every target against every kind, composed from descriptor resources. JSON by default; as=text/html for the support page. Includes versioned capabilities and table limits.")
+            .summary("Every target against every kind, composed from descriptor resources. JSON by default; as=text/html for the support page. Includes versioned capabilities, table limits and, per kind and element, how many of its accessibility criterion's SEE checks a test verifies and how many HEAR checks are untested.")
             .verb(Verb::Source).verb(Verb::Meta).output(JSON).output(crate::HTML),
     )
 }

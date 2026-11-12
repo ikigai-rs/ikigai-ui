@@ -714,6 +714,13 @@ pub fn space() -> EndpointSpace {
             criterion::endpoint(),
         )
         .bind(
+            template(&format!(
+                "{}element:{{element}}:target:{{target}}",
+                criterion::PREFIX
+            )),
+            criterion::element_endpoint(),
+        )
+        .bind(
             Exact::new(criterion::SHAPE_IRI),
             criterion::shape_endpoint(),
         )

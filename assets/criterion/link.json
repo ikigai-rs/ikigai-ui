@@ -59,6 +59,7 @@
       ],
       "check": [
         {"mode": "see", "statement": "WHEN the window opens or loads a screen I SEE it hold the keyboard focus, so Tab reaches the link without a click."},
+        {"mode": "see", "statement": "The link is one stop in the window's tab order, and focusing it puts the keyboard focus there.", "probe": "tab-stop"},
         {"mode": "see", "statement": "WHEN I use Tab and Shift+Tab I SEE focus reach the link in reading order, top to bottom, wrapping at either end, on every platform (macOS' Keyboard navigation setting does not change it: the window keeps its own tab order)."},
         {"mode": "see", "statement": "WHEN the link has focus I SEE a 2px ring in the focus color drawn outside it, on the window's ground, a pair the palettes hold to 3:1."},
         {"mode": "see", "statement": "WHEN I press Enter on the focused link I SEE the screen it names load, and the window keep the keyboard focus."},

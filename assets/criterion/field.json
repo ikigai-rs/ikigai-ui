@@ -74,6 +74,7 @@
       ],
       "check": [
         {"mode": "see", "statement": "WHEN the window opens or loads a screen I SEE it hold the keyboard focus, so Tab reaches the input without a click."},
+        {"mode": "see", "statement": "The input is one stop in the window's tab order, and focusing it puts the keyboard focus there.", "probe": "tab-stop"},
         {"mode": "see", "statement": "WHEN I use Tab and Shift+Tab I SEE focus reach the input in reading order, top to bottom, wrapping at either end, on every platform (macOS' Keyboard navigation setting does not change it: the window keeps its own tab order)."},
         {"mode": "see", "statement": "WHEN the input has focus I SEE a 2px ring in the focus color drawn outside it, on the window's ground, a pair the palettes hold to 3:1."},
         {"mode": "see", "statement": "I SEE the label stay visible above the input, an asterisk after it when the field is required."},

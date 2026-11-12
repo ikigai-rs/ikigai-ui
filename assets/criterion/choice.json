@@ -1,0 +1,83 @@
+{
+  "kind": "choice",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/select-dropdown.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/select.md",
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/radio-button.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/radio.md"
+      ],
+      "semantics": "A native <select> named by a visible <label for>, its options native <option>s, its hint and error in text the select points at with aria-describedby, required and invalid stated with aria-required and aria-invalid. With the radio hint, a <fieldset role=\"radiogroup\"> named by its <legend>, one native radio per option.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the select (or into the radio group, onto its chosen radio) and is strongly visually indicated." },
+        { "key": "Arrow keys", "outcome": "Move the selection from option to option." },
+        { "key": "Space or Alt+Down", "outcome": "Opens the select's list of options; Enter chooses one and closes it." }
+      ],
+      "name": "The choice's label, the same words as the visible label (or legend).",
+      "role": "Combo box or pop-up button; radio group with the radio hint.",
+      "group": "The hint, then the error, read after the label; the form's label names the group the choice is in.",
+      "state": "The option chosen; required, and invalid when it carries an error.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the label, the chosen option, the hint and the error grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the label above or beside its select, the hint and error under it, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <select> element.", "probe": "element", "argument": "select" },
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the select: it is in the tab order, not disabled and with no negative tabindex.", "probe": "focusable" },
+        { "mode": "see", "statement": "WHEN the select has focus I SEE a focus ring of at least 2px in the focus color.", "probe": "focus-visible" },
+        { "mode": "see", "statement": "I SEE a label that stays visible, tied to the select by for and id, with the choice's label as its text.", "probe": "name-from-label" },
+        { "mode": "see", "statement": "I SEE the hint and the error as text after the select, which it names in aria-describedby, hint first.", "probe": "described-by" },
+        { "mode": "see", "statement": "A required choice says so: aria-required is true exactly when it is required.", "probe": "required" },
+        { "mode": "see", "statement": "A choice with an error says so: aria-invalid is true exactly when it carries an error.", "probe": "invalid" },
+        { "mode": "hear", "statement": "WHEN I Tab to the select with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR its label, its role and the option chosen." },
+        { "mode": "hear", "statement": "WHEN I move through the options I HEAR each option's label and its place in the list (2 of 3)." },
+        { "mode": "hear", "statement": "WHEN the choice is required or invalid I HEAR it expressed as required or invalid, and the hint and error after the label." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility",
+        "https://developer.apple.com/documentation/appkit/nsaccessibility/role",
+        "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supportlistcontroltype",
+        "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supportradiobuttoncontroltype",
+        "https://docs.gtk.org/atspi2/enum.Role.html",
+        "https://docs.gtk.org/atspi2/enum.StateType.html",
+        "https://developer.gnome.org/hig/guidelines/keyboard.html",
+        "https://docs.rs/accesskit/latest/accesskit/enum.Role.html"
+      ],
+      "semantics": "The choice's label above its options, each option a focusable control (the chosen one in accent-fg on accent); with the radio hint, one focusable group drawn ○ and ●, its arrows moving the choice. Once GPUI exposes a tree: an AccessKit ListBox (RadioGroup with the hint) named by its label (AXList or AXRadioGroup on macOS, a List with the Selection pattern on Windows, a list box or a panel of radio buttons on AT-SPI).",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to each option in turn (to the group, with the radio hint), and the focus ring shows." },
+        { "key": "Shift+Tab", "outcome": "Focus moves back, wrapping to the last control." },
+        { "key": "Space or Enter", "outcome": "Chooses the focused option." },
+        { "key": "Arrow keys", "outcome": "With the radio hint, move the choice within the group." }
+      ],
+      "name": "The choice's label.",
+      "role": "List box, or radio group with the radio hint.",
+      "group": "The hint, then the error, read after the label.",
+      "state": "The option chosen; required, and invalid when it carries an error.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set the system text size to 200% (Windows' Accessibility, Text size; GNOME's Large Text or text scaling factor) I SEE the label and the options grow with it, with no loss of information.", "blocked": "toolkit" },
+        { "mode": "see", "statement": "WHEN I raise the display scale (macOS' Displays, Larger Text; Windows' Scale at 150% or 200%; GNOME's Scale at 200%) I SEE the label and the options drawn sharp and larger, whole and without overlapping." },
+        { "mode": "see", "statement": "WHEN I turn on the platform's high contrast (macOS' Increase contrast, a Windows contrast theme, the desktop portal's contrast) I SEE the window switch to the high-contrast palette by itself, the label and the options at 7:1.", "blocked": "toolkit" },
+        { "mode": "see", "statement": "WHEN I choose the high-contrast theme for the window I SEE the label and the options drawn in the high-contrast palette, every pair at 7:1." },
+        { "mode": "see", "statement": "WHEN I magnify the screen (macOS Zoom, Windows Magnifier, GNOME's Zoom) with focus following I SEE the magnifier follow the keyboard focus to the label and the options.", "blocked": "toolkit" }
+      ],
+      "check": [
+        { "mode": "see", "statement": "I SEE the chosen option set apart in accent-fg on accent, and ● beside it with the radio hint, not only by color." },
+        { "mode": "see", "statement": "I SEE the hint as text under the options and the error in words, not only in the danger color." },
+        { "mode": "hear", "statement": "WHEN I Tab into the choice with VoiceOver (macOS), Narrator (Windows) or Orca (Linux) I HEAR its label, its role and the option chosen.", "blocked": "toolkit" },
+        { "mode": "hear", "statement": "WHEN the choice is required or invalid I HEAR it expressed as required or invalid, and the hint and error after the label.", "blocked": "toolkit" }
+      ],
+      "announce": [
+        { "platform": "macos", "reader": "VoiceOver, over NSAccessibility", "api": "AXList (AXRadioGroup with the hint), its label as the AXTitle; AXRequired when required (AccessKit Role::ListBox or RadioGroup).", "says": "\"Size, list box, Large selected\"; with the hint, \"Size, radio group\"." },
+        { "platform": "windows", "reader": "Narrator (and NVDA), over UI Automation", "api": "ControlType List with the Selection pattern (IsSelectionRequired when required), its label as the Name; HelpText the hint.", "says": "\"Size, list, Large selected\"." },
+        { "platform": "linux", "reader": "Orca, over AT-SPI", "api": "ATSPI_ROLE_LIST_BOX (a panel of ATSPI_ROLE_RADIO_BUTTON with the hint), its label as the name, STATE_REQUIRED, STATE_INVALID_ENTRY.", "says": "\"Size, list box, Large\"." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit, NSAccessibility, UI Automation or AT-SPI provider), so every HEAR check is blocked by the toolkit, and so are the system text size and the platform's high contrast, which it does not report. GPUI's main branch has AccessKit (zed-industries/zed#56065), not yet released (gpui/README.md, \"Accessibility tree\"). Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs, every_gpui_see_check_with_a_probe_holds), which no CI job runs yet; the rest are reported as not verified."
+    }
+  ]
+}
