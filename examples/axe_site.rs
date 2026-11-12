@@ -20,6 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for iri in [
         "urn:iki:ui:htmx",
         "urn:iki:ui:shell.js",
+        "urn:iki:ui:scene-renderer.js",
         ikigai_ui::TOKENS_CSS,
     ] {
         let rep = common::source(&kernel, iri)?;
@@ -63,6 +64,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "/gallery.html".to_string(),
         common::HTML.to_string(),
         page.into_bytes(),
+    ));
+    // The gallery scene's datum, at the door URL its figure names (decoded, as the server reads
+    // it), so the renderer's one fetch is answered as a door would answer it.
+    let datum = format!(
+        "{}{}",
+        ikigai_ui::scene::SCENE_PREFIX,
+        ikigai_ui::scene::EXAMPLE_GRAPH
+    );
+    let rep = common::source(&kernel, &datum)?;
+    files.push((
+        format!("/resolution/iri/{datum}"),
+        rep.repr_type.media_type,
+        rep.bytes,
     ));
     // The image example's source: a 1x1 grey PNG, so the page loads with no 404.
     const PNG: &[u8] = &[

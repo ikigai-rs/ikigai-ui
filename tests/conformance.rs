@@ -65,8 +65,14 @@ fn conforms() {
         .pure("ui-face-screen")
         .cacheable("ui-face-screen")
         .pure("ui-setting-name")
-        .fixture(Fixture::new("ui-layout-graph", Verb::Source).binding("graph", ikigai_ui::scene::EXAMPLE_GRAPH))
-        .fixture(Fixture::new("ui-scene-graph", Verb::Source).binding("graph", ikigai_ui::scene::EXAMPLE_GRAPH))
+        .fixture(
+            Fixture::new("ui-layout-graph", Verb::Source)
+                .binding("graph", ikigai_ui::scene::EXAMPLE_GRAPH),
+        )
+        .fixture(
+            Fixture::new("ui-scene-graph", Verb::Source)
+                .binding("graph", ikigai_ui::scene::EXAMPLE_GRAPH),
+        )
         .pure("ui-shape-scene")
         .pure("ui-example-graph")
         .cacheable("ui-setting-name")

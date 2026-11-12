@@ -257,7 +257,9 @@ fn the_gallery_resolves_in_both_faces() {
         assert!(map.remove("@id").is_some(), "every node is named");
         for (key, value) in map.iter_mut() {
             match (key.as_str(), value) {
-                ("children", serde_json::Value::Array(children)) => stack.extend(children.iter_mut()),
+                ("children", serde_json::Value::Array(children)) => {
+                    stack.extend(children.iter_mut())
+                }
                 ("replacement", replacement) => stack.push(replacement),
                 _ => {}
             }

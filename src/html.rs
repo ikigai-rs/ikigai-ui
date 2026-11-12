@@ -144,7 +144,34 @@ async fn screen(inv: &Invocation<'_>) -> Result<Node, Error> {
     // elements down the ladder (the html face claims none natively, so each is expanded, falls
     // back or shows its fallback text) and write-only fields made their own forms.
     let descriptor = crate::target::read_descriptor(inv, "html").await?;
-    crate::target::compose(inv, &node, &descriptor).await
+    let node = crate::target::compose(inv, &node, &descriptor).await?;
+    // A descriptor that does not claim `scene` (a host serving no WebGPU renderer) takes the
+    // ladder's next rung for each one: its replacement, else its label as text (ledger #3514).
+    if descriptor.renders.iter().any(|k| k == "scene") {
+        return Ok(node);
+    }
+    Ok(without_scenes(node))
+}
+
+fn without_scenes(mut node: Node) -> Node {
+    if node.kind == "scene" {
+        return match node.replacement.take() {
+            Some(replacement) => without_scenes(*replacement),
+            None => Node {
+                kind: "text".into(),
+                hint: Default::default(),
+                replacement: None,
+                properties: node
+                    .properties
+                    .remove("label")
+                    .map(|label| [("content".to_string(), label)].into_iter().collect())
+                    .unwrap_or_default(),
+                children: Vec::new(),
+            },
+        };
+    }
+    node.children = node.children.into_iter().map(without_scenes).collect();
+    node
 }
 
 /// The node at `{node}` and its parent's kind.

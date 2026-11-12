@@ -18,6 +18,8 @@
 //!   children, in order, wherever they stand among the pairs. A reference head may take one
 //!   string right after it, the rest of its name: `(ui:view:resource "urn:…")` is the reference
 //!   `ui:view:resource:urn:…`, so a program composes references from what it read.
+//! - `:replacement (…)` is not a property: its one node form is the node's replacement subtree
+//!   (a `scene`'s accessible form, say), compiled like a child.
 //! - A value is a string (text), an integer, or a bare symbol (`true`/`false`, `#t`/`#f`, or a
 //!   word), typed by the property it sets as in an outline.
 //! - `(@prefixes <iri>)`, before the node, names the screen's prefix table.
@@ -49,8 +51,9 @@
 //! [`print()`] writes a model back as this datum (kinds and elements as heads, properties as
 //! `:key value`, children nested and indented), so a generated view can be read and edited as an
 //! s-expression; [`read`] of what it prints compiles to the same model. A screen answers it with
-//! `as=text/x-ikigai-ui-sexpr`. Hints and replacements have no s-expression spelling (nor an
-//! outline one): a model with either is refused, never printed lossily.
+//! `as=text/x-ikigai-ui-sexpr`. A replacement is spelled `:replacement (…)`, one node form after
+//! the node's properties. Hints have no s-expression spelling (nor an outline one): a model with
+//! them is refused, never printed lossily.
 //!
 //! ## Resources
 //!
@@ -226,6 +229,7 @@ impl Reader<'_> {
             head,
             properties: Vec::new(),
             children: Vec::new(),
+            replacement: None,
         };
         let mut rest = items.iter();
         while let Some(item) = rest.next() {
@@ -242,6 +246,21 @@ impl Reader<'_> {
                     let value = rest
                         .next()
                         .ok_or_else(|| at(self.screen, number, format!("`:{key}` has no value")))?;
+                    // `:replacement (…)`: the node's replacement subtree, one node form.
+                    if key == "replacement" {
+                        if line.replacement.is_some() {
+                            return Err(at(self.screen, number, "`:replacement` is given twice"));
+                        }
+                        if !matches!(value, Sexpr::List(_)) {
+                            return Err(at(
+                                self.screen,
+                                number,
+                                "`:replacement` takes one node (a list)",
+                            ));
+                        }
+                        line.replacement = Some(Box::new(self.line(value)?));
+                        continue;
+                    }
                     let raw = self.value(number, key, value)?;
                     if line.properties.iter().any(|(k, _)| k == key) {
                         return Err(at(self.screen, number, format!("`:{key}` is given twice")));
@@ -330,17 +349,15 @@ pub fn read(screen: &str, bytes: &[u8]) -> Result<Outline, Error> {
     })
 }
 
-/// A model as the datum [`read`] reads back to it. Refused (`InvalidArgument`) when a node has
-/// hints or a replacement, which no screen source spells. Recursion is bounded by the model's
+/// A model as the datum [`read`] reads back to it, a replacement as `:replacement (…)` after
+/// the properties. Refused (`InvalidArgument`) when a node has hints, which no screen source
+/// spells. Recursion is bounded by the model's
 /// own depth bound ([`model::MAX_DEPTH`]), which [`model::validate`] holds a model to.
 pub fn datum(node: &Node) -> Result<Sexpr, Error> {
-    if !node.hint.is_empty() || node.replacement.is_some() {
+    if !node.hint.is_empty() {
         return Err(Error::InvalidArgument {
             name: "model".into(),
-            detail: format!(
-                "a `{}` with hints or a replacement has no s-expression face",
-                node.kind
-            ),
+            detail: format!("a `{}` with hints has no s-expression face", node.kind),
         });
     }
     let mut items = vec![Sexpr::Symbol(node.kind.clone())];
@@ -351,6 +368,10 @@ pub fn datum(node: &Node) -> Result<Sexpr, Error> {
             Value::Bool(b) => Sexpr::Symbol(b.to_string()),
             Value::Text(t) => Sexpr::Str(t.clone()),
         });
+    }
+    if let Some(replacement) = &node.replacement {
+        items.push(Sexpr::Symbol(":replacement".into()));
+        items.push(datum(replacement)?);
     }
     for child in &node.children {
         items.push(datum(child)?);

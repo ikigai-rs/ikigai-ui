@@ -13,8 +13,8 @@
 //! (and the datum) by what was read: an edit to the graph cuts both, and an unchanged graph is
 //! never laid out twice.
 //!
-//! **What a graph is.** `{graph}` is Sourced `as=application/ld+json` (falling back to its own
-//! face when it has only one) and read as JSON-LD node objects (a top-level array, an `@graph`,
+//! **What a graph is.** `{graph}` is Sourced in its own face, and again `as=application/ld+json`
+//! when that face is not JSON (so a refused `as=` never leaves the layout uncacheable), and read as JSON-LD node objects (a top-level array, an `@graph`,
 //! or one object): every object with an `@id` is a node, its first `@type` its type, its
 //! `rdfs:label` (or `label`, `name`, `title`) its label, and every property whose value is
 //! `{"@id": …}` an edge labelled by the property. Bounded by [`MAX_NODES`] and [`MAX_EDGES`].
@@ -58,7 +58,7 @@ pub const MAX_NODES: usize = 512;
 /// The most edges a scene draws.
 pub const MAX_EDGES: usize = 4096;
 /// The layout's fixed seed.
-pub const SEED: u64 = 0x1c1_6a1_3514;
+pub const SEED: u64 = 0x1c_16a1_3514;
 /// The layout's iterations.
 pub const ITERATIONS: usize = 200;
 
@@ -242,7 +242,11 @@ fn round(x: f64) -> f64 {
 pub fn layout(graph: &Graph) -> BTreeMap<String, [f64; 3]> {
     let ids: Vec<&String> = graph.nodes.keys().collect();
     let n = ids.len();
-    let index: BTreeMap<&str, usize> = ids.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
+    let index: BTreeMap<&str, usize> = ids
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.as_str(), i))
+        .collect();
     let mut p: Vec<[f64; 3]> = ids
         .iter()
         .map(|id| {
@@ -302,9 +306,7 @@ pub fn layout(graph: &Graph) -> BTreeMap<String, [f64; 3]> {
         }
         let r = p
             .iter()
-            .map(|q| {
-                ((q[0] - c[0]).powi(2) + (q[1] - c[1]).powi(2) + (q[2] - c[2]).powi(2)).sqrt()
-            })
+            .map(|q| ((q[0] - c[0]).powi(2) + (q[1] - c[1]).powi(2) + (q[2] - c[2]).powi(2)).sqrt())
             .fold(0.0, f64::max)
             .max(1e-9);
         for q in &mut p {
@@ -363,7 +365,9 @@ pub fn validate(scene: &Scene) -> Result<(), Error> {
     let mut ids = std::collections::BTreeSet::new();
     for (i, n) in scene.nodes.iter().enumerate() {
         if n.id.is_empty() || n.label.is_empty() || !finite(&n.position) {
-            return Err(bad(format!("/nodes/{i}: needs an id, a label and a finite position")));
+            return Err(bad(format!(
+                "/nodes/{i}: needs an id, a label and a finite position"
+            )));
         }
         if !ids.insert(n.id.as_str()) {
             return Err(bad(format!("/nodes/{i}: {} twice", n.id)));
@@ -371,12 +375,16 @@ pub fn validate(scene: &Scene) -> Result<(), Error> {
     }
     for (i, e) in scene.edges.iter().enumerate() {
         if e.label.is_empty() || !ids.contains(e.from.as_str()) || !ids.contains(e.to.as_str()) {
-            return Err(bad(format!("/edges/{i}: needs a label and two of the scene's nodes")));
+            return Err(bad(format!(
+                "/edges/{i}: needs a label and two of the scene's nodes"
+            )));
         }
     }
     let c = &scene.camera;
     if !finite(&c.position) || !finite(&c.target) || !(c.fov > 0.0 && c.fov < 180.0) {
-        return Err(bad("/camera: needs finite places and a field of view in (0, 180)".into()));
+        return Err(bad(
+            "/camera: needs finite places and a field of view in (0, 180)".into(),
+        ));
     }
     Ok(())
 }
@@ -389,13 +397,18 @@ fn graph_iri(inv: &Invocation<'_>) -> Result<Iri, Error> {
 /// `{graph}` read under the caller's capability.
 async fn source_graph(inv: &Invocation<'_>) -> Result<(String, Graph), Error> {
     let at = graph_iri(inv)?;
-    let asked =
-        Request::new(Verb::Source, at.clone()).with_arg("as", ArgRef::Inline(JSON_LD.into()));
-    let rep = match inv.issue(asked).await {
-        Err(Error::InvalidArgument { name, .. }) if name == "as" => {
-            inv.issue(Request::new(Verb::Source, at.clone())).await?
-        }
-        r => r?,
+    // Its own face first: a graph that already is JSON(-LD) is read as it is, so no refused
+    // `as=` (a file endpoint serves only its file's type) leaves the layout uncacheable. Any
+    // other face (Turtle, say) is asked for as JSON-LD, through the host's transreptors.
+    let own = inv.issue(Request::new(Verb::Source, at.clone())).await?;
+    let mt = own.repr_type.media_type.as_str();
+    let rep = if mt == JSON_LD || mt == "application/json" || mt.ends_with("+json") {
+        own
+    } else {
+        inv.issue(
+            Request::new(Verb::Source, at.clone()).with_arg("as", ArgRef::Inline(JSON_LD.into())),
+        )
+        .await?
     };
     Ok((at.as_str().to_string(), read_graph(&rep.bytes)?))
 }

@@ -114,9 +114,9 @@ pub mod model;
 pub mod palette;
 pub mod reference;
 pub mod region;
+pub mod scene;
 pub mod screen;
 pub mod setting;
-pub mod scene;
 pub mod sexpr;
 pub mod target;
 #[cfg(feature = "testkit")]
@@ -675,7 +675,11 @@ pub fn space() -> EndpointSpace {
         )
         .bind(
             Exact::new(scene::EXAMPLE_GRAPH),
-            scene::fixed_endpoint("ui-example-graph", "application/ld+json", scene::EXAMPLE_GRAPH_JSON_LD),
+            scene::fixed_endpoint(
+                "ui-example-graph",
+                "application/ld+json",
+                scene::EXAMPLE_GRAPH_JSON_LD,
+            ),
         )
         .bind(
             template("urn:iki:ui:html:screen:{screen}:node:{node}:property:{property}"),

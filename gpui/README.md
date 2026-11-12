@@ -75,6 +75,29 @@ native acknowledgment; response HTML is never rendered. HTTP(S) and mail links
 open in the system handler. Demo `/page/gallery` and `/page/contact` links load
 native screens; other relative routes report that no native route exists.
 
+## The 3D scene: phase 2 (research, not shipped)
+
+Phase 1 of ledger #3514 ships the `scene` kind on the html face only. This face's descriptor
+falls `scene` back to text, so the ladder shows the scene's replacement (the same graph as
+text, a list here since `table` falls back to `list`), else its label. Two ways to draw it
+natively later, to spike before choosing:
+
+- **Offscreen `wgpu` into an image.** Render the scene datum with `wgpu` (the same fixed
+  WGSL as `urn:iki:ui:scene-renderer.js`, so both faces draw one scene) into an offscreen
+  texture, read it back, and show it as an `img` element GPUI can paint. GPUI 0.2 exposes no
+  surface for a foreign GPU context, so this is the only native route today. Costs: a second
+  GPU device beside GPUI's own (Metal on macOS), a GPU-to-CPU readback per frame while the
+  viewer orbits (fine at the gallery's size, to measure at `MAX_NODES` 512), `wgpu` in the
+  dependency tree, and keyboard orbit/select and the status announcement rebuilt on GPUI
+  focus. Selection and focus stay in GPUI; the image is only pixels, so the replacement must
+  still be reachable beside it.
+- **Take the replacement.** What phase 1 does: no GPU code, every node and edge as text, and
+  the accessible form is the only form. Costs nothing and loses the picture.
+
+Recommendation: keep the replacement until GPUI offers a surface (or a custom element whose
+paint callback can sample an external texture); spike the offscreen route behind a feature
+flag first, measuring readback time at 512 nodes, before any shipping code.
+
 ## Verification
 
 ```sh

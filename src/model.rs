@@ -382,7 +382,10 @@ pub fn validate(root: &Node) -> Result<(), Error> {
         // A scene is a picture a face may not draw (no GPU, no script, no 3D): its
         // `replacement` is its accessible form, so it is required, not optional.
         if k.name == "scene" && node.replacement.is_none() {
-            return Err(refuse(&path, "a scene needs a `replacement`, its accessible form".into()));
+            return Err(refuse(
+                &path,
+                "a scene needs a `replacement`, its accessible form".into(),
+            ));
         }
         if k.name == crate::region::KIND {
             crate::region::validate(node).map_err(|detail| refuse(&path, detail))?;
