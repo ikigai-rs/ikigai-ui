@@ -1,0 +1,11 @@
+{
+  "name": "ikigai-ui-voiceover-spike",
+  "private": true,
+  "description": "Spike (ledger #3545): can CI hear a button's name and role through real VoiceOver? Throwaway branch.",
+  "type": "module",
+  "dependencies": {
+    "@guidepup/guidepup": "0.40.0",
+    "@guidepup/playwright": "0.21.0",
+    "@playwright/test": "1.64.0"
+  }
+}

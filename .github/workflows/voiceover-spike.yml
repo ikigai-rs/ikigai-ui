@@ -1,0 +1,53 @@
+# Spike (ledger #3545), throwaway branch: can CI hear a button's name and role through real
+# VoiceOver on a GitHub-hosted macOS runner? 20 runs, no retries, to measure flakiness.
+name: voiceover spike
+on:
+  push:
+    branches: [spike/voiceover-proof]
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --example axe_site -- target/axe-site
+      - uses: actions/upload-artifact@v4
+        with:
+          name: axe-site
+          path: target/axe-site
+  voiceover:
+    needs: site
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: axe-site
+          path: target/axe-site
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Allow VoiceOver to be driven (Guidepup's setup, exact version)
+        run: npx --yes @guidepup/setup@0.29.3 setup --ci
+      - name: Install the spike's packages (exact pins)
+        working-directory: spike/voiceover
+        run: npm install --no-save --no-audit --no-fund
+      - name: Install WebKit
+        working-directory: spike/voiceover
+        run: npx playwright install webkit
+      - name: VoiceOver check
+        working-directory: spike/voiceover
+        env:
+          SITE: ${{ github.workspace }}/target/axe-site
+        run: npx playwright test
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voiceover-run-${{ matrix.run }}
+          path: spike/voiceover/results
