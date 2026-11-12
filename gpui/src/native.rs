@@ -85,6 +85,24 @@ fn dark(appearance: WindowAppearance) -> bool {
     )
 }
 
+/// A `scene` drawn natively (ledger #3516): its datum (read on the worker), the window's camera
+/// and selection, and the last frame painted (off the UI thread, by [`crate::scene::Painter`]).
+#[cfg(feature = "scene")]
+struct SceneState {
+    loading: Option<Pending<ikigai_ui::scene::Scene>>,
+    scene: Option<std::sync::Arc<ikigai_ui::scene::Scene>>,
+    view: crate::scene::View,
+    frame: Option<std::sync::Arc<gpui::RenderImage>>,
+    painting: Option<Pending<Vec<u8>>>,
+    /// The view or colors changed while a frame was painting: paint again when it lands.
+    stale: bool,
+    error: Option<String>,
+}
+
+/// The size of a scene's frame, in pixels (the html face's canvas is 16:9 too).
+#[cfg(feature = "scene")]
+pub const SCENE_FRAME: (u32, u32) = (640, 360);
+
 struct FormState {
     feedback: Feedback,
     pending: Option<Pending<()>>,
@@ -120,6 +138,12 @@ pub struct Screen {
     /// Palettes already read through the kernel, by name.
     palettes: BTreeMap<String, Tokens>,
     palette_loading: Option<(String, Pending<Tokens>)>,
+    /// Each natively drawn scene, by node path.
+    #[cfg(feature = "scene")]
+    scenes: BTreeMap<String, SceneState>,
+    /// The painting thread, started by the first scene.
+    #[cfg(feature = "scene")]
+    painter: Option<crate::scene::Painter>,
     _appearance: Subscription,
 }
 
@@ -179,6 +203,10 @@ impl Screen {
             colors,
             palettes: BTreeMap::new(),
             palette_loading,
+            #[cfg(feature = "scene")]
+            scenes: BTreeMap::new(),
+            #[cfg(feature = "scene")]
+            painter: None,
             _appearance: appearance,
         }
     }
@@ -224,6 +252,10 @@ impl Screen {
                 input.colors = colors;
                 cx.notify();
             });
+        }
+        #[cfg(feature = "scene")]
+        for path in self.scenes.keys().cloned().collect::<Vec<_>>() {
+            self.paint(&path);
         }
         cx.notify();
     }
@@ -284,6 +316,8 @@ impl Screen {
                     self.focus.clear();
                     self.tab_order.clear();
                     self.open.clear();
+                    #[cfg(feature = "scene")]
+                    self.scenes.clear();
                     self.install(snapshot.root(), "/", cx);
                     self.snapshot = Some(snapshot);
                     self.message.clear();
@@ -301,9 +335,107 @@ impl Screen {
                 changed = true;
             }
         }
+        #[cfg(feature = "scene")]
+        {
+            changed |= self.poll_scenes();
+        }
         if changed {
             cx.notify();
         }
+    }
+
+    /// Land read datums and painted frames; paint again what went stale meanwhile.
+    #[cfg(feature = "scene")]
+    fn poll_scenes(&mut self) -> bool {
+        let mut changed = false;
+        for path in self.scenes.keys().cloned().collect::<Vec<_>>() {
+            let state = self.scenes.get_mut(&path).expect("listed above");
+            if let Some(result) = state.loading.as_ref().and_then(Pending::poll) {
+                state.loading = None;
+                changed = true;
+                match result {
+                    Ok(scene) => {
+                        state.view = crate::scene::View::new(&scene);
+                        state.scene = Some(std::sync::Arc::new(scene));
+                        self.paint(&path);
+                    }
+                    Err(error) => state.error = Some(error.to_string()),
+                }
+            }
+            let state = self.scenes.get_mut(&path).expect("listed above");
+            if let Some(result) = state.painting.as_ref().and_then(Pending::poll) {
+                state.painting = None;
+                changed = true;
+                match result.and_then(|bgra| frame_image(bgra, SCENE_FRAME)) {
+                    Ok(image) => {
+                        state.frame = Some(image);
+                        state.error = None;
+                    }
+                    Err(error) => state.error = Some(error.to_string()),
+                }
+                if std::mem::take(&mut state.stale) {
+                    self.paint(&path);
+                }
+            }
+        }
+        changed
+    }
+
+    /// Ask the painter for a frame of the scene at `path`, or mark it stale if one is painting.
+    #[cfg(feature = "scene")]
+    fn paint(&mut self, path: &str) {
+        let colors = crate::scene::SceneColors::from_tokens(&self.palette);
+        let painter = self.painter.get_or_insert_with(crate::scene::Painter::new);
+        let Some(state) = self.scenes.get_mut(path) else {
+            return;
+        };
+        let Some(scene) = state.scene.clone() else {
+            return;
+        };
+        if state.painting.is_some() {
+            state.stale = true;
+            return;
+        }
+        let (width, height) = SCENE_FRAME;
+        state.painting = Some(painter.paint(scene, state.view, colors, width, height));
+    }
+
+    /// A key on a focused scene: the html renderer's keys. The selection is announced in the
+    /// window's status line, as the html face says it in `#status`.
+    #[cfg(feature = "scene")]
+    fn scene_key(
+        &mut self,
+        path: &str,
+        keystroke: &gpui::Keystroke,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(state) = self.scenes.get_mut(path) else {
+            return false;
+        };
+        let Some(scene) = state.scene.clone() else {
+            return false;
+        };
+        let key = keystroke.key.to_ascii_lowercase();
+        let shift = keystroke.modifiers.shift;
+        let key = match (key.as_str(), keystroke.key_char.as_deref()) {
+            (_, Some("+")) => "+",
+            (k, _) => k,
+        };
+        if !state.view.key(key, shift, scene.nodes.len()) {
+            return false;
+        }
+        if ["n", "escape"].contains(&key) {
+            self.message = crate::scene::announce(&scene, state.view.selected);
+        }
+        self.paint(path);
+        cx.notify();
+        true
+    }
+
+    /// The announced status line: what the window says now (loading, errors, a scene's
+    /// selection).
+    pub fn status(&self) -> &str {
+        &self.message
     }
 
     fn install(&mut self, node: &Node, path: &str, cx: &mut Context<Self>) {
@@ -350,13 +482,36 @@ impl Screen {
             }
             _ => {}
         }
-        if ["button", "link", "option", DISCLOSURE].contains(&node.kind.as_str()) {
+        #[cfg(feature = "scene")]
+        if node.kind == "scene" {
+            let datum = text(node, "datum").unwrap_or_default();
+            let state = SceneState {
+                loading: Some(self.worker.scene(datum)),
+                scene: None,
+                view: crate::scene::View {
+                    yaw: 0.6,
+                    pitch: 0.3,
+                    distance: 3.0,
+                    selected: None,
+                },
+                frame: None,
+                painting: None,
+                stale: false,
+                error: None,
+            };
+            self.scenes.insert(path.into(), state);
+        }
+        if ["button", "link", "option", "scene", DISCLOSURE].contains(&node.kind.as_str()) {
             let focus = cx.focus_handle();
             self.tab_order.push((path.into(), focus.clone()));
             self.focus.insert(path.into(), focus);
         }
         for (index, child) in node.children.iter().enumerate() {
             self.install(child, &format!("{path}/{index}"), cx);
+        }
+        // A scene's replacement (its accessible form) is drawn beside the image.
+        if let Some(replacement) = node.replacement.as_deref() {
+            self.install(replacement, &format!("{path}/replacement"), cx);
         }
     }
 
@@ -639,6 +794,53 @@ impl Screen {
                     .into_any_element();
             }
             "option" => return body.child(label()).into_any_element(),
+            #[cfg(feature = "scene")]
+            "scene" => {
+                // The image is only pixels: it takes focus and the keys, and the replacement
+                // (the graph as text) is drawn beside it, always.
+                let focus = self.focus[path].clone();
+                let state = &self.scenes[path];
+                let (width, height) = SCENE_FRAME;
+                let picture = match (&state.frame, &state.error) {
+                    (Some(frame), _) => gpui::img(gpui::ImageSource::Render(frame.clone()))
+                        .w(px(width as f32))
+                        .h(px(height as f32))
+                        .into_any_element(),
+                    (None, Some(error)) => div().child(error.clone()).into_any_element(),
+                    (None, None) => div()
+                        .w(px(width as f32))
+                        .h(px(height as f32))
+                        .bg(colors.bg)
+                        .child("Drawing the scene…")
+                        .into_any_element(),
+                };
+                let key_path = path.to_string();
+                let click_focus = focus.clone();
+                let canvas = ring(
+                    picture,
+                    &focus,
+                    gpui::SharedString::from(format!("{path}:canvas")),
+                    colors,
+                )
+                .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
+                    if this.scene_key(&key_path, &event.keystroke, cx) {
+                        cx.stop_propagation();
+                    }
+                }))
+                .on_click(move |_, window, _| window.focus(&click_focus));
+                body = body.child(label()).child(canvas).child(
+                    "Arrows orbit, + and - zoom, N and Shift+N select a node, Escape clears.",
+                );
+                if let Some(replacement) = node.replacement.as_deref() {
+                    body = body.child(self.walk(
+                        replacement,
+                        &format!("{path}/replacement"),
+                        form,
+                        cx,
+                    ));
+                }
+                return body.into_any_element();
+            }
             DISCLOSURE => {
                 // A button that holds its expanded state (`open`, the window's) and shows or
                 // hides its body: the summary line, then the body text and children when open.
@@ -751,6 +953,19 @@ impl Screen {
         }
         body.into_any_element()
     }
+}
+
+/// A painted frame as GPUI's image: BGRA already, as [`gpui::RenderImage`] keeps its pixels.
+#[cfg(feature = "scene")]
+fn frame_image(
+    bgra: Vec<u8>,
+    (width, height): (u32, u32),
+) -> Result<std::sync::Arc<gpui::RenderImage>, ikigai_core::Error> {
+    let buffer = image::RgbaImage::from_raw(width, height, bgra)
+        .ok_or_else(|| ikigai_core::Error::Endpoint("a frame of the wrong size".into()))?;
+    Ok(std::sync::Arc::new(gpui::RenderImage::new(vec![
+        image::Frame::new(buffer),
+    ])))
 }
 
 impl Render for Screen {
@@ -1364,6 +1579,85 @@ mod tests {
         cx.simulate_keystrokes("tab");
         cx.update(|window, cx| assert!(input.focus_handle(cx).is_focused(window)));
         cx.update(|_, cx| assert!(screen.read(cx).forms[&form_path].feedback.fields.is_empty()));
+    }
+
+    /// Ledger #3516: with the `scene` feature, the gallery's scene is painted off the UI thread
+    /// as an image, takes focus, and N / Shift+N / Escape change the announced status. Its
+    /// replacement (the graph as text) is installed beside it.
+    #[cfg(feature = "scene")]
+    #[gpui::test]
+    fn a_scene_takes_focus_and_its_selection_is_announced(cx: &mut TestAppContext) {
+        let worker = demo_worker(None);
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "gallery", Theme::Light, window, cx));
+        settle(&screen, cx);
+        let path = screen.update(cx, |s, _| {
+            assert_eq!(s.scenes.len(), 1, "{}", s.message);
+            s.scenes.keys().next().unwrap().clone()
+        });
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let (done, error) = screen.update(cx, |s, cx| {
+                s.poll(cx);
+                let state = &s.scenes[&path];
+                (state.frame.is_some(), state.error.clone())
+            });
+            if let Some(error) = error {
+                eprintln!("SKIPPED painting: {error}");
+                return;
+            }
+            if done {
+                break;
+            }
+            assert!(Instant::now() < deadline, "no frame painted");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        cx.run_until_parked(); // Draw the image and the replacement beside it.
+        let (focus, scene) = screen.update(cx, |s, _| {
+            fn at<'a>(node: &'a Node, path: &str) -> &'a Node {
+                path.split('/')
+                    .filter(|p| !p.is_empty())
+                    .fold(node, |n, i| &n.children[i.parse::<usize>().unwrap()])
+            }
+            let node = at(s.snapshot.as_ref().unwrap().root(), &path);
+            assert_eq!(node.kind, "scene");
+            assert!(node.replacement.is_some(), "drawn beside the image");
+            (
+                s.focus[&path].clone(),
+                s.scenes[&path].scene.clone().unwrap(),
+            )
+        });
+        cx.update(|window, _| window.focus(&focus));
+        cx.simulate_keystrokes("n");
+        screen.update(cx, |s, _| {
+            assert_eq!(s.scenes[&path].view.selected, Some(0));
+            assert_eq!(s.status(), crate::scene::announce(&scene, Some(0)));
+            assert!(s.status().starts_with("Selected "), "{}", s.status());
+        });
+        cx.simulate_keystrokes("n shift-n shift-n");
+        screen.update(cx, |s, _| {
+            let last = scene.nodes.len() - 1;
+            assert_eq!(s.scenes[&path].view.selected, Some(last));
+            assert_eq!(s.status(), crate::scene::announce(&scene, Some(last)));
+        });
+        cx.simulate_keystrokes("left");
+        screen.update(cx, |s, _| {
+            assert!((s.scenes[&path].view.yaw - 0.5).abs() < 1e-6)
+        });
+        cx.simulate_keystrokes("escape");
+        screen.update(cx, |s, _| {
+            assert_eq!(s.scenes[&path].view.selected, None);
+            assert_eq!(s.status(), "No node selected.");
+        });
+        // Each key asked for a new frame, painted off this thread; the last one lands.
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while screen.update(cx, |s, cx| {
+            s.poll(cx);
+            s.scenes[&path].painting.is_some()
+        }) {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
 
     /// The heading a snapshot opens with, to tell screens apart.

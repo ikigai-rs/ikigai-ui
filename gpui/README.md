@@ -96,9 +96,16 @@ by default) adds the offscreen route, `ikigai_ui_gpui::scene`: the datum is rend
   `MAX_NODES` (512 nodes, 1536 edges), worst of 60 under 10.2 ms. The cost is the readback's
   round trip, not the graph. Under a 60 Hz frame (16.7 ms), so orbiting can be smooth.
 
-Not yet done: the walker drawing `scene` from the image (the descriptor claiming `scene` with
-the feature on, focus and key handling in the window, the status announcement, the
-replacement beside the image). Until then the replacement is the scene on this face.
+**Drawn natively with the feature on** (step 2): the descriptor (`assets/gpui-scene.json`)
+claims `scene`, and `Snapshot::from_face` keeps a scene's replacement (validated as the rest
+of the tree) instead of refusing the node. The worker reads the node's datum (a
+`urn:iki:ui:scene:graph:` IRI only) under the host's capability; `scene::Painter` renders each
+frame (640x360) on its own OS thread, never the UI thread, and the window paints it with
+`img(Arc<RenderImage>)`. Keys asked while a frame is painting coalesce into one more frame. The
+scene takes GPUI focus (Tab reaches it; a click focuses it) and handles the html renderer's keys
+through `View::key`; N / Shift+N / Escape put `announce`'s sentence in the window's status line,
+as the html face says it in `#status`. The replacement (the graph as text) is always drawn
+beside the image. With the feature off, nothing changes: `scene` is its replacement.
 
 ## Verification
 

@@ -459,3 +459,81 @@ impl Renderer {
         out
     }
 }
+
+/// One frame asked of the [`Painter`].
+struct Job {
+    scene: std::sync::Arc<Scene>,
+    view: View,
+    colors: SceneColors,
+    width: u32,
+    height: u32,
+    reply: std::sync::mpsc::Sender<Result<Vec<u8>, ikigai_core::Error>>,
+}
+
+/// The renderer on its own OS thread, so a frame (about 10 ms, nearly all readback) never runs
+/// on the UI thread. The device is made there on the first job; its vertex buffers are kept for
+/// the last datum drawn, so orbiting re-prepares nothing.
+pub struct Painter {
+    jobs: std::sync::mpsc::Sender<Job>,
+}
+
+impl Default for Painter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Painter {
+    /// Start the painting thread (no GPU work until the first frame).
+    pub fn new() -> Self {
+        let (jobs, receiver) = std::sync::mpsc::channel::<Job>();
+        std::thread::spawn(move || {
+            let mut renderer: Option<Result<Renderer, String>> = None;
+            let mut prepared: Option<(std::sync::Arc<Scene>, Prepared)> = None;
+            while let Ok(job) = receiver.recv() {
+                let renderer = renderer.get_or_insert_with(Renderer::new);
+                let result = match renderer {
+                    Err(e) => Err(ikigai_core::Error::Endpoint(e.clone())),
+                    Ok(r) => {
+                        if !prepared
+                            .as_ref()
+                            .is_some_and(|(s, _)| std::sync::Arc::ptr_eq(s, &job.scene))
+                        {
+                            prepared = Some((job.scene.clone(), r.prepare(&job.scene)));
+                        }
+                        let (_, p) = prepared.as_ref().expect("prepared above");
+                        Ok(r.frame(&job.scene, p, &job.view, &job.colors, job.width, job.height))
+                    }
+                };
+                let _ = job.reply.send(result);
+            }
+        });
+        Self { jobs }
+    }
+
+    /// A frame of `scene` at `view`, BGRA rows top first, painted off this thread.
+    pub fn paint(
+        &self,
+        scene: std::sync::Arc<Scene>,
+        view: View,
+        colors: SceneColors,
+        width: u32,
+        height: u32,
+    ) -> crate::worker::Pending<Vec<u8>> {
+        let (reply, receiver) = std::sync::mpsc::channel();
+        let job = Job {
+            scene,
+            view,
+            colors,
+            width,
+            height,
+            reply,
+        };
+        if let Err(std::sync::mpsc::SendError(job)) = self.jobs.send(job) {
+            let _ = job.reply.send(Err(ikigai_core::Error::Endpoint(
+                "scene painter stopped".into(),
+            )));
+        }
+        crate::worker::Pending::from_receiver(receiver)
+    }
+}

@@ -15,6 +15,12 @@ use crate::{text, theme::Tokens, Snapshot};
 /// Nonblocking result of resource work. Poll it from the UI's timer/task.
 pub struct Pending<T>(Receiver<Result<T, Error>>);
 impl<T> Pending<T> {
+    /// A result some other OS thread sends (the scene's painter, ledger #3516).
+    #[cfg(feature = "scene")]
+    pub(crate) fn from_receiver(receiver: Receiver<Result<T, Error>>) -> Self {
+        Self(receiver)
+    }
+
     /// `None` means still working. Never waits for a resource.
     pub fn poll(&self) -> Option<Result<T, Error>> {
         match self.0.try_recv() {
@@ -109,6 +115,38 @@ impl Worker {
                 detail: e.to_string(),
             })?;
             Tokens::parse(&name, text)
+        })
+    }
+
+    /// Read a `scene` node's datum (ledger #3516), `urn:iki:ui:scene:graph:{graph}`, under the
+    /// host's capability, and validate it. Only a scene datum is read: a node cannot make the
+    /// window fetch an arbitrary resource.
+    pub fn scene(&self, datum: &str) -> Pending<ikigai_ui::scene::Scene> {
+        let this = self.clone();
+        let datum = datum.to_string();
+        spawn(move || {
+            if !datum.starts_with(ikigai_ui::scene::SCENE_PREFIX) {
+                return Err(Error::InvalidArgument {
+                    name: "datum".into(),
+                    detail: format!("expected a {}… scene datum", ikigai_ui::scene::SCENE_PREFIX),
+                });
+            }
+            let iri = Iri::parse(datum).map_err(|e| Error::InvalidArgument {
+                name: "datum".into(),
+                detail: e.to_string(),
+            })?;
+            let rep = futures::executor::block_on(this.kernel.issue_in(
+                Request::new(Verb::Source, iri),
+                &this.capability,
+                this.scope,
+            ))?;
+            let scene: ikigai_ui::scene::Scene =
+                serde_json::from_slice(&rep.bytes).map_err(|e| Error::InvalidArgument {
+                    name: "datum".into(),
+                    detail: e.to_string(),
+                })?;
+            ikigai_ui::scene::validate(&scene)?;
+            Ok(scene)
         })
     }
 
