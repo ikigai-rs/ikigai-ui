@@ -12,6 +12,7 @@
 //! | `urn:iki:uidemo:example:rating` | data | a rating element node, which `write` references as `demo:example:rating` |
 //! | `urn:iki:uidemo:page:{name}` | composition | the shell over a fragment ([`ikigai_ui::Pages`]): `gallery`, `elements`, `contact`, `support` |
 //! | `urn:iki:uidemo:fragment:{name}` | composition | the page's body: a note and the screen it shows |
+//! | `urn:iki:uidemo:page:lens:{lens}:resource:{iri}` | composition | a lensed view of `{iri}` in the shell ([`ikigai_ui::Pages::lenses`]); the door's `/lens/name/{lens}/resource/{iri}` |
 //!
 //! The contact form is not written by hand: it is the `form` node ikigai-ui generates from the
 //! contact resource's own contract (the same model its OpenAPI description is projected from),
@@ -509,6 +510,7 @@ pub async fn prefixes(kernel: &Kernel) -> Result<ikigai_core::Scope, ikigai_core
 /// and last ikigai-ui's screens, each compiled from its source.
 pub fn root(store: Store) -> Arc<dyn Space> {
     let family = ikigai_ui::Pages::new("uidemo", BASE)
+        .lenses(true)
         .build()
         .expect("a valid family");
     Arc::new(Fallback::new(vec![
@@ -542,7 +544,8 @@ fn route(pattern: &str, iri_template: &str) -> Route {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-/// The door's routes: `/` and `/page/{name}` to the pages, `/ui/{…}` to ikigai-ui's
+/// The door's routes: `/` and `/page/{name}` to the pages, `/lens/name/{lens}/resource/{+iri}`
+/// to a lensed view's page ([`ikigai_ui::lens::html_href`]), `/ui/{…}` to ikigai-ui's
 /// artifacts (where the shell links them), and the html target's submit rule
 /// (`/resolution/iri/{+iri}`, [`ikigai_ui::target::SUBMIT`]).
 pub fn door() -> EdgeConfig {
@@ -550,6 +553,11 @@ pub fn door() -> EdgeConfig {
         routes: RouteTable::new(vec![
             route("/", &format!("{BASE}page:gallery")),
             route("/page/{name}", &format!("{BASE}page:{{name}}")),
+            // A lensed view as a page in the shell (ledger #3538), the IRI one segment.
+            route(
+                "/lens/name/{lens}/resource/{+iri}",
+                &format!("{BASE}page:lens:{{lens}}:resource:{{+iri}}"),
+            ),
             route("/ui/{+rest}", "urn:iki:ui:{+rest}"),
             route("/resolution/iri/{+iri}", "{+iri}"),
         ]),

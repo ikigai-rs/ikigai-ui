@@ -96,6 +96,17 @@ fn conforms() {
                 .binding("theme", "dark"),
         )
         .fixture(Fixture::new("ui-page-demo", Verb::Source).binding("name", "home"))
+        // A lensed view as a page in the shell (ledger #3538), and its title.
+        .fixture(
+            Fixture::new("ui-page-lens-demo", Verb::Source)
+                .binding("lens", "contact-list")
+                .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),
+        )
+        .fixture(
+            Fixture::new("ui-lens-title", Verb::Source)
+                .binding("lens", "contact-list")
+                .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),
+        )
         .fixture(Fixture::new("demo-title", Verb::Source).binding("name", "home"))
         .fixture(Fixture::new("demo-fragment", Verb::Source).binding("name", "home"))
         .fixture(Fixture::new("ui-kind-name", Verb::Source).binding("kind", "heading"))

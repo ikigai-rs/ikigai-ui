@@ -168,3 +168,62 @@ async fn the_door_serves_the_gallery_and_a_working_contact_form() {
     assert!(face.contains("Latest message from Ada Lovelace"), "{face}");
     assert!(!face.contains("withheld"), "{face}");
 }
+
+/// A lensed view opens through the door as a full page in the shell (ledger #3538): at the
+/// path its resource's view's "Lenses" form names, with the theme, the status region and the
+/// scene renderer, so the graph lens's canvas draws; its own form's lens= and facets pick
+/// another; and the fragment route still answers for an htmx swap.
+#[tokio::test(flavor = "current_thread")]
+async fn the_door_serves_a_lensed_view_as_a_page() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(ikigai_ui_demo::serve(listener, Store::default()));
+    let graph = ikigai_ui::scene::EXAMPLE_GRAPH;
+
+    // Where the resource's view's "Lenses" form opens it (tests/lens.rs checks the form).
+    let href = ikigai_ui::lens::html_href("contact-graph", graph, &Default::default());
+    assert_eq!(
+        href,
+        "/lens/name/contact-graph/resource/urn%3Aiki%3Aui%3Aexample%3Agraph%3Acontact"
+    );
+
+    let page = call(addr, "GET", &format!("{href}?theme=dark"), "").await;
+    assert!(page.starts_with("HTTP/1.1 200"), "{page}");
+    for shell in [
+        "data-theme=\"dark\"",
+        "<title>",
+        "href=\"/ui/tokens.css\"",
+        "src=\"/ui/shell.js\"",
+        "src=\"/ui/scene-renderer.js\"",
+        "<div id=\"status\" role=\"status\"",
+        "<main id=\"main\"",
+        "<a href=\"/page/gallery\">Gallery</a>",
+        "<canvas",
+    ] {
+        assert!(page.contains(shell), "{shell} not in {page}");
+    }
+    // Unencoded, as a person types it, the same page.
+    let typed = call(
+        addr,
+        "GET",
+        &format!("/lens/name/contact-graph/resource/{graph}"),
+        "",
+    )
+    .await;
+    assert!(typed.starts_with("HTTP/1.1 200"), "{typed}");
+    assert!(typed.contains("src=\"/ui/scene-renderer.js\""), "{typed}");
+    // The view's form submits to the page it is on.
+    let list = call(addr, "GET", &format!("{href}?lens=contact-list"), "").await;
+    assert!(list.starts_with("HTTP/1.1 200"), "{list}");
+    assert!(list.contains("type=\"checkbox\""), "{list}");
+    // The fragment, for htmx: no shell.
+    let fragment = call(
+        addr,
+        "GET",
+        &ikigai_ui::lens::fragment_href("contact-graph", graph, &Default::default()),
+        "",
+    )
+    .await;
+    assert!(fragment.starts_with("HTTP/1.1 200"), "{fragment}");
+    assert!(!fragment.contains("<main"), "{fragment}");
+}

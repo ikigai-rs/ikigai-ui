@@ -459,8 +459,11 @@ fn a_resource_with_lenses_offers_them_and_one_without_does_not() {
         .into_iter()
         .find(|f| text(&f.properties["label"]) == "Lenses")
         .unwrap();
-    assert!(text(&form.properties["action"])
-        .starts_with("/ui/html:screen:lens:contact-graph:resource:"));
+    // It opens the lens as a page in the shell (ledger #3538), the IRI one segment.
+    assert_eq!(
+        text(&form.properties["action"]),
+        "/lens/name/contact-graph/resource/urn%3Aiki%3Aui%3Aexample%3Agraph%3Acontact"
+    );
     // A resource that declares no lenses is offered none.
     let other = resource_view(&host, "urn:iki:ui:example:graph:contact:email");
     assert!(
@@ -632,4 +635,106 @@ fn a_face_that_does_not_claim_the_hint_keeps_the_select() {
     );
     assert!(radios(&page, "lens").is_empty(), "{page}");
     assert!(!page.contains("<fieldset"), "{page}");
+}
+
+fn page(
+    kernel: &ikigai_core::Kernel,
+    iri: &str,
+    args: &[(&str, &str)],
+) -> Result<String, ikigai_core::Error> {
+    let mut req = Request::new(Verb::Source, Iri::parse(iri).unwrap());
+    for (k, v) in args {
+        req = req.with_arg(*k, ikigai_core::ArgRef::Inline(v.as_bytes().to_vec()));
+    }
+    let r = block_on(kernel.issue(req, &Capability::root()))?;
+    Ok(String::from_utf8(r.bytes).unwrap())
+}
+
+/// A lensed view is a full page in the shell (ledger #3538): title, theme chooser, status
+/// region, tokens.css, shell.js and scene-renderer.js, so the graph lens's canvas draws.
+#[test]
+fn a_lensed_view_is_a_page_in_the_shell() {
+    let host = common::host(None);
+    // As the door gives it: the IRI percent-encoded as one segment.
+    let encoded = ikigai_ui::lens::html_href("contact-graph", EXAMPLE_GRAPH, &Default::default());
+    let rest = encoded
+        .strip_prefix("/lens/name/contact-graph/resource/")
+        .unwrap();
+    let iri = format!("urn:demo:page:lens:contact-graph:resource:{rest}");
+    let p = page(&host, &iri, &[("theme", "dark")]).unwrap();
+    for shell in [
+        "<!doctype html>",
+        "data-theme=\"dark\"",
+        "<link rel=\"stylesheet\" href=\"/ui/tokens.css\">",
+        "<script src=\"/ui/shell.js\"></script>",
+        "<script src=\"/ui/scene-renderer.js\" defer></script>",
+        "<header>",
+        "<div id=\"status\" role=\"status\" aria-live=\"polite\"></div>",
+        "<main id=\"main\" tabindex=\"-1\">",
+        "name=\"theme\"",
+    ] {
+        assert!(p.contains(shell), "{shell} not in {p}");
+    }
+    let title = p
+        .split("<title>")
+        .nth(1)
+        .unwrap()
+        .split("</title>")
+        .next()
+        .unwrap();
+    assert!(title.ends_with(&format!(": {EXAMPLE_GRAPH}")), "{title}");
+    assert!(
+        !title.starts_with("contact-graph"),
+        "the legend, not the name: {title}"
+    );
+    // The lensed view itself, its scene among it.
+    let main = p
+        .split("<main id=\"main\" tabindex=\"-1\">")
+        .nth(1)
+        .unwrap();
+    assert!(main.contains("<canvas"), "{main}");
+    assert!(main.contains("name=\"lens\""), "{main}");
+    // Unencoded, the same page.
+    let plain = page(
+        &host,
+        &format!("urn:demo:page:lens:contact-graph:resource:{EXAMPLE_GRAPH}"),
+        &[("theme", "dark")],
+    )
+    .unwrap();
+    assert_eq!(plain, p);
+    // The view's own form (no action) submits to the page: lens= and facets pick another.
+    let list = page(
+        &host,
+        &iri,
+        &[("lens", "contact-list"), ("type", ENUMERATION)],
+    )
+    .unwrap();
+    assert!(list.contains("<main id=\"main\""), "{list}");
+    assert!(list.contains(" checked"), "{list}");
+    assert!(list.contains("Showing only"), "{list}");
+    // A resource that is no single IRI, or a lens that is no name, is refused.
+    for bad in [
+        "urn:demo:page:lens:contact-graph:resource:urn%3Ax%3Fy",
+        "urn:demo:page:lens:contact-graph:resource:urn%3Ax%23y",
+        "urn:demo:page:lens:contact-graph:resource:not%20an%20iri",
+    ] {
+        assert!(
+            matches!(
+                page(&host, bad, &[]),
+                Err(ikigai_core::Error::InvalidArgument { .. })
+            ),
+            "{bad}"
+        );
+    }
+    // A family that did not turn lenses on serves no lensed page.
+    let plain_family = ikigai_core::Kernel::new(Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(ikigai_ui::space()),
+        Arc::new(ikigai_ui::Pages::new("x", "urn:x:").build().unwrap()),
+    ])));
+    assert!(page(
+        &plain_family,
+        &format!("urn:x:page:lens:graph:resource:{EXAMPLE_GRAPH}"),
+        &[]
+    )
+    .is_err());
 }
