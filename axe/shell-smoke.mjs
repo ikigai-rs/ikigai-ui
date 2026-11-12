@@ -94,16 +94,55 @@ await check("a refusal is shown as text after the control that asked", async (pa
     return "a link to the replaced note is left";
 });
 
-await check("a 403 disables the control, and markup in a refusal is text", async (page) => {
+// A 403 marks its control aria-disabled and nothing more (ledger #3547): `disabled` would take
+// a button out of the tab order, so a keyboard or screen-reader user could no longer reach it or
+// hear why it is unavailable. It stays focusable, announces as unavailable, its description is
+// the refusal, and the shell blocks its activation: a click, Enter, Space or a form submit it
+// would make sends nothing.
+await check("a 403 leaves its control focusable, aria-disabled, and inert; markup in a refusal is text", async (page) => {
   await page.goto(home);
-  await add(page, '<button id="deny" hx-get="/_status/403" hx-target="#detail">Deny <b>it</b></button>');
+  await add(
+    page,
+    '<form id="deny-form" action="/_status/200" method="get"><button id="before" type="button">Before</button>' +
+      '<button id="deny" hx-get="/_status/403" hx-target="#detail">Deny <b>it</b></button></form>',
+  );
   await page.click("#deny");
   await page.locator("#deny + p.ui-note").waitFor();
-  if (!(await page.locator("#deny").isDisabled())) return "the button is still enabled";
+  if (await page.locator("#deny").isDisabled()) return "the button is disabled, so out of the tab order";
   if ((await page.getAttribute("#deny", "aria-disabled")) !== "true") return "no aria-disabled";
   const note = await page.textContent("#deny + p.ui-note");
   if (!note.includes("urn:cap:example:403")) return `the note says ${JSON.stringify(note)}`;
-  return oneRegion(page, "#deny + p.ui-note", "#deny", "Deny it: refused: needs urn:cap:example:403");
+  const region = await oneRegion(page, "#deny + p.ui-note", "#deny", "Deny it: refused: needs urn:cap:example:403");
+  if (region) return region;
+  // Its accessible description is the refusal.
+  const described = await page.evaluate(() =>
+    (document.getElementById("deny").getAttribute("aria-describedby") || "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((id) => document.getElementById(id).textContent)
+      .join(" "),
+  );
+  if (described !== note) return `its description is ${JSON.stringify(described)}, not the refusal`;
+  // Tab reaches it.
+  await page.focus("#before");
+  await page.keyboard.press("Tab");
+  if ((await page.evaluate(() => document.activeElement && document.activeElement.id)) !== "deny")
+    return "Tab does not reach the refused button";
+  // Activating it does nothing and sends nothing.
+  const sent = [];
+  page.on("request", (r) => sent.push(r.url()));
+  const at = page.url();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
+  await page.click("#deny");
+  await page.evaluate(() => document.getElementById("deny-form").requestSubmit(document.getElementById("deny")));
+  await page.waitForTimeout(300);
+  if (sent.length) return `activating the refused button sent ${JSON.stringify(sent)}`;
+  if (page.url() !== at) return `activating the refused button navigated to ${page.url()}`;
+  if ((await page.locator("p.ui-note").count()) !== 1) return "activating the refused button changed its note";
+  if ((await page.evaluate(() => document.activeElement && document.activeElement.id)) !== "deny")
+    return "activating the refused button moved focus";
+  return null;
 });
 
 // htmx's eval and script evaluation are off in a SERVED page (ledger #3525): the shell's
