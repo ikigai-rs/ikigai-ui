@@ -147,6 +147,106 @@ pub struct Lens {
     /// The SERVICE IRIs it may name.
     #[serde(default)]
     pub services: Vec<String>,
+    /// Its facets: each a checkbox per allowed value, bound into the query as a term.
+    #[serde(default)]
+    pub facets: Vec<Facet>,
+}
+
+/// A facet (ledger #3531): a query parameter `name` whose value, one of `values`, is bound to
+/// `?variable` as a TERM through `bindings=`; absent, the variable is unbound.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Facet {
+    /// The query parameter it reads.
+    pub name: String,
+    /// What it is, in words.
+    pub label: String,
+    /// The variable its value binds; `name` when absent.
+    #[serde(default)]
+    pub variable: Option<String>,
+    /// The values it allows.
+    pub values: Vec<String>,
+    /// `uri` binds an IRI; anything else (the default, `literal`) a plain literal.
+    #[serde(default, rename = "type")]
+    pub term: Option<String>,
+}
+
+impl Facet {
+    /// The variable its value binds.
+    pub fn variable(&self) -> &str {
+        self.variable.as_deref().unwrap_or(&self.name)
+    }
+
+    fn term(&self, value: &str) -> Json {
+        if self.term.as_deref() == Some("uri") {
+            json!({"type": "uri", "value": value})
+        } else {
+            json!(value)
+        }
+    }
+}
+
+/// The most facets a lens declares, and the most values a facet allows.
+pub const MAX_FACETS: usize = 8;
+/// The most values one facet allows.
+pub const MAX_VALUES: usize = 32;
+/// Arguments a lensed view reads that are not facets.
+const RESERVED: [&str; 4] = ["lens", "as", "theme", "bindings"];
+
+fn variable_name(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+/// A facet selection: facet name → its chosen value, in name order.
+pub type Selection = BTreeMap<String, String>;
+
+impl Lens {
+    /// `get`'s value for each facet, held to its allowed values: one outside them, or a
+    /// parameter the lens does not declare, is `InvalidArgument`.
+    pub fn select<'a>(
+        &self,
+        given: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Result<Selection, Error> {
+        let mut out = Selection::new();
+        for (name, value) in given {
+            if RESERVED.contains(&name) {
+                continue;
+            }
+            let facet = self
+                .facets
+                .iter()
+                .find(|f| f.name == name)
+                .ok_or_else(|| refuse(name, format!("the lens has no facet `{name}`")))?;
+            if value.is_empty() {
+                continue;
+            }
+            if !facet.values.iter().any(|v| v == value) {
+                return Err(refuse(
+                    name,
+                    format!(
+                        "`{value}` is not one of the facet's values ({})",
+                        facet.values.join(", ")
+                    ),
+                ));
+            }
+            if out.insert(name.to_string(), value.to_string()).is_some() {
+                return Err(refuse(name, "a facet binds one term: choose one value"));
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// The facet arguments of a request, as (name, value).
+fn given<'a>(inv: &'a Invocation<'_>) -> Result<Vec<(&'a str, &'a str)>, Error> {
+    let mut out = Vec::new();
+    for name in inv.request.args.keys() {
+        if RESERVED.contains(&name.as_str()) {
+            continue;
+        }
+        out.push((name.as_str(), inv.inline_str(name)?));
+    }
+    Ok(out)
 }
 
 fn focus() -> String {
@@ -178,12 +278,30 @@ impl Lens {
                 format!("{lens}: its bound {} is not in 1..={MAX_BOUND}", l.bound),
             ));
         }
-        if l.focus.is_empty()
-            || !l
-                .focus
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
-        {
+        if l.facets.len() > MAX_FACETS {
+            return Err(refuse(
+                "lens",
+                format!("{lens}: more than {MAX_FACETS} facets"),
+            ));
+        }
+        for f in &l.facets {
+            if !variable_name(&f.name)
+                || !variable_name(f.variable())
+                || f.variable() == l.focus
+                || RESERVED.contains(&f.name.as_str())
+                || f.values.is_empty()
+                || f.values.len() > MAX_VALUES
+            {
+                return Err(refuse(
+                    "lens",
+                    format!(
+                        "{lens}: facet `{}` needs a name and variable (letters, digits, `_`, not the focus) and 1..={MAX_VALUES} values",
+                        f.name
+                    ),
+                ));
+            }
+        }
+        if !variable_name(&l.focus) {
             return Err(refuse(
                 "lens",
                 format!("{lens}: `{}` is not a variable", l.focus),
@@ -714,6 +832,7 @@ async fn result(
     name: &str,
     lens: &Lens,
     resource: &str,
+    chosen: &Selection,
 ) -> Result<Representation, Error> {
     let query_at = lens
         .query
@@ -734,7 +853,13 @@ async fn result(
         } else {
             text
         };
-    let bindings = json!({ lens.focus.clone(): {"type": "uri", "value": resource} });
+    let mut bindings = json!({ lens.focus.clone(): {"type": "uri", "value": resource} });
+    // Each chosen facet value is a TERM bound to its variable, never text in the query.
+    for f in &lens.facets {
+        if let Some(v) = chosen.get(&f.name) {
+            bindings[f.variable()] = f.term(v);
+        }
+    }
     let mut request = Request::new(Verb::Source, iri(form.endpoint())?)
         .with_arg("query", ArgRef::Inline(text.into_bytes()))
         .with_arg(
@@ -822,8 +947,15 @@ fn words_node(content: impl Into<String>) -> Node {
         .expect("a text node")
 }
 
-async fn lensed(inv: &Invocation<'_>, name: &str, resource: &str) -> Result<Node, Error> {
+/// The lensed view of `resource` through lens `name`, its facets `chosen`.
+pub async fn lensed(
+    inv: &Invocation<'_>,
+    name: &str,
+    resource: &str,
+    chosen: &Selection,
+) -> Result<Node, Error> {
     let lens = read_lens(inv, name).await?;
+    let chosen = lens.select(chosen.iter().map(|(k, v)| (k.as_str(), v.as_str())))?;
     let choices = lenses_of(inv, resource).await?;
     let home = match optional(inv, HOME_TABLE).await? {
         Some(b) => Home::parse(&b)?,
@@ -836,13 +968,15 @@ async fn lensed(inv: &Invocation<'_>, name: &str, resource: &str) -> Result<Node
             .bytes,
     )
     .map_err(|e| refuse("renderer", format!("{renderer_at}: {e}")))?;
-    let body = match inv
-        .issue(Request::new(
-            Verb::Source,
-            iri(&format!("{NAME}{name}:focus:{resource}"))?,
-        ))
-        .await
-    {
+    // Each facet combination is its own request, so its own cached result.
+    let mut request = Request::new(
+        Verb::Source,
+        iri(&format!("{NAME}{name}:focus:{resource}"))?,
+    );
+    for (k, v) in &chosen {
+        request = request.with_arg(k.clone(), ArgRef::Inline(v.clone().into_bytes()));
+    }
+    let body = match inv.issue(request).await {
         Ok(r) => {
             let (mut rows, edges) = if r.repr_type.media_type.as_str() == GRAPH {
                 graph_rows(&r.bytes, lens.bound)?
@@ -875,19 +1009,250 @@ async fn lensed(inv: &Invocation<'_>, name: &str, resource: &str) -> Result<Node
         )),
         Err(e) => return Err(e),
     };
-    let options: Vec<Json> = choices
-        .iter()
-        .map(|c| json!({"kind": "option", "properties": {"label": c, "value": c}}))
-        .collect();
-    let view = json!({"kind": "group", "properties": {"label": lens.legend}, "children": [
-        {"kind": "heading", "properties": {"content": lens.legend, "level": 2}},
-        {"kind": "choice", "properties": {"label": "Lens", "name": "lens", "value": name}, "children": options},
-        {"kind": "link", "properties": {"label": "The resource's own view", "href": crate::view::href(resource)}},
-    ]});
+    let mut controls = vec![chooser_node(&choices, name)];
+    for f in &lens.facets {
+        for v in &f.values {
+            let mut field = json!({"kind": "field", "properties": {
+                "label": format!("{}: {v}", f.label), "name": f.name, "input": "checkbox", "value": v}});
+            if chosen.get(&f.name) == Some(v) {
+                field["hint"] = json!({ CHECKED: "checked" });
+            }
+            controls.push(field);
+        }
+    }
+    controls.push(json!({"kind": "button", "properties": {"label": "Show"}}));
+    let mut children = vec![
+        json!({"kind": "heading", "properties": {"content": lens.legend, "level": 2}}),
+        // A GET form with no action submits to the page it is on: the lens and the facets
+        // arrive as query parameters, and the page's route reads them.
+        json!({"kind": "form", "properties": {"label": "Lens and facets", "method": "get"}, "children": controls}),
+    ];
+    if !chosen.is_empty() {
+        let said: Vec<String> = lens
+            .facets
+            .iter()
+            .filter_map(|f| chosen.get(&f.name).map(|v| format!("{}: {v}", f.label)))
+            .collect();
+        children.push(json!({"kind": "text", "properties": {"content": format!("Showing only {}.", said.join("; "))}}));
+    }
+    children.push(json!({"kind": "link", "properties": {"label": "The resource's own view", "href": crate::view::href(resource)}}));
+    let view = json!({"kind": "group", "properties": {"label": lens.legend}, "children": children});
     let mut view: Node = serde_json::from_value(view).map_err(|e| refuse("lens", e))?;
     view.children.push(body);
     model::validate(&view)?;
     Ok(view)
+}
+
+/// The html face's hint that a checkbox starts checked.
+pub const CHECKED: &str = "urn:iki:ui:hint:html:checked";
+
+fn chooser_node(choices: &[String], chosen: &str) -> Json {
+    let options: Vec<Json> = choices
+        .iter()
+        .map(|c| json!({"kind": "option", "properties": {"label": c, "value": c}}))
+        .collect();
+    json!({"kind": "choice", "properties": {"label": "Lens", "name": "lens", "value": chosen}, "children": options})
+}
+
+/// The lenses a resource declares (instance, dataset, types), without the default; empty
+/// when it declares none.
+pub async fn declared(inv: &Invocation<'_>, resource: &str) -> Result<Vec<String>, Error> {
+    let all = lenses_of(inv, resource).await?;
+    Ok(if all.len() == 1 { Vec::new() } else { all })
+}
+
+/// The lens chooser a resource's own view offers when it declares lenses: a GET form to the
+/// html route of its first lens, whose `lens=` picks any of them.
+pub async fn chooser(inv: &Invocation<'_>, resource: &str) -> Result<Option<Node>, Error> {
+    let names = declared(inv, resource).await?;
+    let Some(first) = names.first() else {
+        return Ok(None);
+    };
+    let form = json!({"kind": "form", "properties": {
+        "label": "Lenses", "method": "get", "action": html_href(first, resource, &Selection::new()),
+        "description": "See this resource through one of its lenses."}, "children": [
+        chooser_node(&names, first),
+        {"kind": "button", "properties": {"label": "Open"}},
+    ]});
+    Ok(Some(
+        serde_json::from_value(form).map_err(|e| refuse("lens", e))?,
+    ))
+}
+
+/// The html screen name of a lensed view: `lens:{lens}[:facets:{k=v&…}]:resource:{iri}`,
+/// the facet values percent-encoded.
+pub fn screen_name(lens: &str, resource: &str, chosen: &Selection) -> String {
+    if chosen.is_empty() {
+        return format!("lens:{lens}:resource:{resource}");
+    }
+    let facets: Vec<String> = chosen
+        .iter()
+        .map(|(k, v)| format!("{k}={}", pct(v)))
+        .collect();
+    format!(
+        "lens:{lens}:facets:{}:resource:{resource}",
+        facets.join("&")
+    )
+}
+
+/// Where a browser opens a lensed view: the html face of its screen.
+pub fn html_href(lens: &str, resource: &str, chosen: &Selection) -> String {
+    let name = screen_name(lens, resource, chosen);
+    let mut out = String::from("/ui/html:screen:");
+    for b in name.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~:@!$'()*+,;=".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+fn pct(v: &str) -> String {
+    let mut out = String::new();
+    for b in v.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+fn unpct(v: &str) -> Result<String, Error> {
+    let b = v.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let h = v
+                .get(i + 1..i + 3)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+                .ok_or_else(|| refuse("facets", "a bad percent escape"))?;
+            out.push(h);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).map_err(|_| refuse("facets", "not UTF-8"))
+}
+
+/// A lensed screen name as a compose template expands it (`{screen}`, its `:` escaped),
+/// unescaped once; any other name as it is.
+pub fn unescape_screen(name: &str) -> String {
+    if name.starts_with("lens%3A") || name.starts_with("lens%3a") {
+        unpct(name).unwrap_or_else(|_| name.to_string())
+    } else {
+        name.to_string()
+    }
+}
+
+/// A lensed screen name parsed: (lens, facets, resource). `None` when it is not one.
+pub fn parse_screen(name: &str) -> Option<Result<(String, Selection, String), Error>> {
+    let rest = name.strip_prefix("lens:")?;
+    let (lens, rest) = rest.split_once(':')?;
+    let (facets, resource) = match rest.strip_prefix("facets:") {
+        Some(r) => r.split_once(":resource:")?,
+        None => ("", rest.strip_prefix("resource:")?),
+    };
+    if lens.is_empty() || resource.is_empty() {
+        return None;
+    }
+    let mut chosen = Selection::new();
+    for pair in facets.split('&').filter(|p| !p.is_empty()) {
+        let (k, v) = match pair.split_once('=') {
+            Some(kv) => kv,
+            None => return Some(Err(refuse("facets", format!("`{pair}` is not name=value")))),
+        };
+        match unpct(v) {
+            Ok(v) => {
+                chosen.insert(k.to_string(), v);
+            }
+            Err(e) => return Some(Err(e)),
+        }
+    }
+    Some(Ok((lens.to_string(), chosen, resource.to_string())))
+}
+
+/// The screen a browser's request names: a lensed screen with the request's `lens=` and facet
+/// parameters folded in (the form sends `lens` always, so with it the facets are exactly the
+/// request's), else `screen` itself.
+pub fn fold(inv: &Invocation<'_>, screen: &str) -> Result<String, Error> {
+    let screen = &unescape_screen(screen);
+    let Some(parsed) = parse_screen(screen) else {
+        return Ok(screen.to_string());
+    };
+    let (mut lens, mut chosen, resource) = parsed?;
+    if inv.request.args.contains_key("lens") {
+        lens = inv.inline_str("lens")?.to_string();
+        if lens.is_empty()
+            || !lens
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+        {
+            return Err(refuse("lens", format!("`{lens}` is not a lens name")));
+        }
+        chosen = given(inv)?
+            .into_iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+    }
+    Ok(screen_name(&lens, &resource, &chosen))
+}
+
+/// `urn:iki:ui:screen:name:lens:{lens}[:facets:{…}]:resource:{iri}`: the lensed view as a
+/// screen, so the html face renders it.
+struct LensScreen;
+
+impl ikigai_core::Grammar for LensScreen {
+    fn match_iri(&self, iri: &Iri) -> Option<ikigai_core::Bindings> {
+        let name = iri.as_str().strip_prefix(crate::screen::SCREEN_PREFIX)?;
+        let (lens, _, resource) = parse_screen(name)?.ok()?;
+        let mut b = ikigai_core::Bindings::new();
+        b.insert("name", name);
+        b.insert("lens", lens.as_str());
+        b.insert("iri", resource.as_str());
+        Some(b)
+    }
+
+    fn pattern(&self) -> String {
+        format!(
+            "{}lens:{{lens}}:resource:{{iri}}",
+            crate::screen::SCREEN_PREFIX
+        )
+    }
+}
+
+/// The lensed screens, in [`crate::space`].
+pub(crate) fn bind_screens(space: EndpointSpace) -> EndpointSpace {
+    space.bind(
+        LensScreen,
+        AsyncFnEndpoint::new("ui-screen-lens", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let name = inv.bindings.get("name").unwrap_or_default().to_string();
+                let (lens, chosen, resource) =
+                    parse_screen(&name).ok_or_else(|| Error::NotFound(name.clone()))??;
+                iri(&resource)?;
+                let n = lensed(inv, &lens, &resource, &chosen).await?;
+                crate::model_face(inv, &n)
+            })
+        })
+        .with_description(
+            Description::new("ui-screen-lens")
+                .input(ikigai_core::ArgSpec::new("lens").summary("the lens's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("contact-list"))
+                .input(ikigai_core::ArgSpec::new("iri").summary("the resource").class(XSD_ANY_URI).binding().example(crate::scene::EXAMPLE_GRAPH))
+                .title("A lensed view as a screen")
+                .summary("The lensed view, named as a screen so the html face renders it: urn:iki:ui:html:screen:lens:{lens}:resource:{iri} opens it in a browser, and its form's lens= and facet parameters pick another.")
+                .verb(Verb::Source)
+                .output(model::MEDIA_TYPE)
+                .output(model::JSON_LD),
+        ),
+    )
 }
 
 fn data(bytes: Vec<u8>, media: &str) -> Representation {
@@ -902,7 +1267,8 @@ pub(crate) fn result_endpoint() -> AsyncFnEndpoint {
             let resource = inv.bindings.get("iri").unwrap_or_default().to_string();
             iri(&resource)?;
             let lens = read_lens(inv, &name).await?;
-            result(inv, &name, &lens, &resource).await
+            let chosen = lens.select(given(inv)?)?;
+            result(inv, &name, &lens, &resource, &chosen).await
         })
     })
     .with_description(
@@ -992,7 +1358,11 @@ pub(crate) fn view_endpoint() -> AsyncFnEndpoint {
             let name = inv.bindings.get("lens").unwrap_or_default().to_string();
             let resource = inv.bindings.get("iri").unwrap_or_default().to_string();
             iri(&resource)?;
-            let n = lensed(inv, &name, &resource).await?;
+            let chosen: Selection = given(inv)?
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            let n = lensed(inv, &name, &resource, &chosen).await?;
             crate::model_face(inv, &n)
         })
     })

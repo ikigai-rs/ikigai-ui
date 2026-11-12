@@ -339,3 +339,174 @@ fn a_construct_lens_draws_exactly_its_result() {
         "{replacement:?}"
     );
 }
+
+fn view_with(
+    kernel: &ikigai_core::Kernel,
+    lens: &str,
+    iri: &str,
+    args: &[(&str, &str)],
+) -> Result<Node, Error> {
+    let mut req = Request::new(Verb::Source, Iri::parse(view_iri(lens, iri)).unwrap());
+    for (k, v) in args {
+        req = req.with_arg(*k, ikigai_core::ArgRef::Inline(v.as_bytes().to_vec()));
+    }
+    let r = block_on(kernel.issue(req, &Capability::root()))?;
+    Ok(serde_json::from_slice(&r.bytes).expect("a model node"))
+}
+
+const ENUMERATION: &str = "http://schema.org/Enumeration";
+
+/// Ledger #3531: a facet's value is bound into the query as a term, and changes the result.
+#[test]
+fn a_facet_changes_the_result_and_is_its_own_cached_result() {
+    let host = common::host(None);
+    let all = view_with(&host, "contact-list", EXAMPLE_GRAPH, &[]).unwrap();
+    let topics = view_with(
+        &host,
+        "contact-list",
+        EXAMPLE_GRAPH,
+        &[("type", ENUMERATION)],
+    )
+    .unwrap();
+    let lists = |n: &Node| -> Vec<String> {
+        of(n, "list")
+            .iter()
+            .map(|l| text(&l.properties["label"]))
+            .collect()
+    };
+    assert_eq!(lists(&all)[1..], ["Fields", "Topics"]);
+    assert_eq!(lists(&topics)[1..], ["Topics"], "{topics:?}");
+    // The facets are checkboxes, the chosen one checked, in a GET form.
+    let boxes = of(&topics, "field");
+    assert_eq!(boxes.len(), 2);
+    assert!(boxes
+        .iter()
+        .all(|f| text(&f.properties["input"]) == "checkbox"));
+    let checked: Vec<String> = boxes
+        .iter()
+        .filter(|f| f.hint.contains_key(ikigai_ui::lens::CHECKED))
+        .map(|f| text(&f.properties["value"]))
+        .collect();
+    assert_eq!(checked, [ENUMERATION]);
+    assert!(said(&topics).contains("Showing only"), "{}", said(&topics));
+    // Each combination is its own result resource, cacheable, and answers its own rows.
+    let result = |args: &[(&str, &str)]| {
+        let mut req = Request::new(
+            Verb::Source,
+            Iri::parse(format!(
+                "urn:iki:ui:lens:name:contact-list:focus:{EXAMPLE_GRAPH}"
+            ))
+            .unwrap(),
+        );
+        for (k, v) in args {
+            req = req.with_arg(*k, ikigai_core::ArgRef::Inline(v.as_bytes().to_vec()));
+        }
+        block_on(host.issue(req, &Capability::root())).unwrap()
+    };
+    let (a, b) = (result(&[]), result(&[("type", ENUMERATION)]));
+    assert!(a.expiry == ikigai_core::Expiry::Never && b.expiry == ikigai_core::Expiry::Never);
+    assert_ne!(a.bytes, b.bytes);
+    assert_eq!(b.bytes, result(&[("type", ENUMERATION)]).bytes);
+}
+
+#[test]
+fn a_facet_value_outside_its_allowed_set_is_refused() {
+    let host = common::host(None);
+    for args in [
+        &[("type", "http://schema.org/Person")][..],
+        &[("type", "} ; DROP ALL")][..],
+        &[("colour", "red")][..],
+    ] {
+        let e = view_with(&host, "contact-list", EXAMPLE_GRAPH, args).unwrap_err();
+        assert!(
+            matches!(e, Error::InvalidArgument { .. }),
+            "{args:?}: {e:?}"
+        );
+    }
+}
+
+fn resource_view(kernel: &ikigai_core::Kernel, iri: &str) -> Node {
+    let r = block_on(kernel.issue(
+        Request::new(
+            Verb::Source,
+            Iri::parse(format!("urn:iki:ui:view:resource:{iri}")).unwrap(),
+        ),
+        &Capability::root(),
+    ))
+    .unwrap();
+    serde_json::from_slice(&r.bytes).unwrap()
+}
+
+#[test]
+fn a_resource_with_lenses_offers_them_and_one_without_does_not() {
+    let host = common::host(None);
+    let n = resource_view(&host, EXAMPLE_GRAPH);
+    let choices = of(&n, "choice");
+    let lenses: Vec<&&Node> = choices
+        .iter()
+        .filter(|c| text(&c.properties["name"]) == "lens")
+        .collect();
+    assert_eq!(lenses.len(), 1, "{n:?}");
+    let options: Vec<String> = of(lenses[0], "option")
+        .iter()
+        .map(|o| text(&o.properties["value"]))
+        .collect();
+    assert_eq!(
+        options,
+        ["contact-graph", "contact-table", "contact-list", "graph"]
+    );
+    let form = of(&n, "form")
+        .into_iter()
+        .find(|f| text(&f.properties["label"]) == "Lenses")
+        .unwrap();
+    assert!(text(&form.properties["action"])
+        .starts_with("/ui/html:screen:lens:contact-graph:resource:"));
+    // A resource that declares no lenses is offered none.
+    let other = resource_view(&host, "urn:iki:ui:example:graph:contact:email");
+    assert!(
+        of(&other, "choice")
+            .iter()
+            .all(|c| text(&c.properties["name"]) != "lens"),
+        "{other:?}"
+    );
+}
+
+fn html(kernel: &ikigai_core::Kernel, screen: &str, args: &[(&str, &str)]) -> String {
+    let mut req = Request::new(
+        Verb::Source,
+        Iri::parse(format!("urn:iki:ui:html:screen:{screen}")).unwrap(),
+    );
+    for (k, v) in args {
+        req = req.with_arg(*k, ikigai_core::ArgRef::Inline(v.as_bytes().to_vec()));
+    }
+    let r = block_on(kernel.issue(req, &Capability::root())).unwrap();
+    String::from_utf8(r.bytes).unwrap()
+}
+
+/// The html face opens a lensed view, and its form's parameters pick another lens and facets.
+#[test]
+fn a_lensed_view_has_an_html_route() {
+    let host = common::host(None);
+    let screen = format!("lens:contact-list:resource:{EXAMPLE_GRAPH}");
+    let page = html(&host, &screen, &[]);
+    assert!(page.contains("type=\"checkbox\""), "{page}");
+    assert!(page.contains("name=\"lens\""), "{page}");
+    assert!(
+        page.contains(">Topics<") || page.contains("Topics"),
+        "{page}"
+    );
+    assert!(!page.contains(" checked"), "{page}");
+    let page = html(
+        &host,
+        &screen,
+        &[("lens", "contact-list"), ("type", ENUMERATION)],
+    );
+    assert!(page.contains(" checked"), "{page}");
+    assert!(page.contains("Showing only"), "{page}");
+    let page = html(&host, &screen, &[("lens", "contact-table")]);
+    assert!(
+        page.contains("The contact service&#x27;s fields") || page.contains("fields"),
+        "{page}"
+    );
+    assert!(!page.contains("type=\"checkbox\""), "{page}");
+}

@@ -1,7 +1,7 @@
 # The fields and the topics a message may have, grouped by their type.
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX schema: <http://schema.org/>
-SELECT ?focus ?group ?item ?label WHERE {
+SELECT ?focus ?group ?item ?label ?type WHERE {
   GRAPH ?focus {
     ?item a ?type ; rdfs:label ?label .
     FILTER(?type IN (schema:PropertyValueSpecification, schema:Enumeration))
