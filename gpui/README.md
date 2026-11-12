@@ -67,7 +67,7 @@ preserves the same authority and scope.
 Fields support native text services (IME/marked text, UTF-16 ranges), grapheme
 movement/deletion, selection, clipboard, multiline text areas, and boolean
 checkboxes. Other field input hints use text editing, leaving authoritative value
-validation to the Sink. Choices use selectable options; Tab/Shift-Tab traverse
+validation to the Sink. Choices use selectable options, and a choice with the `urn:iki:ui:hint:choice:radio` hint is one radio group: one tab stop, the arrow keys move the selection (wrapping), and the status line announces it ("Lens: graph, checked, 4 of 4"); Tab/Shift-Tab traverse
 controls, and Enter/Space activate options and submit buttons. Native forms
 require a `resource` and `verb: sink` (Sink is the default). HTML-only `action`
 URLs and other form verbs are refused visibly. Successful Sink responses show a

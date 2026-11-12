@@ -84,6 +84,29 @@ pub const ELEMENT_TEMPLATES: [crate::Artifact; 1] = [crate::Artifact {
     bytes: include_bytes!("../assets/template/element/disclosure.html"),
 }];
 
+/// A hinted template is this plus its name: `{kind}-{presentation}`.
+pub const HINT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:hint:";
+
+/// The compiled-in templates of the presentation hints the html descriptor claims (`hints`):
+/// a `choice` as radio buttons, a `<fieldset>` with its `<legend>`, and each of its options as
+/// one radio input with its label (ledger #3537, [`model::RADIO`]).
+pub const HINT_TEMPLATES: [crate::Artifact; 2] = [
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:choice-radio",
+        id: "ui-template-hint",
+        file: "template/hint/choice-radio.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/choice-radio.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:option-radio",
+        id: "ui-template-hint",
+        file: "template/hint/option-radio.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/option-radio.html"),
+    },
+];
+
 fn argument(name: &str, summary: &str) -> ArgSpec {
     ArgSpec::new(name)
         .summary(summary)
@@ -168,6 +191,46 @@ pub(crate) fn element_template_endpoint() -> AsyncFnEndpoint {
     )
 }
 
+pub(crate) fn hint_template_endpoint() -> AsyncFnEndpoint {
+    AsyncFnEndpoint::new(
+        "ui-template-hint",
+        |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let name = inv.bindings.get("name").unwrap_or_default();
+                let artifact = HINT_TEMPLATES
+                    .iter()
+                    .find(|a| a.iri.strip_prefix(HINT_TEMPLATE_PREFIX) == Some(name))
+                    .ok_or_else(|| Error::NotFound(format!("{name}: no hinted html template")))?;
+                let file = Iri::parse(format!("{}{}", crate::DIR, artifact.file))
+                    .map_err(|e| Error::Endpoint(e.to_string()))?;
+                crate::artifact_endpoint(*artifact, file, crate::DIR)
+                    .invoke(inv)
+                    .await
+            })
+        },
+    )
+    .with_description(
+        Description::new("ui-template-hint")
+            .title("A UI kind's HTML template under a presentation hint")
+            .summary(
+                "The ikigai-fn compose template the html target fills for a node whose \
+                 presentation hint it claims (its descriptor's hints), for example a choice as \
+                 radio buttons: values splice escaped ($h), child views raw ($r). From \
+                 template/hint/{name}.html in the UI directory, else compiled in.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(
+                argument("name", "the template's name, {kind}-{presentation}").one_of(
+                    HINT_TEMPLATES
+                        .iter()
+                        .map(|a| &a.iri[HINT_TEMPLATE_PREFIX.len()..]),
+                ),
+            )
+            .output(crate::HTML),
+    )
+}
+
 pub(crate) fn empty_endpoint() -> FnEndpoint {
     FnEndpoint::new("ui-html-empty", |_: &Invocation<'_>| {
         Ok(Representation::new(ReprType::new(crate::TEXT), Vec::new()).cacheable())
@@ -201,12 +264,30 @@ async fn screen(inv: &Invocation<'_>) -> Result<Node, Error> {
     // its <details> template; else expanded, else their fallback, else their fallback text) and write-only fields made their own forms.
     let descriptor = crate::target::read_descriptor(inv, "html").await?;
     let node = crate::target::compose(inv, &node, &descriptor).await?;
+    // A descriptor that does not claim the choice hints (a host's override) keeps the select.
+    let node = if descriptor.hints.iter().any(|ns| ns == model::CHOICE_HINTS) {
+        node
+    } else {
+        without_choice_hints(node)
+    };
     // A descriptor that does not claim `scene` (a host serving no WebGPU renderer) takes the
     // ladder's next rung for each one: its replacement, else its label as text (ledger #3514).
     if descriptor.renders.iter().any(|k| k == "scene") {
         return Ok(node);
     }
     Ok(without_scenes(node))
+}
+
+fn without_choice_hints(mut node: Node) -> Node {
+    node.hint
+        .retain(|key, _| !key.starts_with(model::CHOICE_HINTS));
+    node.children = node
+        .children
+        .into_iter()
+        .map(without_choice_hints)
+        .collect();
+    node.replacement = node.replacement.map(|r| Box::new(without_choice_hints(*r)));
+    node
 }
 
 fn without_scenes(mut node: Node) -> Node {
@@ -230,8 +311,8 @@ fn without_scenes(mut node: Node) -> Node {
     node
 }
 
-/// The node at `{node}` and its parent's kind.
-fn locate<'a>(root: &'a Node, at: &str) -> Result<(&'a Node, Option<&'a str>), Error> {
+/// The node at `{node}` and its parent.
+fn locate<'a>(root: &'a Node, at: &str) -> Result<(&'a Node, Option<&'a Node>), Error> {
     let missing = || Error::NotFound(format!("{at}: no such node"));
     let mut parts = at.split('.');
     if parts.next() != Some("n") {
@@ -242,13 +323,13 @@ fn locate<'a>(root: &'a Node, at: &str) -> Result<(&'a Node, Option<&'a str>), E
         // `r` is the node's replacement: a scene's accessible form, drawn beside its canvas.
         if part == "r" {
             let replacement = node.replacement.as_deref().ok_or_else(missing)?;
-            parent = Some(node.kind.as_str());
+            parent = Some(node);
             node = replacement;
             continue;
         }
         let i: usize = part.parse().map_err(|_| missing())?;
         let child = node.children.get(i).ok_or_else(missing)?;
-        parent = Some(node.kind.as_str());
+        parent = Some(node);
         node = child;
     }
     Ok((node, parent))
@@ -282,7 +363,14 @@ fn composers() -> Arc<BTreeMap<&'static str, ikigai_fn::ComposeOver>> {
         let iri = Iri::parse(a.iri).expect("an IRI");
         (element, ikigai_fn::compose_over(iri).named("ui-html-node"))
     });
-    Arc::new(kinds.chain(elements).collect())
+    let hinted = HINT_TEMPLATES.iter().map(|a| {
+        let iri = Iri::parse(a.iri).expect("an IRI");
+        (
+            &a.iri[HINT_TEMPLATE_PREFIX.len()..],
+            ikigai_fn::compose_over(iri).named("ui-html-node"),
+        )
+    });
+    Arc::new(kinds.chain(elements).chain(hinted).collect())
 }
 
 async fn view(
@@ -305,10 +393,14 @@ async fn view(
             node.kind
         )));
     }
-    let kind = if node.kind == "option" && parent != Some("choice") {
-        "text"
-    } else {
-        node.kind.as_str()
+    // A choice the screen asks to show as radio buttons, its hint kept by [`screen`] only when
+    // the descriptor claims it (ledger #3537): a fieldset, and a radio input per option.
+    let in_choice = parent.filter(|p| p.kind == "choice");
+    let kind = match node.kind.as_str() {
+        "option" if in_choice.is_some_and(model::is_radio) => "option-radio",
+        "option" if in_choice.is_none() => "text",
+        "choice" if model::is_radio(node) => "choice-radio",
+        kind => kind,
     };
     let mut vars = Bindings::new();
     vars.insert("screen", screen.as_str());
@@ -473,7 +565,13 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                         }
                         .to_string(),
                     ),
-                    ("option", "selected") => {
+                    // A radio option's group is its choice's name (ledger #3537).
+                    ("option", "group") => at
+                        .rsplit_once('.')
+                        .and_then(|(parent, _)| locate(&root, parent).ok())
+                        .and_then(|(parent, _)| text_of(parent, "name"))
+                        .map(str::to_string),
+                    ("option", "selected" | "checked") => {
                         let selected = at
                             .rsplit_once('.')
                             .and_then(|(parent, _)| locate(&root, parent).ok())
@@ -483,7 +581,16 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                                         == node.properties.get("value")
                             });
                         // A boolean HTML attribute: only these fixed strings enter markup.
-                        Some(if selected { " selected" } else { "" }.to_string())
+                        Some(
+                            if !selected {
+                                ""
+                            } else if name == "checked" {
+                                " checked"
+                            } else {
+                                " selected"
+                            }
+                            .to_string(),
+                        )
                     }
                     _ => property(node, name),
                 };

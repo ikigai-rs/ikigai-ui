@@ -229,6 +229,9 @@ fn conforms() {
         .namespace("urn:iki:ui:element:")
         // The structural nodes, reference and region (ledger #3361): the shapes are this crate's.
         .namespace("urn:iki:ui:structure:")
+        // The choice presentation hints (ledger #3537), this crate's own, documented at
+        // `ikigai_ui::model::CHOICE_HINTS` and `RADIO`.
+        .namespace("urn:iki:ui:hint:choice:")
         .self_named_space("ui", ikigai_ui::space)
         .host_named_space("ikigai_ui::pages(family, base)", pages)
         // Since core 0.2.5 a root exact alias is a view of its own (ledger #2513): listed, and

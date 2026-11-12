@@ -178,6 +178,8 @@ fn conforms() {
         .namespace("urn:iki:ui:element:")
         // The structural nodes, reference and region (ledger #3361): the shapes are this crate's.
         .namespace("urn:iki:ui:structure:")
+        // The choice presentation hints (ledger #3537).
+        .namespace("urn:iki:ui:hint:choice:")
         .body_space(root)
         .run_blocking(&kernel);
     println!("{report}");

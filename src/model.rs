@@ -279,6 +279,21 @@ impl Hint {
 /// The marker every hint namespace carries: `urn:{ns}:ui:hint:{face}:` (for example
 /// `urn:iki:ui:hint:gpui:`), and a hint's key is its namespace plus the hint's name.
 pub const HINT_MARK: &str = ":ui:hint:";
+/// The presentation hints a `choice` takes, read by every face that claims this namespace in
+/// its descriptor (`hints`) and dropped by every other, which keeps its usual choice control.
+pub const CHOICE_HINTS: &str = "urn:iki:ui:hint:choice:";
+/// A `choice` shown as radio buttons (ledger #3537), its value `radio`: the html face draws a
+/// `<fieldset>` with a `<legend>` and one radio input per option (native radios, so the arrow
+/// keys move within the group), the GPUI face a radio group (one tab stop, the arrows move the
+/// selection, the chosen option announced). A face that does not claim [`CHOICE_HINTS`]
+/// keeps its select.
+pub const RADIO: &str = "urn:iki:ui:hint:choice:radio";
+
+/// Whether `node` is a choice that asks to be shown as radio buttons ([`RADIO`]).
+pub fn is_radio(node: &Node) -> bool {
+    node.kind == "choice" && node.hint.get(RADIO) == Some(&Hint::Plain(Value::Text("radio".into())))
+}
+
 /// The most hints one node carries.
 pub const MAX_HINTS: usize = 16;
 /// The longest hint key or text value, in bytes.
