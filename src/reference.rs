@@ -27,7 +27,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use ikigai_core::{Error, Invocation, Iri, Request, Verb};
+use ikigai_core::{Error, Invocation, Iri};
 
 use crate::model::{self, Node, Value};
 
@@ -78,7 +78,17 @@ pub async fn resolve_in(
     node: &Node,
     budget: &mut Budget,
 ) -> Result<Node, Error> {
-    walk(inv, node, 0, &mut budget.resolved).await
+    resolve_within(inv, node, budget, &crate::region::Reach::default()).await
+}
+
+/// [`resolve_in`] inside a region: every read goes through `reach` ([`crate::region::Reach`]).
+pub async fn resolve_within(
+    inv: &Invocation<'_>,
+    node: &Node,
+    budget: &mut Budget,
+    reach: &crate::region::Reach,
+) -> Result<Node, Error> {
+    walk(inv, reach, node, 0, &mut budget.resolved).await
 }
 
 /// Whether `node` holds a reference outside every region.
@@ -100,6 +110,7 @@ type Walk<'a> = Pin<Box<dyn Future<Output = Result<Node, Error>> + Send + 'a>>;
 
 fn walk<'a>(
     inv: &'a Invocation<'_>,
+    reach: &'a crate::region::Reach,
     node: &'a Node,
     depth: usize,
     count: &'a mut usize,
@@ -111,11 +122,12 @@ fn walk<'a>(
         if node.kind != KIND {
             let mut out = node.clone();
             if let Some(replacement) = &node.replacement {
-                out.replacement = Some(Box::new(walk(inv, replacement, depth, count).await?));
+                out.replacement =
+                    Some(Box::new(walk(inv, reach, replacement, depth, count).await?));
             }
             let mut children = Vec::with_capacity(node.children.len());
             for child in &node.children {
-                children.push(walk(inv, child, depth, count).await?);
+                children.push(walk(inv, reach, child, depth, count).await?);
             }
             out.children = children;
             return Ok(out);
@@ -131,10 +143,10 @@ fn walk<'a>(
             return Err(refuse("a validated reference names its resource"));
         };
         let iri = Iri::parse(resource.as_str()).map_err(|e| refuse(e.to_string()))?;
-        match inv.issue(Request::new(Verb::Source, iri)).await {
+        match reach.source(inv, iri).await {
             Ok(rep) => {
                 let referenced = model::parse(&rep.bytes)?;
-                walk(inv, &referenced, depth + 1, count).await
+                walk(inv, reach, &referenced, depth + 1, count).await
             }
             Err(Error::Denied(_)) => Ok(withheld(node)),
             Err(e) => Err(e),

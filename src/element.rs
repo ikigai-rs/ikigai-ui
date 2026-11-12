@@ -31,7 +31,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ikigai_core::{Error, Invocation, Iri, Request, Verb};
+use ikigai_core::{Error, Invocation, Iri, Verb};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{self, Node, Value};
@@ -241,6 +241,16 @@ pub async fn definitions(
     root: &Node,
     descriptor: &Descriptor,
 ) -> Result<BTreeMap<String, Definition>, Error> {
+    definitions_within(inv, root, descriptor, &crate::region::Reach::default()).await
+}
+
+/// [`definitions`] inside a region: every read goes through `reach` ([`crate::region::Reach`]).
+pub async fn definitions_within(
+    inv: &Invocation<'_>,
+    root: &Node,
+    descriptor: &Descriptor,
+    reach: &crate::region::Reach,
+) -> Result<BTreeMap<String, Definition>, Error> {
     let mut read: BTreeMap<String, Option<Definition>> = BTreeMap::new();
     let mut pending: Vec<Node> = vec![root.clone()];
     while let Some(node) = pending.pop() {
@@ -267,7 +277,7 @@ pub async fn definitions(
                 ));
             }
             let iri = Iri::parse(element.as_str()).map_err(|e| refuse(&element, e))?;
-            let definition = match inv.issue(Request::new(Verb::Source, iri)).await {
+            let definition = match reach.source(inv, iri).await {
                 Ok(rep) => Some(Definition::parse(&rep.bytes, &element)?),
                 Err(Error::NotFound(_)) => None,
                 Err(e) => return Err(e),
@@ -352,12 +362,16 @@ impl Expander<'_> {
         let Some((filled, used)) = self.slots.last_mut() else {
             return Ok(Vec::new());
         };
-        let again = std::mem::replace(used, true).then(|| size(filled));
-        let filled = filled.clone();
-        if let Some(n) = again {
+        if std::mem::replace(used, true) {
+            let n = size(filled);
             self.count_n(n)?;
         }
-        Ok(filled)
+        // Counted before it is copied.
+        Ok(self
+            .slots
+            .last()
+            .map(|(f, _)| f.clone())
+            .unwrap_or_default())
     }
 
     fn children(&mut self, children: &[Node], depth: usize) -> Result<Vec<Node>, Error> {
@@ -500,7 +514,17 @@ pub async fn expand(
     root: &Node,
     descriptor: &Descriptor,
 ) -> Result<Node, Error> {
-    let definitions = definitions(inv, root, descriptor).await?;
+    expand_within(inv, root, descriptor, &crate::region::Reach::default()).await
+}
+
+/// [`expand`] inside a region: every definition is read through `reach`.
+pub async fn expand_within(
+    inv: &Invocation<'_>,
+    root: &Node,
+    descriptor: &Descriptor,
+    reach: &crate::region::Reach,
+) -> Result<Node, Error> {
+    let definitions = definitions_within(inv, root, descriptor, reach).await?;
     expand_with(root, descriptor, &definitions)
 }
 

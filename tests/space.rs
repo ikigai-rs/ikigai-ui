@@ -652,3 +652,121 @@ fn an_outline_reference_inside_a_region_does_not_read_outside_it() {
         assert!(!String::from_utf8_lossy(&rep.bytes).contains(SECRET));
     }
 }
+
+// --- audit (ledger #3525, part A) --------------------------------------------------------
+
+#[test]
+fn a_host_corridor_name_is_not_read_inside_a_region_that_does_not_allow_it() {
+    // A host serves the screen in a scope whose corridor binds more than the settings: the
+    // card. A region that allows only the greeting must not reach it.
+    let reached = Arc::new(AtomicU32::new(0));
+    let kernel = host(
+        vec![(
+            "corridor",
+            screen(vec![region(
+                "urn:demo:greeting",
+                Some("urn:cap:demo:greeting:read"),
+                vec![reference("urn:demo:card", "Card number withheld")],
+            )]),
+        )],
+        Arc::default(),
+    );
+    let corridor = EndpointSpace::new().bind(Exact::new("urn:demo:card"), card(reached.clone()));
+    let scope = Scope::empty().with(Arc::new(corridor));
+    let request = Request::new(
+        Verb::Source,
+        Iri::parse("urn:iki:ui:face:target:html:screen:corridor").unwrap(),
+    );
+    let wide = Capability::scoped([SCOPE, "urn:cap:demo:greeting:read"]);
+    let face = block_on(kernel.issue_in(request, &wide, scope));
+    if let Ok(rep) = &face {
+        assert!(
+            !String::from_utf8_lossy(&rep.bytes).contains(SECRET),
+            "the region read the card through the host's corridor"
+        );
+    }
+    assert_eq!(
+        reached.load(Ordering::SeqCst),
+        0,
+        "the card was never entered"
+    );
+}
+
+#[test]
+fn a_name_a_host_corridor_answers_inside_a_region_is_read_under_the_region_scopes() {
+    // The region allows the card but names scopes that do not grant it; the host's corridor
+    // answers the card ahead of the region's space, and must see the attenuated grant.
+    let reached = Arc::new(AtomicU32::new(0));
+    let kernel = host(
+        vec![(
+            "corridor",
+            screen(vec![region(
+                "urn:demo:card",
+                Some("urn:cap:demo:other"),
+                vec![reference("urn:demo:card", "Card number withheld")],
+            )]),
+        )],
+        Arc::default(),
+    );
+    let corridor = EndpointSpace::new().bind(Exact::new("urn:demo:card"), card(reached));
+    let scope = Scope::empty().with(Arc::new(corridor));
+    let request = Request::new(
+        Verb::Source,
+        Iri::parse("urn:iki:ui:face:target:html:screen:corridor").unwrap(),
+    );
+    let wide = Capability::scoped([SCOPE, "urn:cap:demo:other"]);
+    let rep = block_on(kernel.issue_in(request, &wide, scope)).unwrap();
+    let text = String::from_utf8_lossy(&rep.bytes);
+    assert!(!text.contains(SECRET), "{text}");
+    assert!(text.contains("Card number withheld"), "{text}");
+}
+
+#[test]
+fn a_nested_region_reads_only_what_the_outer_allows_under_both_scopes() {
+    let kernel = host(
+        vec![
+            // The inner region allows the card; the outer does not.
+            (
+                "wider",
+                screen(vec![region(
+                    "urn:demo:greeting",
+                    None,
+                    vec![region(
+                        "urn:demo:card",
+                        None,
+                        vec![reference("urn:demo:card", "Card number withheld")],
+                    )],
+                )]),
+            ),
+            // Both allow it; the outer's scopes grant it, the inner's do not.
+            (
+                "narrower",
+                screen(vec![region(
+                    "urn:demo:card",
+                    Some(SCOPE),
+                    vec![region(
+                        "urn:demo:card",
+                        Some("urn:cap:demo:other"),
+                        vec![reference("urn:demo:card", "Card number withheld")],
+                    )],
+                )]),
+            ),
+        ],
+        Arc::default(),
+    );
+    let wide = Capability::scoped([SCOPE, "urn:cap:demo:other"]);
+    let err = face(&kernel, "urn:iki:ui:face:target:html:screen:wider", &wide).unwrap_err();
+    assert!(
+        matches!(&err, Error::Unresolved(t) if t.as_str() == "urn:demo:card"),
+        "{err}"
+    );
+    let rep = face(
+        &kernel,
+        "urn:iki:ui:face:target:html:screen:narrower",
+        &wide,
+    )
+    .unwrap();
+    let text = String::from_utf8_lossy(&rep.bytes);
+    assert!(!text.contains(SECRET), "{text}");
+    assert!(text.contains("Card number withheld"), "{text}");
+}

@@ -589,7 +589,8 @@ pub async fn compose(
     descriptor: &Descriptor,
 ) -> Result<Node, Error> {
     let mut budget = crate::reference::Budget::default();
-    let node = compose_in(inv, node, descriptor, &mut budget, 0).await?;
+    let reach = crate::region::Reach::default();
+    let node = compose_in(inv, inv, &reach, node, descriptor, &mut budget, 0).await?;
     let node = write_only(&node, false)?;
     model::validate(&node)?;
     Ok(node)
@@ -599,7 +600,9 @@ type Composed<'a> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<Node, Error>> + Send + 'a>>;
 
 fn compose_in<'a>(
+    screen: &'a Invocation<'_>,
     inv: &'a Invocation<'_>,
+    reach: &'a crate::region::Reach,
     node: &'a Node,
     descriptor: &'a Descriptor,
     budget: &'a mut crate::reference::Budget,
@@ -609,8 +612,8 @@ fn compose_in<'a>(
         let mut node = node.clone();
         let mut rounds = 0;
         loop {
-            node = crate::reference::resolve_in(inv, &node, budget).await?;
-            node = crate::element::expand(inv, &node, descriptor).await?;
+            node = crate::reference::resolve_within(inv, &node, budget, reach).await?;
+            node = crate::element::expand_within(inv, &node, descriptor, reach).await?;
             if !crate::reference::any(&node) {
                 break;
             }
@@ -625,13 +628,14 @@ fn compose_in<'a>(
                 });
             }
         }
-        open_regions(inv, &node, descriptor, budget, regions).await
+        open_regions(screen, reach, &node, descriptor, budget, regions).await
     })
 }
 
 /// `node` with each outermost region composed in its narrowed space.
 fn open_regions<'a>(
-    inv: &'a Invocation<'_>,
+    screen: &'a Invocation<'_>,
+    reach: &'a crate::region::Reach,
     node: &'a Node,
     descriptor: &'a Descriptor,
     budget: &'a mut crate::reference::Budget,
@@ -645,19 +649,30 @@ fn open_regions<'a>(
                     crate::region::MAX_DEPTH
                 )));
             }
-            let narrowed = crate::region::narrow(inv, node).await?;
+            // A nested region reads in the SCREEN's space, not from the outer region's bound
+            // answers: those were read under the outer scopes and would not see the inner's.
+            let (narrowed, inner) = crate::region::narrow(screen, reach, node).await?;
             let group = crate::region::group(node);
-            return compose_in(&narrowed, &group, descriptor, budget, regions + 1).await;
+            return compose_in(
+                screen,
+                &narrowed,
+                &inner,
+                &group,
+                descriptor,
+                budget,
+                regions + 1,
+            )
+            .await;
         }
         let mut out = node.clone();
         let mut children = Vec::with_capacity(node.children.len());
         for child in &node.children {
-            children.push(open_regions(inv, child, descriptor, budget, regions).await?);
+            children.push(open_regions(screen, reach, child, descriptor, budget, regions).await?);
         }
         out.children = children;
         if let Some(r) = &node.replacement {
             out.replacement = Some(Box::new(
-                open_regions(inv, r, descriptor, budget, regions).await?,
+                open_regions(screen, reach, r, descriptor, budget, regions).await?,
             ));
         }
         Ok(out)
