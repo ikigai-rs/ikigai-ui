@@ -9,10 +9,16 @@
 //
 // Interaction, mouse AND keyboard: drag or arrow keys orbit, the wheel or + and - zoom, a click
 // or N (Shift+N back) selects a node, Escape clears it. The selection is said in #status.
+//
+// ONE scene, two faces: NODE_WGSL and EDGE_WGSL below are also the GPUI face's shaders (ledger
+// #3516), which `ikigai_ui::scene::wgsl` reads out of this file. Keep each a `var X_WGSL =` run of
+// double-quoted string literals joined by `+`, with no escapes, ending in `;` at a line's end.
+// Colors are the palette's, by role, in the uniform: nodes `--accent`, edges `--line`, the
+// selection `--focus` (the ground is the page's own `--bg`, through the transparent canvas).
 (function () {
   "use strict";
   var NODE_WGSL =
-    "struct U { m: mat4x4<f32>, aspect: f32, size: f32, sel: f32, pad: f32 };" +
+    "struct U { m: mat4x4<f32>, aspect: f32, size: f32, sel: f32, pad: f32, node: vec4<f32>, edge: vec4<f32>, chosen: vec4<f32> };" +
     "@group(0) @binding(0) var<uniform> u: U;" +
     "struct O { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32>, @location(1) s: f32 };" +
     "@vertex fn vs(@builtin(vertex_index) v: u32, @builtin(instance_index) i: u32, @location(0) at: vec3<f32>) -> O {" +
@@ -23,12 +29,22 @@
     "  o.q = c[v]; o.s = select(0.0, 1.0, f32(i) == u.sel); return o; }" +
     "@fragment fn fs(o: O) -> @location(0) vec4<f32> {" +
     "  if (dot(o.q, o.q) > 1.0) { discard; }" +
-    "  return mix(vec4(0.15, 0.45, 0.85, 1.0), vec4(0.9, 0.4, 0.1, 1.0), o.s); }";
+    "  return mix(u.node, u.chosen, o.s); }";
   var EDGE_WGSL =
-    "struct U { m: mat4x4<f32>, aspect: f32, size: f32, sel: f32, pad: f32 };" +
+    "struct U { m: mat4x4<f32>, aspect: f32, size: f32, sel: f32, pad: f32, node: vec4<f32>, edge: vec4<f32>, chosen: vec4<f32> };" +
     "@group(0) @binding(0) var<uniform> u: U;" +
     "@vertex fn vs(@location(0) at: vec3<f32>) -> @builtin(position) vec4<f32> { return u.m * vec4(at, 1.0); }" +
-    "@fragment fn fs() -> @location(0) vec4<f32> { return vec4(0.5, 0.5, 0.55, 1.0); }";
+    "@fragment fn fs() -> @location(0) vec4<f32> { return u.edge; }";
+
+  // A palette token as sRGB channels in [0, 1] (the canvas format is unorm, so they land as
+  // written), else the fallback.
+  function token(el, name, fallback) {
+    var v = getComputedStyle(el).getPropertyValue("--" + name).trim();
+    var m = /^#([0-9a-fA-F]{6})$/.exec(v);
+    if (!m) return fallback;
+    var n = parseInt(m[1], 16);
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255, 1];
+  }
 
   function say(text) {
     var status = document.getElementById("status");
@@ -103,7 +119,7 @@
     }
     var nodeBuffer = buffer(points.length ? points : new Float32Array(3), GPUBufferUsage.VERTEX);
     var edgeBuffer = buffer(lines, GPUBufferUsage.VERTEX);
-    var uniform = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    var uniform = device.createBuffer({ size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     var layoutGroup = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: {} }] });
     var group = device.createBindGroup({ layout: layoutGroup, entries: [{ binding: 0, resource: { buffer: uniform } }] });
     var pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layoutGroup] });
@@ -124,9 +140,13 @@
     function render() {
       var aspect = canvas.width / canvas.height;
       state.matrix = multiply(perspective(camera.fov || 50, aspect, 0.1, 100), view(state.yaw, state.pitch, state.distance));
-      var u = new Float32Array(20);
+      var u = new Float32Array(32);
       u.set(state.matrix, 0);
       u[16] = aspect; u[17] = 0.03; u[18] = state.selected;
+      // Read each frame, so a theme change repaints with the new palette.
+      u.set(token(figure, "accent", [0.15, 0.45, 0.85, 1]), 20);
+      u.set(token(figure, "line", [0.5, 0.5, 0.55, 1]), 24);
+      u.set(token(figure, "focus", [0.9, 0.4, 0.1, 1]), 28);
       device.queue.writeBuffer(uniform, 0, u);
       var encoder = device.createCommandEncoder();
       var pass = encoder.beginRenderPass({

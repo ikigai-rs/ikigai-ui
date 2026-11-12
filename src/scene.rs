@@ -53,6 +53,49 @@ pub const RENDERER: crate::Artifact = crate::Artifact {
     media_type: crate::JS,
     bytes: include_bytes!("../assets/scene-renderer.js"),
 };
+/// The renderer's two WGSL modules, read out of [`RENDERER`] itself: one scene, two faces. The
+/// GPUI face (ledger #3516) draws with exactly the html face's shaders, so neither can drift.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Wgsl {
+    /// Nodes: an instanced disc per node, `vs` and `fs`.
+    pub node: String,
+    /// Edges: a line list, `vs` and `fs`.
+    pub edge: String,
+}
+
+/// The shaders [`RENDERER`] draws with. Each is a `var X_WGSL =` run of double-quoted string
+/// literals joined by `+` and ended by `;`, which the script's header asks of them.
+pub fn wgsl() -> Wgsl {
+    let js = std::str::from_utf8(RENDERER.bytes).expect("the renderer is UTF-8");
+    let read = |name: &str| -> String {
+        let start = js
+            .find(&format!("var {name} ="))
+            .unwrap_or_else(|| panic!("the renderer declares {name}"));
+        let mut out = String::new();
+        let mut rest = &js[start + name.len() + 6..];
+        loop {
+            rest = rest.trim_start();
+            if let Some(after) = rest.strip_prefix('"') {
+                let end = after.find('"').expect("a closed literal");
+                let literal = &after[..end];
+                assert!(!literal.contains('\\'), "{name}: no escapes");
+                out.push_str(literal);
+                rest = &after[end + 1..];
+            } else if let Some(after) = rest.strip_prefix('+') {
+                rest = after;
+            } else if rest.starts_with(';') {
+                return out;
+            } else {
+                panic!("{name}: only string literals joined by +");
+            }
+        }
+    };
+    Wgsl {
+        node: read("NODE_WGSL"),
+        edge: read("EDGE_WGSL"),
+    }
+}
+
 /// The most nodes a scene draws.
 pub const MAX_NODES: usize = 512;
 /// The most edges a scene draws.

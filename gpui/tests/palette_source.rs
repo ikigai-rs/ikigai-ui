@@ -3,11 +3,12 @@
 //! none of GPUI's named colors. A color written here would escape the palettes' contrast floor
 //! and would not follow the theme.
 
-const SOURCES: [(&str, &str); 6] = [
+const SOURCES: [(&str, &str); 7] = [
     ("lib.rs", include_str!("../src/lib.rs")),
     ("main.rs", include_str!("../src/main.rs")),
     ("native.rs", include_str!("../src/native.rs")),
     ("input.rs", include_str!("../src/input.rs")),
+    ("scene.rs", include_str!("../src/scene.rs")),
     ("theme.rs", include_str!("../src/theme.rs")),
     ("worker.rs", include_str!("../src/worker.rs")),
 ];
