@@ -38,7 +38,8 @@
       "label": "Media",
       "kind": [
         "image",
-        "visual"
+        "visual",
+        "scene"
       ]
     }
   ]

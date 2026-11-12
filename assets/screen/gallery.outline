@@ -25,3 +25,4 @@ group label=Gallery
     heading content=Media level=2
     urn:iki:ui:example:kind:image
     urn:iki:ui:example:kind:visual
+    urn:iki:ui:example:kind:scene

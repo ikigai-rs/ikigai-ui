@@ -25,7 +25,8 @@
     "status",
     "image",
     "group",
-    "visual"
+    "visual",
+    "scene"
   ],
   "fallback": {},
   "submit": "/resolution/iri/{resource}",

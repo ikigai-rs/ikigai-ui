@@ -27,7 +27,8 @@
     "form": "text",
     "nav": "list",
     "image": "text",
-    "visual": "text"
+    "visual": "text",
+    "scene": "text"
   },
   "limits": {},
   "hints": [

@@ -255,8 +255,12 @@ fn the_gallery_resolves_in_both_faces() {
     let mut stack = vec![&mut ld];
     while let Some(serde_json::Value::Object(map)) = stack.pop() {
         assert!(map.remove("@id").is_some(), "every node is named");
-        if let Some(serde_json::Value::Array(children)) = map.get_mut("children") {
-            stack.extend(children.iter_mut());
+        for (key, value) in map.iter_mut() {
+            match (key.as_str(), value) {
+                ("children", serde_json::Value::Array(children)) => stack.extend(children.iter_mut()),
+                ("replacement", replacement) => stack.push(replacement),
+                _ => {}
+            }
         }
     }
     assert_eq!(

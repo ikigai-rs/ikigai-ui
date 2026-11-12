@@ -1,0 +1,17 @@
+{
+  "kind": "scene",
+  "properties": {
+    "label": "The contact contract as a graph",
+    "datum": "urn:iki:ui:scene:graph:urn:iki:ui:example:graph:contact"
+  },
+  "replacement": {
+    "kind": "list",
+    "properties": {
+      "label": "The contact contract, as text"
+    },
+    "children": [
+      { "kind": "text", "properties": { "content": "contact (Service) takes name, email, topic and message" } },
+      { "kind": "text", "properties": { "content": "topic (Input) is one of question, bug, other" } }
+    ]
+  }
+}

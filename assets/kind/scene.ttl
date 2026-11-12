@@ -1,0 +1,25 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# The `scene` node kind (ledger #3514): a 3D scene embedded in a screen. Closed: a property not
+# named here is refused. `datum` names the scene datum (`urn:iki:ui:scene:graph:{graph}`), data a
+# renderer reads, never code. Its fallback text is `label`, and its `replacement`, the scene's
+# accessible form, is required: a face that cannot draw the scene shows it instead, and the
+# html face shows it beside the canvas.
+<urn:iki:ui:kind:name:scene> a sh:NodeShape, rdfs:Class ;
+  rdfs:subClassOf <urn:iki:ui:node> ;
+  rdfs:label "scene" ;
+  <urn:iki:ui:property:name:fallback> <urn:iki:ui:property:name:label> ;
+  sh:targetClass <urn:iki:ui:kind:name:scene> ;
+  sh:closed true ;
+  sh:property <urn:iki:ui:kind:name:scene:property:name:replacement>, <urn:iki:ui:kind:name:scene:property:name:type>, <urn:iki:ui:kind:name:scene:property:name:label>, <urn:iki:ui:kind:name:scene:property:name:datum> .
+
+<urn:iki:ui:kind:name:scene:property:name:type> sh:path rdf:type ; sh:hasValue <urn:iki:ui:kind:name:scene> ; sh:maxCount 1 .
+<urn:iki:ui:kind:name:scene:property:name:label> sh:path <urn:iki:ui:property:name:label> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+<urn:iki:ui:kind:name:scene:property:name:datum> sh:path <urn:iki:ui:property:name:datum> ; sh:maxCount 1 ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 .
+
+# The required replacement subtree, validated by its own kind shape.
+<urn:iki:ui:kind:name:scene:property:name:replacement> sh:path <urn:iki:ui:property:name:replacement> ;
+  sh:minCount 1 ; sh:maxCount 1 ; sh:class <urn:iki:ui:node> .

@@ -5,7 +5,7 @@
     { "name": "multi-window", "version": "1.0" }
   ],
   "renders": ["heading", "text", "button", "link", "list", "status", "group", "field", "choice", "option", "form", "nav", "table"],
-  "fallback": { "image": "text", "visual": "text" },
+  "fallback": { "image": "text", "visual": "text", "scene": "text" },
   "limits": {},
   "hints": ["urn:iki:ui:hint:gpui:"]
 }

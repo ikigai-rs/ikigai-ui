@@ -63,9 +63,9 @@ macro_rules! template {
 }
 
 /// The compiled-in templates, one per kind of [`model::KINDS`].
-pub const TEMPLATES: [crate::Artifact; 15] = template!(
+pub const TEMPLATES: [crate::Artifact; 16] = template!(
     "heading", "text", "field", "choice", "option", "button", "link", "list", "table", "form",
-    "nav", "status", "image", "group", "visual"
+    "nav", "status", "image", "group", "visual", "scene"
 );
 
 fn argument(name: &str, summary: &str) -> ArgSpec {
@@ -156,6 +156,13 @@ fn locate<'a>(root: &'a Node, at: &str) -> Result<(&'a Node, Option<&'a str>), E
     }
     let (mut node, mut parent) = (root, None);
     for part in parts {
+        // `r` is the node's replacement: a scene's accessible form, drawn beside its canvas.
+        if part == "r" {
+            let replacement = node.replacement.as_deref().ok_or_else(missing)?;
+            parent = Some(node.kind.as_str());
+            node = replacement;
+            continue;
+        }
         let i: usize = part.parse().map_err(|_| missing())?;
         let child = node.children.get(i).ok_or_else(missing)?;
         parent = Some(node.kind.as_str());
@@ -340,6 +347,12 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                 let value = match (node.kind.as_str(), name) {
                     ("form", "submit") => submit(inv, node).await?,
                     ("form", "method") => Some(form_method(node)?),
+                    ("scene", "datum-url") => match text_of(node, "datum") {
+                        Some(datum) => crate::target::read_descriptor(inv, "html")
+                            .await?
+                            .submit_url(datum),
+                        None => None,
+                    },
                     ("option", "selected") => {
                         let selected = at
                             .rsplit_once('.')
@@ -397,6 +410,9 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
                         .map_err(|_| Error::Endpoint(format!("{path}: not UTF-8")))
                 };
                 let mut out = String::new();
+                if node.kind == "scene" && node.replacement.is_some() {
+                    out.push_str(&child_view(format!("{at}.r")).await?);
+                }
                 for (i, child) in node.children.iter().enumerate() {
                     let path = format!("{at}.{i}");
                     match node.kind.as_str() {
