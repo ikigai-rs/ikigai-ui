@@ -72,21 +72,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
     }
     // A lensed view as a page in the shell (ledger #3538), the graph lens over the example
-    // graph, in light and dark, so axe covers the lens chooser, the facets' form and a scene.
-    for theme in ["light", "dark"] {
-        let page = ikigai_ui::testkit::render::source(
-            &kernel,
-            &format!(
-                "urn:demo:page:lens:contact-graph:resource:{}",
-                ikigai_ui::scene::EXAMPLE_GRAPH
-            ),
-            &[("theme", theme)],
-        )?;
-        files.push((
-            format!("/lens-contact-graph-{theme}.html"),
-            common::HTML.to_string(),
-            page.into_bytes(),
-        ));
+    // graph, in light and dark, so axe covers the lens chooser, the facets' form and a scene;
+    // and the dashboard a `construct` lens builds as the model itself (ledger #3520).
+    for lens in ["contact-graph", "contact-dashboard"] {
+        for theme in ["light", "dark"] {
+            let page = ikigai_ui::testkit::render::source(
+                &kernel,
+                &format!(
+                    "urn:demo:page:lens:{lens}:resource:{}",
+                    ikigai_ui::scene::EXAMPLE_GRAPH
+                ),
+                &[("theme", theme)],
+            )?;
+            files.push((
+                format!("/lens-{lens}-{theme}.html"),
+                common::HTML.to_string(),
+                page.into_bytes(),
+            ));
+        }
     }
     // The lens's scene datum, at the door URL its figure names, as the gallery's below.
     let lens_datum = format!(
