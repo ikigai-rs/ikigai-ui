@@ -47,7 +47,8 @@ const SHOTS = [
       }
     },
   },
-  { name: "gallery", path: "/page/gallery" },
+  // The whole gallery, the Media card (the photo, a visual, the scene) included.
+  { name: "gallery", path: "/page/gallery", maxHeight: 3200 },
   { name: "elements", path: "/page/elements" },
   {
     name: "contact-refusal",
@@ -128,7 +129,7 @@ let errors = 0;
 for (const shot of SHOTS) {
   for (const mode of MODES) {
     const file = `${shot.name}-${mode}.webp`;
-    const context = await browser.newContext({ viewport: { width: WIDTH, height: 900 }, deviceScaleFactor: 1 });
+    const context = await browser.newContext({ viewport: { width: WIDTH, height: 900 }, deviceScaleFactor: 2 });
     const page = await context.newPage();
     page.on("pageerror", (e) => {
       errors += 1;
@@ -141,7 +142,7 @@ for (const shot of SHOTS) {
     if (shot.clip) {
       png = await page.locator(shot.clip).first().screenshot({ animations: "disabled" });
     } else {
-      const height = Math.min(MAX_HEIGHT, await page.evaluate(() => document.documentElement.scrollHeight));
+      const height = Math.min(shot.maxHeight ?? MAX_HEIGHT, await page.evaluate(() => document.documentElement.scrollHeight));
       png = await page.screenshot({ clip: { x: 0, y: 0, width: WIDTH, height }, fullPage: true, animations: "disabled" });
     }
     const drawn = (await page.locator("figure[data-ui-scene][data-ui-scene-drawn]").count()) > 0;

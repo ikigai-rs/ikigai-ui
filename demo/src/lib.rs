@@ -371,6 +371,30 @@ fn fragment_parts(name: &str) -> (&'static str, &'static str, Option<&'static st
     }
 }
 
+/// What the page splices of `inner`: all of it, except the support page, whose resource is a
+/// whole document (`<!doctype html>` to `</html>`, its own `<h1>`) and goes inside this page's
+/// `<main>` as the body's content after that heading.
+fn support_body<'a>(name: &str, inner: &'a [u8]) -> &'a [u8] {
+    if name != "support" {
+        return inner;
+    }
+    let text = std::str::from_utf8(inner).unwrap_or_default();
+    let body = text
+        .split_once("<body>")
+        .and_then(|(_, rest)| rest.rsplit_once("</body>"))
+        .map(|(body, _)| body)
+        .unwrap_or(text);
+    let body = body
+        .strip_prefix("<h1>")
+        .and_then(|rest| rest.split_once("</h1>"))
+        .map(|(_, rest)| rest)
+        .unwrap_or(body);
+    body.as_bytes()
+}
+
+/// The demo's one image: the gallery's image example names `/img/lighthouse.jpg`.
+const LIGHTHOUSE: &[u8] = include_bytes!("../assets/lighthouse.jpg");
+
 /// The demo pages' own names: a header, titles and fragments under [`BASE`].
 pub fn site() -> EndpointSpace {
     let header = PAGES
@@ -392,6 +416,23 @@ pub fn site() -> EndpointSpace {
                     .verb(Verb::Source)
                     .verb(Verb::Meta)
                     .output(HTML),
+            ),
+        )
+        .bind(
+            Exact::new(format!("{BASE}img:lighthouse.jpg")),
+            FnEndpoint::new("uidemo-img", |_: &Invocation<'_>| {
+                Ok(
+                    Representation::new(ReprType::new("image/jpeg"), LIGHTHOUSE.to_vec())
+                        .cacheable(),
+                )
+            })
+            .with_description(
+                Description::new("uidemo-img")
+                    .title("uidemo-img")
+                    .summary("The gallery's image example: a lighthouse at dusk.")
+                    .verb(Verb::Source)
+                    .verb(Verb::Meta)
+                    .output("image/jpeg"),
             ),
         )
         .bind(
@@ -421,7 +462,7 @@ pub fn site() -> EndpointSpace {
                         }
                         body.push('\n');
                         let mut bytes = body.into_bytes();
-                        bytes.extend_from_slice(&inner.bytes);
+                        bytes.extend_from_slice(support_body(name, &inner.bytes));
                         Ok(html(bytes))
                     })
                 },
@@ -511,6 +552,8 @@ pub async fn prefixes(kernel: &Kernel) -> Result<ikigai_core::Scope, ikigai_core
 pub fn root(store: Store) -> Arc<dyn Space> {
     let family = ikigai_ui::Pages::new("uidemo", BASE)
         .lenses(true)
+        // The demo has no look of its own, so it takes ikigai-ui's.
+        .stylesheet("/ui/base.css")
         .build()
         .expect("a valid family");
     #[allow(unused_mut)]
@@ -567,6 +610,7 @@ pub fn door() -> EdgeConfig {
                 &format!("{BASE}page:lens:{{lens}}:resource:{{+iri}}"),
             ),
             route("/ui/{+rest}", "urn:iki:ui:{+rest}"),
+            route("/img/{name}", &format!("{BASE}img:{{name}}")),
             route("/resolution/iri/{+iri}", "{+iri}"),
         ]),
         ..EdgeConfig::default()

@@ -13,6 +13,7 @@
 //! | `urn:iki:ui:shell.js` | artifact | the shell script: refusals, the status region, focus after a swap, the theme (D14) |
 //! | `urn:iki:ui:template:shell` | artifact | the page shell, a compose template (D1, D8, D13), the theme chooser in its header |
 //! | `urn:iki:ui:template:tokens` | artifact | the token stylesheet's template |
+//! | `urn:iki:ui:base.css` | artifact | the base stylesheet, opt-in ([`Pages::stylesheet`]`("/ui/base.css")`): type, spacing, cards, fields, tables, all on the tokens |
 //! | `urn:iki:ui:palette:{name}` | data | a palette table ([`palette`]): CSS declarations, or Turtle with `as=text/turtle` |
 //! | `urn:iki:ui:tokens.css` | composition | the template filled with the parsed palettes: `auto`, light, dark, high contrast |
 //! | a host's `{base}page:{name}` | composition | the shell over the host's fragment, from [`pages`] or [`Pages`] |
@@ -99,7 +100,7 @@
 //! ```
 //!
 //! A door routes `/ui/{…}` to `urn:iki:ui:{…}`, which is where the shell links them:
-//! `/ui/tokens.css`, `/ui/shell.js`, `/ui/htmx`. That is one route-table prefix entry (D10);
+//! `/ui/tokens.css`, `/ui/shell.js`, `/ui/htmx` (and `/ui/base.css` for a family that links it). That is one route-table prefix entry (D10);
 //! the mechanical rule alone would put them at `/iki/ui/{…}`.
 
 #![forbid(unsafe_code)]
@@ -172,6 +173,11 @@ pub const SHELL: &str = "urn:iki:ui:template:shell";
 pub const TOKENS_TEMPLATE: &str = "urn:iki:ui:template:tokens";
 /// The token stylesheet: `urn:iki:ui:tokens.css`.
 pub const TOKENS_CSS: &str = "urn:iki:ui:tokens.css";
+/// The base stylesheet, linked by a family that has no look of its own
+/// ([`Pages::stylesheet`]`("/ui/base.css")`): type, spacing, the header, groups as cards,
+/// fields, buttons, tables, lists, figures and the disclosure. Every color is a token, so it
+/// follows the theme like the rest of the page.
+pub const BASE_CSS: &str = "urn:iki:ui:base.css";
 
 const HTML: &str = "text/html; charset=utf-8";
 const JS: &str = "text/javascript";
@@ -199,7 +205,7 @@ pub struct Artifact {
 
 /// The bundled shell artifacts a directory can override. The [`target`] descriptors have
 /// their own validated file-backed resources.
-pub const ARTIFACTS: [Artifact; 5] = [
+pub const ARTIFACTS: [Artifact; 6] = [
     scene::RENDERER,
     Artifact {
         iri: "urn:iki:ui:htmx",
@@ -228,6 +234,13 @@ pub const ARTIFACTS: [Artifact; 5] = [
         file: "tokens.template.css",
         media_type: CSS,
         bytes: include_bytes!("../assets/tokens.template.css"),
+    },
+    Artifact {
+        iri: BASE_CSS,
+        id: "ui-base-css",
+        file: "base.css",
+        media_type: CSS,
+        bytes: include_bytes!("../assets/base.css"),
     },
 ];
 

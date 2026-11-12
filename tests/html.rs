@@ -19,7 +19,7 @@ fn gallery_renders_every_kind_through_templates() {
         "<a href=\"/help\">Help</a>",
         "<nav aria-label=\"Site\"><ul><li>",
         "<ul class=\"ui-list\" aria-label=\"Steps\"><li>",
-        "<img src=\"/img/lighthouse.png\" alt=\"A lighthouse at dusk\">",
+        "<img src=\"/img/lighthouse.jpg\" alt=\"A lighthouse at dusk\">",
         "<figure class=\"ui-visual\">",
         // A refused field's message is on the field, and the field says it is invalid.
         "aria-invalid=\"true\" aria-describedby=\"ui-n.1.2-description ui-n.1.2-error\"",

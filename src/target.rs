@@ -500,7 +500,7 @@ pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
             if inv.inline_str("as").ok().is_some_and(|as_type| {
                 as_type.split(';').next().unwrap_or_default().trim() == "text/html"
             }) {
-                let mut html = String::from("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>UI target support</title></head><body><h1>UI target support</h1><p>Descriptor contracts; GPUI's renderer is not yet implemented. Text means the kind's required fallback text.</p><table><caption>Every target against every kind</caption><thead><tr><th scope=\"col\">Kind</th>");
+                let mut html = String::from("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>UI target support</title></head><body><h1>UI target support</h1><p>What each target's descriptor says it renders. Where it does not, the fallback names the kind it renders instead; text is the kind's required fallback text.</p><table><caption>Every target against every kind</caption><thead><tr><th scope=\"col\">Kind</th>");
                 for name in matrix.keys() {
                     html.push_str(&format!("<th scope=\"col\">{}</th>", ikigai_fn::html::html_text(name)));
                 }

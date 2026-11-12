@@ -1,0 +1,171 @@
+/* ikigai-ui: the base stylesheet, opt-in (`Pages::stylesheet("/ui/base.css")`).
+ *
+ * tokens.css carries the colors and the shell's own rules and nothing else, so a host with its
+ * own look (gonk.css) keeps it. A family that has none links this as well: type, spacing, the
+ * header, groups as cards, fields, buttons, tables, lists, figures and the disclosure, every
+ * color a token from the palette tables. No color is written here.
+ */
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+/* --- the shell: header, main ---------------------------------------------------------- */
+
+body > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+body > header nav { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+body > header nav a { font-weight: 600; text-decoration: none; border-radius: var(--radius); }
+body > header nav a:hover { text-decoration: underline; }
+body > header nav a[aria-current="page"] { color: var(--fg); background: var(--bg); }
+body > header .ui-theme { margin: 0; }
+
+main { max-width: 60rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+main:focus { outline: none; }
+
+/* --- type ------------------------------------------------------------------------------ */
+
+h1, h2, h3, h4 { line-height: 1.25; margin: 0 0 0.5rem; }
+h1 { font-size: 2rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.375rem; }
+h3 { font-size: 1.125rem; }
+h4 { font-size: 1rem; }
+:not(h1, h2, h3, h4) + h2 { margin-top: 1.5rem; }
+:not(h1, h2, h3, h4) + h3 { margin-top: 1rem; }
+main > h1 + p { color: var(--muted); font-size: 1.0625rem; margin-bottom: 1.5rem; }
+p { margin: 0 0 0.75rem; max-width: 70ch; }
+a { text-underline-offset: 0.15em; }
+code, pre, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+pre { overflow-x: auto; padding: 0.75rem; background: var(--surface); border-radius: var(--radius); }
+
+/* --- groups: a group inside a group is a card ------------------------------------------- */
+
+.ui-group { margin: 0 0 1rem; }
+.ui-group > .ui-group {
+  padding: 1rem 1.25rem;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+.ui-group > .ui-group > .ui-group { background: var(--surface); }
+.ui-group > :last-child { margin-bottom: 0; }
+/* A top-level group of nothing but groups (a gallery): its cards in a grid. Reading order is
+   the DOM's, left to right then down. */
+main > .ui-group:not(:has(> :not(.ui-group))) {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); gap: 1rem; align-items: start;
+}
+main > .ui-group:not(:has(> :not(.ui-group))) > .ui-group { margin: 0; }
+/* Two columns wide: a card holding a form, usually the tallest, stands in the right column
+   beside the next three cards, which stack on the left, so short cards do not leave a hole
+   beside it. The cards are still read in their order. */
+@media (min-width: 48rem) {
+  main > .ui-group:not(:has(> :not(.ui-group))) > .ui-group:has(form, .ui-field) { grid-column: 2; grid-row: span 3; }
+}
+/* A card that shows a picture, a chart or a scene takes the whole row. */
+main > .ui-group:not(:has(> :not(.ui-group))) > .ui-group:has(img, figure) { grid-column: 1 / -1; }
+
+/* --- forms ------------------------------------------------------------------------------ */
+
+.ui-form { margin: 0 0 1rem; }
+.ui-form > h3 { margin-bottom: 0.75rem; }
+.ui-field { display: grid; gap: 0.25rem; margin: 0 0 1rem; max-width: 28rem; }
+.ui-field > label { font-weight: 600; }
+.ui-hint { color: var(--muted); font-size: 0.875rem; margin: 0; }
+.ui-hint:empty, .ui-field > .ui-note:empty { display: none; }
+.ui-field > .ui-note { margin: 0; font-size: 0.875rem; font-weight: 600; }
+
+input, select, textarea, button { font: inherit; }
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+  min-height: 2.25rem;
+  padding: 0.375rem 0.625rem;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+textarea { min-height: 6rem; }
+[aria-invalid="true"] { border-color: var(--danger) !important; box-shadow: inset 0 0 0 1px var(--danger); }
+input[type="checkbox"], input[type="radio"] { width: 1.125rem; height: 1.125rem; accent-color: var(--accent); }
+
+button:not(.ui-theme-apply), input[type="submit"] {
+  min-height: 2.25rem;
+  padding: 0.375rem 1rem;
+  font-weight: 600;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+button:not(.ui-theme-apply):hover, input[type="submit"]:hover { box-shadow: 0 0 0 3px var(--rule); }
+.ui-field + button, .ui-form button { margin-top: 0.25rem; }
+
+fieldset { margin: 0 0 1rem; padding: 0.75rem 1rem 1rem; border: 1px solid var(--rule); border-radius: var(--radius); }
+legend { padding: 0 0.375rem; font-weight: 600; }
+fieldset.ui-field { display: block; }
+.ui-radio { display: flex; align-items: center; gap: 0.5rem; min-height: 1.75rem; }
+.ui-radio > label { font-weight: 400; }
+/* A checkbox field: its label and box on one line, in the order they are read. */
+.ui-field:has(> input[type="checkbox"]) { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; margin-bottom: 0.5rem; }
+.ui-field:has(> input[type="checkbox"]) > label { font-weight: 400; }
+.ui-field:has(> input[type="checkbox"]) > p { flex-basis: 100%; }
+
+.ui-status { color: var(--ok); font-weight: 600; }
+
+/* --- lists ------------------------------------------------------------------------------ */
+
+ul, ol { margin: 0 0 1rem; padding-left: 1.25rem; }
+li { margin: 0.125rem 0; }
+li > p { margin: 0; }
+nav ul { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0; list-style: none; }
+
+/* --- tables ----------------------------------------------------------------------------- */
+
+.ui-table, main table {
+  border-collapse: collapse;
+  margin: 0 0 1rem;
+  font-variant-numeric: tabular-nums;
+}
+main caption { caption-side: top; text-align: left; font-weight: 600; padding: 0 0 0.375rem; }
+main th, main td { padding: 0.375rem 0.75rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+main th > p, main td > p { margin: 0; }
+main th[scope="col"] { color: var(--muted); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 2px solid var(--line); }
+main th[scope="row"] { font-weight: 600; }
+main tr:last-child > th, main tr:last-child > td { border-bottom: 0; }
+
+/* --- media ------------------------------------------------------------------------------ */
+
+img, canvas { max-width: 100%; height: auto; }
+img { display: block; border-radius: var(--radius); }
+figure { margin: 0 0 1rem; }
+figcaption { color: var(--muted); font-size: 0.875rem; margin: 0.375rem 0 0; }
+figcaption a { margin-left: 0.5rem; }
+img + figure, figure + figure { margin-top: 1.25rem; }
+/* A visual nobody has drawn yet: a framed box with its label, so its caption reads as its own
+   and not as the caption of whatever sits above it. role="img" takes its name from aria-label,
+   so the label shown here is not read twice. */
+.ui-visual > [role="img"]:empty {
+  display: grid; place-items: center; min-height: 8rem; max-width: 28rem;
+  color: var(--muted); background: var(--surface);
+  border: 1px dashed var(--line); border-radius: var(--radius);
+}
+.ui-visual > [role="img"]:empty::before { content: attr(aria-label); font-weight: 600; }
+.ui-scene-replacement { margin-top: 0.5rem; padding: 0.75rem 1rem; background: var(--surface); border-radius: var(--radius); }
+.ui-scene-replacement table { margin: 0; }
+meter { width: 12rem; height: 1rem; vertical-align: middle; }
+
+/* --- the disclosure --------------------------------------------------------------------- */
+
+.ui-disclosure { margin: 0 0 1rem; padding: 0.5rem 1rem; border: 1px solid var(--rule); border-radius: var(--radius); }
+.ui-disclosure > summary { font-weight: 600; padding: 0.25rem 0; }
+.ui-disclosure[open] > summary { margin-bottom: 0.5rem; border-bottom: 1px solid var(--rule); }
