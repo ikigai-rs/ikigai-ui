@@ -165,10 +165,15 @@ test.describe("gallery", () => {
   });
 
   test("the shell's status region: one, outside #main, polite", async ({ page }) => {
-    // Empty, it is display:none (tokens.css `#status:empty`), so out of the tree until it speaks.
-    await expect(page.getByRole("status")).toHaveCount(0);
-    const status = page.getByRole("status", { includeHidden: true });
+    // Empty, it is in the tree already (ledger #3565): visually hidden, never display:none, so a
+    // reader that announces only a region it knew before the change hears the first sentence.
+    const status = page.getByRole("status");
     await expect(status).toHaveCount(1);
+    await expect(status).toBeEmpty();
+    await expect(status).toMatchAriaSnapshot(`- status`);
+    // ...and takes no room on the page while it says nothing.
+    const box = await status.boundingBox();
+    expect(box.width * box.height).toBeLessThanOrEqual(1);
     await expect(page.locator("#main #status")).toHaveCount(0);
     await expect(status).toHaveAttribute("id", "status");
     await expect(status).toHaveAttribute("aria-live", "polite");
