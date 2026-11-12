@@ -36,6 +36,14 @@ fn main() {
             std::process::exit(2)
         }),
     };
+    // Optional screen names after the address and theme let the same native host open
+    // a lensed demo directly; the three familiar windows remain the default.
+    let mut screens: Vec<String> = std::env::args().skip(3).collect();
+    if screens.is_empty() {
+        screens = ["gallery", "elements", "contact"]
+            .map(String::from)
+            .to_vec();
+    }
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -63,7 +71,7 @@ fn main() {
     let capability = Capability::root().attenuate([ikigai_ui_demo::CONTACT_WRITE]);
     let worker = Worker::new(kernel, capability, Scope::empty());
     Application::new().run(move |cx: &mut App| {
-        for screen in ["gallery", "elements", "contact"] {
+        for screen in screens {
             let worker = worker.clone();
             let bounds = Bounds::centered(None, size(px(820.), px(760.)), cx);
             cx.open_window(
@@ -71,7 +79,7 @@ fn main() {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     ..Default::default()
                 },
-                move |window, cx| cx.new(|cx| Screen::new(worker, screen, theme, window, cx)),
+                move |window, cx| cx.new(|cx| Screen::new(worker, &screen, theme, window, cx)),
             )
             .expect("native demo window");
         }

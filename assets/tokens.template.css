@@ -60,3 +60,8 @@ nav a { display: inline-block; padding: 0.25rem 0.5rem; } /* 24px targets (WCAG 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Ordinary groups, presented as board columns; wrap without changing reading order. */
+.ui-columns { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--gap); }
+.ui-columns > .ui-group { flex: 1 1 16rem; min-width: 0; padding: var(--gap); border: 1px solid var(--line); border-radius: var(--radius); }
+.ui-columns > .ui-group > .ui-group { padding: var(--gap); margin: var(--gap) 0; border: 1px solid var(--rule); border-radius: var(--radius); }

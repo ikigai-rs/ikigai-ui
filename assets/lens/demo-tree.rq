@@ -1,0 +1,6 @@
+PREFIX ex: <urn:iki:ui:example:lenses:>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?focus ?item ?label ?broader WHERE {
+ GRAPH ?focus { ?item a skos:Concept ; rdfs:label ?label . OPTIONAL { ?item skos:broader ?broader } }
+} ORDER BY ?label ?item

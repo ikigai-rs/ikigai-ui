@@ -88,6 +88,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             page.into_bytes(),
         ));
     }
+    // The stage-two templates are ordinary screens: test all four, including the
+    // board's second column page and its selected status facet, under the same CSP.
+    for renderer in ["thread", "board", "tree", "timeline"] {
+        let target = format!(
+            "urn:demo:page:lens:demo-{renderer}:resource:{}",
+            ikigai_ui::lens::DEMO_GRAPH
+        );
+        for theme in ["light", "dark"] {
+            let page = ikigai_ui::testkit::render::source(&kernel, &target, &[("theme", theme)])?;
+            files.push((
+                format!("/lens-{renderer}-{theme}.html"),
+                common::HTML.to_string(),
+                page.into_bytes(),
+            ));
+        }
+        if renderer == "board" {
+            let page = ikigai_ui::testkit::render::source(
+                &kernel,
+                &target,
+                &[
+                    ("lens", "demo-board"),
+                    ("page", "2"),
+                    ("onlyStatus", "Todo"),
+                ],
+            )?;
+            files.push((
+                "/lens-board-page-2.html".into(),
+                common::HTML.to_string(),
+                page.into_bytes(),
+            ));
+        }
+    }
     // The lens's scene datum, at the door URL its figure names, as the gallery's below.
     let lens_datum = format!(
         "{}urn:iki:ui:lens:name:contact-graph:focus:{}",

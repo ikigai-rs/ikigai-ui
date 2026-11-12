@@ -1,0 +1,7 @@
+PREFIX ex: <urn:iki:ui:example:lenses:>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?focus ?item ?label ?status ?assignee ?assigneeName ?related WHERE {
+ GRAPH ?focus { ?item a ex:Task ; rdfs:label ?label ; ex:status ?status ; ex:assignee ?assignee ; ex:related ?related .
+ ?assignee rdfs:label ?assigneeName }
+} ORDER BY ?status ?item

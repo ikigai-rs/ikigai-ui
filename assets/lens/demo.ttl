@@ -1,0 +1,35 @@
+@prefix ex: <urn:iki:ui:example:lenses:> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+ex:ada rdfs:label "Ada" .
+ex:brian rdfs:label "Brian" .
+ex:start a ex:Reply ; rdfs:label "How should we render results?" ; ex:participant ex:brian ; ex:time "2026-11-10T09:00:00Z"^^xsd:dateTime .
+ex:first a ex:Reply ; rdfs:label "Use named templates" ; ex:replyTo ex:start ; ex:participant ex:ada ; ex:time "2026-11-10T10:00:00Z"^^xsd:dateTime .
+ex:middle a ex:Reply ; rdfs:label "Keep the links" ; ex:replyTo ex:first ; ex:participant ex:brian ; ex:time "2026-11-10T11:00:00Z"^^xsd:dateTime .
+ex:later a ex:Reply ; rdfs:label "Group the work by status" ; ex:replyTo ex:start ; ex:participant ex:ada ; ex:time "2026-11-11T09:00:00Z"^^xsd:dateTime .
+ex:last a ex:Reply ; rdfs:label "Ready for review" ; ex:replyTo ex:later ; ex:participant ex:brian ; ex:time "2026-11-11T10:00:00Z"^^xsd:dateTime .
+ex:other a ex:Reply ; rdfs:label "A second discussion" ; ex:participant ex:ada ; ex:time "2026-11-11T12:00:00Z"^^xsd:dateTime .
+ex:t1 a ex:Task ; rdfs:label "Thread renderer" ; ex:status "Todo" ; ex:assignee ex:ada ; ex:related ex:start .
+ex:t2 a ex:Task ; rdfs:label "Board renderer" ; ex:status "Todo" ; ex:assignee ex:brian ; ex:related ex:later .
+ex:t3 a ex:Task ; rdfs:label "Tree renderer" ; ex:status "Todo" ; ex:assignee ex:ada ; ex:related ex:first .
+ex:t4 a ex:Task ; rdfs:label "Timeline renderer" ; ex:status "Todo" ; ex:assignee ex:brian ; ex:related ex:last .
+ex:t5 a ex:Task ; rdfs:label "Review accessibility" ; ex:status "Doing" ; ex:assignee ex:ada ; ex:related ex:last .
+ex:t6 a ex:Task ; rdfs:label "Read-only queries" ; ex:status "Done" ; ex:assignee ex:brian ; ex:related ex:start .
+ex:views a skos:Concept ; rdfs:label "Views" .
+ex:structured a skos:Concept ; rdfs:label "Structured views" ; skos:broader ex:views .
+ex:thread a skos:Concept ; rdfs:label "Threads" ; skos:broader ex:structured .
+ex:board a skos:Concept ; rdfs:label "Boards" ; skos:broader ex:structured .
+ex:tree a skos:Concept ; rdfs:label "Trees" ; skos:broader ex:structured .
+ex:timeline a skos:Concept ; rdfs:label "Timelines" ; skos:broader ex:views .
+
+# This namespace belongs to this fixture, not to a host's vocabulary. Queries map
+# its columns onto the named templates; a host can use any predicates instead.
+ex:Reply a rdfs:Class ; rdfs:comment "One message in a discussion." .
+ex:Task a rdfs:Class ; rdfs:comment "A work item shown on a board." .
+ex:replyTo a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> ; rdfs:comment "The parent reply's IRI." .
+ex:participant a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> ; rdfs:comment "The reply author's IRI." .
+ex:time a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> ; rdfs:comment "An event time, in UTC in this fixture." .
+ex:status a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> ; rdfs:comment "The task's board column." .
+ex:assignee a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> ; rdfs:comment "The task owner's IRI." .
+ex:related a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> ; rdfs:comment "An IRI linked from a task card." .

@@ -460,13 +460,19 @@ impl Screen {
     fn install(&mut self, node: &Node, path: &str, cx: &mut Context<Self>) {
         match node.kind.as_str() {
             "field" => {
-                let value = text(node, "value").unwrap_or_else(|| {
-                    if text(node, "input") == Some("checkbox") {
-                        "false"
+                let value = if text(node, "input") == Some("checkbox") {
+                    let checked = node.hint.get(ikigai_ui::lens::GPUI_CHECKED)
+                        == Some(&ikigai_ui::model::Hint::Plain(Value::Text(
+                            "checked".into(),
+                        )));
+                    if checked || text(node, "value") == Some("true") {
+                        "true"
                     } else {
-                        ""
+                        "false"
                     }
-                });
+                } else {
+                    text(node, "value").unwrap_or_default()
+                };
                 let colors = self.colors;
                 let input = cx.new(|cx| {
                     let mut input = TextInput::new(value, colors, cx);
@@ -620,11 +626,66 @@ impl Screen {
         }
     }
 
+    // GET forms send selected checkbox TERMS, whereas Sink forms retain their boolean
+    // values. This keeps a facet's IRI or literal intact on the native path too.
+    fn query_values(
+        &self,
+        node: &Node,
+        path: &str,
+        cx: &App,
+        values: &mut BTreeMap<String, String>,
+    ) -> Result<(), String> {
+        if let Some(name) = text(node, "name") {
+            let value = match node.kind.as_str() {
+                "field" if text(node, "input") == Some("checkbox") => {
+                    (self.inputs[path].read(cx).content.as_ref() == "true")
+                        .then(|| text(node, "value").unwrap_or("true").to_string())
+                }
+                "field" => Some(self.inputs[path].read(cx).content.to_string()),
+                "choice" => Some(self.choices[path].clone()),
+                _ => None,
+            };
+            if let Some(value) = value.filter(|v| !v.is_empty()) {
+                if values.insert(name.into(), value).is_some() {
+                    return Err(format!("Choose one value for {name}."));
+                }
+            }
+        }
+        for (i, child) in node.children.iter().enumerate() {
+            if child.kind != "form" {
+                self.query_values(child, &format!("{path}/{i}"), cx, values)?;
+            }
+        }
+        Ok(())
+    }
+
     fn submit(&mut self, form: &Node, path: &str, button: &Node, cx: &mut Context<Self>) {
         if self.forms[path].pending.is_some() {
             return;
         }
         let mut values = BTreeMap::new();
+        if text(form, "method") == Some("get") {
+            let next = self
+                .query_values(form, path, cx, &mut values)
+                .and_then(|()| {
+                    let action = text(form, "action").unwrap_or_default();
+                    let screen =
+                        ikigai_ui::lens::screen_from_href(action).map_err(|e| e.to_string())?;
+                    let (name, _, resource) = ikigai_ui::lens::parse_screen(&screen)
+                        .expect("the parsed lensed route")
+                        .map_err(|e| e.to_string())?;
+                    let name = values.remove("lens").unwrap_or(name);
+                    Ok(ikigai_ui::lens::screen_name(&name, &resource, &values))
+                });
+            match next {
+                Ok(name) => self.load(&name, cx),
+                Err(message) => {
+                    self.message = message;
+                    cx.notify();
+                }
+            }
+            return;
+        }
         self.values(form, path, cx, &mut values);
         if let (Some(name), Some(value)) = (text(button, "name"), text(button, "value")) {
             values.insert(name.into(), value.into());
@@ -652,6 +713,14 @@ impl Screen {
             } else {
                 self.message = format!("No native route for {href}");
                 cx.notify();
+            }
+        } else if href.starts_with(ikigai_ui::lens::PAGE_PATH) {
+            match ikigai_ui::lens::screen_from_href(href) {
+                Ok(name) => self.load(&name, cx),
+                Err(error) => {
+                    self.message = error.to_string();
+                    cx.notify();
+                }
             }
         } else if href.starts_with("https://")
             || href.starts_with("http://")
@@ -1001,6 +1070,22 @@ impl Screen {
                     body = body.child(inner);
                 }
                 return body.into_any_element();
+            }
+            "group" if ikigai_ui::model::is_columns(node) => {
+                let mut columns = div().flex().flex_row().flex_wrap().gap_4().w_full();
+                for (i, child) in node.children.iter().enumerate() {
+                    columns = columns.child(
+                        div()
+                            .flex_1()
+                            .min_w(px(220.))
+                            .p_4()
+                            .border_1()
+                            .border_color(colors.line)
+                            .rounded_md()
+                            .child(self.walk(child, &format!("{path}/{i}"), form, cx)),
+                    );
+                }
+                return body.child(label()).child(columns).into_any_element();
             }
             "form" | "group" | "list" | "nav" | "table" => {
                 body = body.child(if node.kind == "table" {
@@ -2035,5 +2120,91 @@ mod tests {
             assert_eq!(s.message, radio_announcement(&lens, 3));
             assert_eq!(s.message, "Lens: graph, checked, 4 of 4");
         });
+    }
+
+    #[gpui::test]
+    fn structured_lenses_draw_and_board_get_forms_page_and_bind_facets(cx: &mut TestAppContext) {
+        fn find<'a>(
+            n: &'a Node,
+            path: &str,
+            kind: &str,
+            property: &str,
+            value: &str,
+        ) -> Option<(String, &'a Node)> {
+            if n.kind == kind && text(n, property) == Some(value) {
+                return Some((path.into(), n));
+            }
+            n.children
+                .iter()
+                .enumerate()
+                .find_map(|(i, c)| find(c, &format!("{path}/{i}"), kind, property, value))
+        }
+        fn links(n: &Node) -> Vec<String> {
+            let mut result = Vec::new();
+            if n.kind == "link" {
+                result.push(text(n, "label").unwrap().into());
+            }
+            for c in &n.children {
+                result.extend(links(c));
+            }
+            result
+        }
+        let worker = demo_worker(None);
+        let name = ikigai_ui::lens::screen_name(
+            "demo-board",
+            ikigai_ui::lens::DEMO_GRAPH,
+            &Default::default(),
+        );
+        let (screen, cx) =
+            cx.add_window_view(|window, cx| Screen::new(worker, &name, Theme::Auto, window, cx));
+        settle(&screen, cx);
+        screen.update(cx, |s, cx| {
+            let snapshot = s
+                .snapshot
+                .as_ref()
+                .unwrap_or_else(|| panic!("{}", s.message))
+                .clone();
+            let root = snapshot.root();
+            let todo = find(root, "/", "group", "label", "Todo").unwrap().1;
+            assert!(links(todo).contains(&"Thread renderer".into()));
+            assert!(!links(todo).contains(&"Timeline renderer".into()));
+            let page = find(root, "/", "field", "name", "page").unwrap().0;
+            s.inputs[&page].update(cx, |input, _| input.content = "2".into());
+            let facet = find(root, "/", "field", "label", "Status: Todo").unwrap().0;
+            assert_eq!(s.inputs[&facet].read(cx).content.as_ref(), "false");
+            s.inputs[&facet].update(cx, |input, _| input.content = "true".into());
+            let (path, form) = find(root, "/", "form", "label", "Lens and facets").unwrap();
+            let button = find(form, &path, "button", "label", "Show").unwrap().1;
+            s.submit(form, &path, button, cx);
+        });
+        settle(&screen, cx);
+        screen.update(cx, |s, cx| {
+            let root = s.snapshot.as_ref().unwrap().root();
+            let todo = find(root, "/", "group", "label", "Todo").unwrap().1;
+            assert!(links(todo).contains(&"Timeline renderer".into()));
+            assert!(!links(todo).contains(&"Thread renderer".into()));
+            assert!(!links(root).contains(&"Review accessibility".into()));
+            let facet = find(root, "/", "field", "label", "Status: Todo").unwrap().0;
+            assert_eq!(s.inputs[&facet].read(cx).content.as_ref(), "true");
+            assert!(find(root, "/", "choice", "name", "lens").is_some());
+        });
+        // The same native walker draws the other three ordinary screens.
+        for name in ["demo-thread", "demo-tree", "demo-timeline"] {
+            let href =
+                ikigai_ui::lens::html_href(name, ikigai_ui::lens::DEMO_GRAPH, &Default::default());
+            screen.update(cx, |s, cx| s.follow(&href, cx));
+            settle(&screen, cx);
+            screen.update(cx, |s, _| {
+                assert!(s.message.is_empty(), "{}", s.message);
+                assert!(find(
+                    s.snapshot.as_ref().unwrap().root(),
+                    "/",
+                    "list",
+                    "label",
+                    "Selection: resources in this answer"
+                )
+                .is_some());
+            });
+        }
     }
 }

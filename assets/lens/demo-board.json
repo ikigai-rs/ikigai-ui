@@ -1,0 +1,20 @@
+{
+  "renderer": "board",
+  "bound": 3,
+  "legend": "Demo board",
+  "graphs": [
+    "urn:iki:ui:example:graph:lenses"
+  ],
+  "facets": [
+    {
+      "name": "onlyStatus",
+      "label": "Status",
+      "variable": "status",
+      "values": [
+        "Todo",
+        "Doing",
+        "Done"
+      ]
+    }
+  ]
+}

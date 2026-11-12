@@ -1,0 +1,89 @@
+{
+  "kind": "group",
+  "properties": {
+    "label": "{legend}"
+  },
+  "children": [
+    {
+      "kind": "text",
+      "properties": {
+        "content": "Rows are ordered by UTC time and grouped by day. Each day shows its first {bound} rows; use a narrower query for the rest."
+      }
+    },
+    {
+      "repeat": "rows",
+      "each": {
+        "kind": "group",
+        "properties": {
+          "label": "{?day}"
+        },
+        "children": [
+          {
+            "kind": "heading",
+            "properties": {
+              "content": "{?day}",
+              "level": 3
+            }
+          },
+          {
+            "repeat": "group",
+            "each": {
+              "kind": "group",
+              "properties": {
+                "label": "{?time}"
+              },
+              "children": [
+                {
+                  "kind": "text",
+                  "properties": {
+                    "content": "{?time}"
+                  }
+                },
+                {
+                  "kind": "link",
+                  "properties": {
+                    "label": "{?label}",
+                    "href": "{home:?item}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "group": "day",
+      "order": "time",
+      "day": "time"
+    },
+    {
+      "kind": "heading",
+      "properties": {
+        "content": "Selection",
+        "level": 3
+      }
+    },
+    {
+      "kind": "list",
+      "properties": {
+        "label": "Selection: resources in this answer"
+      },
+      "children": [
+        {
+          "repeat": "rows",
+          "each": {
+            "kind": "link",
+            "properties": {
+              "label": "{?label} \u2014 {?item}",
+              "href": "{home:?item}"
+            }
+          },
+          "window": true,
+          "distinct": "item"
+        }
+      ]
+    },
+    {
+      "past": "Showing the first 1000 result rows; more rows exist beyond this answer window. Counts and thread endpoints describe this window only. Narrow the query or use facets for the rest."
+    }
+  ]
+}

@@ -12,7 +12,7 @@
 //! | `urn:iki:ui:lens:instance:{iri}` | data (a host's) | a JSON list of lens names for one resource |
 //! | `urn:iki:ui:lens:dataset` | data (a host's) | a JSON list of lens names for the whole dataset |
 //! | `urn:iki:ui:lens:resource:{iri}` | data | `{iri}`'s lenses in precedence: instance, dataset, each type, then `graph` ([`precedence`]) |
-//! | `urn:iki:ui:renderer:name:{name}` | data | a renderer, a model template: `graph`, `table`, `list` are compiled in; a host's binding of the same name, placed first, wins |
+//! | `urn:iki:ui:renderer:name:{name}` | data | a renderer, a model template: `graph`, `table`, `list`, `thread`, `board`, `tree`, `timeline` are compiled in; a host's binding of the same name, placed first, wins |
 //! | `urn:iki:ui:view:lens:{lens}:resource:{iri}` | data | the lensed view: the legend, a radio chooser among `{iri}`'s lenses, the renderer filled with the result |
 //! | `urn:iki:ui:lens:title:lens:{lens}:resource:{iri}` | text | a lensed page's title: the legend and the resource; a family with [`crate::Pages::lenses`] serves `{base}page:lens:{lens}:resource:{iri}` in the shell, at the door's `/lens/name/{lens}/resource/{iri}` ([`html_href`]) |
 //! | `urn:iki:ui:home` | data (a host's) | the home mapping, a JSON prefix table `[{"prefix", "href"}]`, longest prefix wins |
@@ -21,7 +21,9 @@
 //! **A lens query is read-only.** SELECT, CONSTRUCT or ASK, nothing else; an UPDATE keyword
 //! anywhere, or a SERVICE the lens does not list in `services`, is refused as
 //! `InvalidArgument` before anything runs. The store's time and answer budgets apply as for any
-//! caller, and the lens asks for at most `bound + 1` rows, so it knows when it is past its bound.
+//! caller. Graph/table/list ask for `bound + 1` rows. Structured renderers ask for a bounded
+//! answer window of [`MAX_BOUND`] + 1 rows; the extra row detects an incomplete window, said
+//! in words. Counts and thread endpoints describe that window. A query's own LIMIT still holds.
 //!
 //! **A withheld result is said in words.** When the caller may not read what the lens reads, the
 //! lensed view says so in a `text`, never an empty renderer.
@@ -38,6 +40,19 @@
 //!   `{?edge}`, `{?to}`, as labels), every one, within the scene's [`crate::scene::MAX_EDGES`];
 //! - `{"past": "words"}` — a `text` only when the result had more rows than the bound: what the
 //!   renderer does past its bound is to show the first `bound` rows and say so.
+//!
+//! **Structured templates (stage 2, ledger #3519)** use these additional data operations:
+//! - A rows repeat's `distinct: "v"` keeps the first row per value; `order: "v"` orders it.
+//!   With `day: "v"`, order is chronological (RFC 3339 offsets honored), `?day` is the UTC
+//!   date, and invalid/unbound dates form Undated. `window: true` allows a repeat over the
+//!   answer window, still capped at [`MAX_BOUND`].
+//! - A grouped repeat carries `?groupCount` and `?pages`; a group repeat with `page: true`
+//!   uses the board's one-based page, at most `bound` rows per column. `{page}` names it.
+//! - `{"hierarchy": "parent", "id": "item", "each": T}` nests node template `T` by
+//!   identity/parent, supplies `?count` (unique descendants), and stops at `bound` nodes or
+//!   16 levels with words. Missing parents start roots; disconnected cycles stay visible.
+//!   With `collapse: true`, a thread past `bound` keeps its root and first/last replies by
+//!   `?time`, plus its reply count. Participants and full linked selection are separate lists.
 //!
 //! In any string, `{?v}` is the row's value of `?v`, `{home:?v}` its home link, and `{lens}`,
 //! `{legend}`, `{focus}`, `{bound}`, `{shown}` the lens's.
@@ -101,6 +116,13 @@ pub const RESULTS: &str = "application/sparql-results+json";
 /// A CONSTRUCT lens's result media type: the result graph, as node objects.
 pub const GRAPH: &str = "application/ld+json";
 
+/// Demo discussions, work items and concepts used by the four structured lenses.
+pub const DEMO_GRAPH: &str = "urn:iki:ui:example:graph:lenses";
+
+fn structured(renderer: &str) -> bool {
+    matches!(renderer, "thread" | "board" | "tree" | "timeline")
+}
+
 const XSD_ANY_URI: &str = "http://www.w3.org/2001/XMLSchema#anyURI";
 
 /// The lens every resource has last, compiled in: its JSON and its query.
@@ -109,10 +131,10 @@ pub const DEFAULT_LENS: (&str, &str) = (
     include_str!("../assets/lens/graph.rq"),
 );
 
-/// The example lenses over the contact graph ([`crate::scene::EXAMPLE_GRAPH`]), one per renderer:
+/// Example lenses over the contact graph ([`crate::scene::EXAMPLE_GRAPH`]) and [`DEMO_GRAPH`]:
 /// (name, lens, query). Shipped by this crate, which owns that graph; a host places
 /// [`examples`].
-pub const EXAMPLES: [(&str, &str, &str); 3] = [
+pub const EXAMPLES: [(&str, &str, &str); 7] = [
     (
         "contact-graph",
         include_str!("../assets/lens/contact-graph.json"),
@@ -128,13 +150,37 @@ pub const EXAMPLES: [(&str, &str, &str); 3] = [
         include_str!("../assets/lens/contact-list.json"),
         include_str!("../assets/lens/contact-list.rq"),
     ),
+    (
+        "demo-thread",
+        include_str!("../assets/lens/demo-thread.json"),
+        include_str!("../assets/lens/demo-thread.rq"),
+    ),
+    (
+        "demo-board",
+        include_str!("../assets/lens/demo-board.json"),
+        include_str!("../assets/lens/demo-board.rq"),
+    ),
+    (
+        "demo-tree",
+        include_str!("../assets/lens/demo-tree.json"),
+        include_str!("../assets/lens/demo-tree.rq"),
+    ),
+    (
+        "demo-timeline",
+        include_str!("../assets/lens/demo-timeline.json"),
+        include_str!("../assets/lens/demo-timeline.rq"),
+    ),
 ];
 
 /// The compiled-in renderers, by name.
-pub const RENDERERS: [(&str, &str); 3] = [
+pub const RENDERERS: [(&str, &str); 7] = [
     ("graph", include_str!("../assets/renderer/graph.json")),
     ("table", include_str!("../assets/renderer/table.json")),
     ("list", include_str!("../assets/renderer/list.json")),
+    ("thread", include_str!("../assets/renderer/thread.json")),
+    ("board", include_str!("../assets/renderer/board.json")),
+    ("tree", include_str!("../assets/renderer/tree.json")),
+    ("timeline", include_str!("../assets/renderer/timeline.json")),
 ];
 
 /// A lens's data.
@@ -224,6 +270,18 @@ impl Lens {
             if RESERVED.contains(&name) {
                 continue;
             }
+            if name == "page" {
+                let page: usize = value
+                    .parse()
+                    .map_err(|_| refuse("page", "a page is a positive integer"))?;
+                if !(1..=MAX_BOUND).contains(&page) {
+                    return Err(refuse("page", "a page is in 1..=1000"));
+                }
+                if self.renderer == "board" && out.insert(name.into(), page.to_string()).is_some() {
+                    return Err(refuse("page", "choose one page"));
+                }
+                continue;
+            }
             let facet = self
                 .facets
                 .iter()
@@ -301,6 +359,7 @@ impl Lens {
                 || !variable_name(f.variable())
                 || f.variable() == l.focus
                 || RESERVED.contains(&f.name.as_str())
+                || f.name == "page"
                 || f.values.is_empty()
                 || f.values.len() > MAX_VALUES
             {
@@ -652,6 +711,8 @@ pub struct Fill<'a> {
     pub focus: &'a str,
     /// The lens's bound.
     pub bound: usize,
+    /// One-based board page (the same page in each column).
+    pub page: usize,
     /// The result.
     pub rows: &'a Rows,
     /// The result graph's edges (`?from`, `?edge`, `?to`, as labels): a CONSTRUCT's; a
@@ -677,6 +738,7 @@ fn sub(s: &str, fill: &Fill<'_>, row: Option<&Row>) -> String {
             "legend" => Some(fill.legend.to_string()),
             "focus" => Some(fill.focus.to_string()),
             "bound" => Some(fill.bound.to_string()),
+            "page" => Some(fill.page.to_string()),
             "shown" => Some(fill.rows.rows.len().to_string()),
             k if k.starts_with("home:?") => {
                 Some(fill.home.href(&value(&k[6..])).unwrap_or_default())
@@ -708,6 +770,171 @@ fn tidy(mut n: Json) -> Json {
     n
 }
 
+fn instant(value: Option<&String>) -> Option<chrono::DateTime<chrono::FixedOffset>> {
+    value.and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+}
+
+fn time_order(a: Option<&String>, b: Option<&String>) -> std::cmp::Ordering {
+    match (instant(a), instant(b)) {
+        (Some(a), Some(b)) => a.cmp(&b),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.cmp(&b),
+    }
+}
+
+/// A hierarchy is data: the identity/parent columns and a node template. Cycles are
+/// disclosed, depth is bounded, and counts are unique reachable descendants in this answer.
+fn hierarchy(t: &Json, fill: &Fill<'_>, count: &mut usize) -> Result<Vec<Json>, Error> {
+    if fill.rows.rows.len() > MAX_BOUND {
+        return Err(refuse("renderer", "a hierarchy passes the answer window"));
+    }
+    let parent = t["hierarchy"]
+        .as_str()
+        .ok_or_else(|| refuse("renderer", "hierarchy names a parent variable"))?;
+    let id = t["id"].as_str().unwrap_or("item");
+    let each = t
+        .get("each")
+        .ok_or_else(|| refuse("renderer", "hierarchy needs each"))?;
+    let mut nodes: BTreeMap<String, Row> = BTreeMap::new();
+    let mut children: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for row in &fill.rows.rows {
+        let Some(key) = row.get(id) else { continue };
+        nodes.entry(key.clone()).or_insert_with(|| row.clone());
+        if let Some(p) = row.get(parent) {
+            let siblings = children.entry(p.clone()).or_default();
+            if !siblings.contains(key) {
+                siblings.push(key.clone());
+            }
+        }
+    }
+    fn descendants(key: &str, children: &BTreeMap<String, Vec<String>>) -> Vec<String> {
+        let mut seen = std::collections::BTreeSet::from([key.to_string()]);
+        let mut todo = children.get(key).cloned().unwrap_or_default();
+        let mut out = Vec::new();
+        while let Some(k) = todo.pop() {
+            if seen.insert(k.clone()) {
+                todo.extend(children.get(&k).into_iter().flatten().cloned());
+                out.push(k);
+            }
+        }
+        out
+    }
+    struct Tree<'a, 'b> {
+        nodes: &'a BTreeMap<String, Row>,
+        children: &'a BTreeMap<String, Vec<String>>,
+        each: &'a Json,
+        fill: &'a Fill<'b>,
+        count: &'a mut usize,
+        visited: std::collections::BTreeSet<String>,
+        shown: usize,
+    }
+    impl Tree<'_, '_> {
+        fn draw(&mut self, key: &str, path: &mut Vec<String>) -> Result<Vec<Json>, Error> {
+            if *self.count > crate::element::MAX_NODES {
+                return Err(refuse("renderer", "the hierarchy passes the node budget"));
+            }
+            if path.iter().any(|p| p == key) {
+                *self.count += 1;
+                return Ok(vec![
+                    json!({"kind":"text", "properties":{"content":format!("Cycle back to {key}; see the selection link.")}}),
+                ]);
+            }
+            self.visited.insert(key.into());
+            if path.len() >= 16 || self.shown >= self.fill.bound {
+                // These descendants are omitted deliberately, not disconnected cycles.
+                self.visited.extend(descendants(key, self.children));
+                *self.count += 1;
+                return Ok(vec![
+                    json!({"kind":"text", "properties":{"content":format!("Hierarchy bound reached at {key}; see the selection link.")}}),
+                ]);
+            }
+            let Some(source) = self.nodes.get(key) else {
+                return Ok(Vec::new());
+            };
+            let mut row = source.clone();
+            row.insert(
+                "count".into(),
+                descendants(key, self.children).len().to_string(),
+            );
+            self.shown += 1;
+            let mut result = walk(self.each, self.fill, Some(&row), &[], self.count)?;
+            path.push(key.into());
+            let mut nested = Vec::new();
+            for child in self.children.get(key).into_iter().flatten() {
+                nested.extend(self.draw(child, path)?);
+            }
+            path.pop();
+            if !nested.is_empty() {
+                *self.count += 1;
+                result.push(json!({"kind":"list", "properties":{"label":format!("Under {key}")}, "children":nested}));
+            }
+            *self.count += 1;
+            Ok(vec![
+                json!({"kind":"group", "properties":{"label":key}, "children":result}),
+            ])
+        }
+    }
+    let roots: Vec<String> = nodes
+        .iter()
+        .filter(|(_, r)| r.get(parent).is_none_or(|p| !nodes.contains_key(p)))
+        .map(|(k, _)| k.clone())
+        .collect();
+    let collapse = t["collapse"].as_bool().unwrap_or(false);
+    let mut tree = Tree {
+        nodes: &nodes,
+        children: &children,
+        each,
+        fill,
+        count,
+        visited: Default::default(),
+        shown: 0,
+    };
+    let mut out = Vec::new();
+    // The second pass exposes disconnected cycles rather than silently losing their nodes.
+    for key in roots.iter().chain(nodes.keys()) {
+        if tree.visited.contains(key) {
+            continue;
+        }
+        if !roots.contains(key) {
+            *tree.count += 1;
+            out.push(json!({"kind":"text", "properties":{"content":format!("No root for {key}: this component contains a cycle.")}}));
+        }
+        let mut below = descendants(key, &children);
+        if collapse && below.len() + 1 > fill.bound {
+            below.sort_by(|a, b| {
+                time_order(nodes[a].get("time"), nodes[b].get("time")).then(a.cmp(b))
+            });
+            let mut kept = vec![key.clone()];
+            if let Some(first) = below.first() {
+                kept.push(first.clone());
+            }
+            if let Some(last) = below.last() {
+                if !kept.contains(last) {
+                    kept.push(last.clone());
+                }
+            }
+            let mut replies = Vec::new();
+            for k in &kept {
+                let mut row = nodes[k].clone();
+                row.insert("count".into(), descendants(k, &children).len().to_string());
+                replies.extend(walk(each, fill, Some(&row), &[], tree.count)?);
+            }
+            replies.push(json!({"kind":"text", "properties":{"content":format!("{} replies in this answer; collapsed to the first and last replies.", below.len())}}));
+            *tree.count += 2;
+            out.push(json!({"kind":"group", "properties":{"label":key}, "children":replies}));
+            tree.visited.extend(below);
+            tree.visited.insert(key.clone());
+        } else {
+            if collapse {
+                tree.shown = 0;
+            }
+            out.extend(tree.draw(key, &mut Vec::new())?);
+        }
+    }
+    Ok(out)
+}
+
 fn walk(
     t: &Json,
     fill: &Fill<'_>,
@@ -730,6 +957,7 @@ fn walk(
             }
             Ok(vec![Json::Array(out)])
         }
+        Json::Object(o) if o.contains_key("hierarchy") => hierarchy(t, fill, count),
         Json::Object(o) if o.contains_key("past") => {
             if !fill.rows.past {
                 return Ok(Vec::new());
@@ -739,6 +967,44 @@ fn walk(
             Ok(vec![
                 json!({"kind": "text", "properties": {"content": words}}),
             ])
+        }
+        Json::Object(o)
+            if o.contains_key("repeat")
+                && (o.contains_key("order")
+                    || o.contains_key("day")
+                    || o.contains_key("distinct")) =>
+        {
+            let mut data = fill.rows.clone();
+            if let Some(key) = o.get("order").and_then(Json::as_str) {
+                data.rows.sort_by(|a, b| {
+                    if o.get("day").and_then(Json::as_str) == Some(key) {
+                        time_order(a.get(key), b.get(key))
+                    } else {
+                        a.get(key).cmp(&b.get(key))
+                    }
+                });
+            }
+            if let Some(key) = o.get("day").and_then(Json::as_str) {
+                for r in &mut data.rows {
+                    let day = instant(r.get(key))
+                        .map(|t| t.with_timezone(&chrono::Utc).date_naive().to_string())
+                        .unwrap_or_else(|| "Undated".into());
+                    r.insert("day".into(), day);
+                }
+            }
+            if let Some(key) = o.get("distinct").and_then(Json::as_str) {
+                let mut seen = std::collections::BTreeSet::new();
+                data.rows.retain(|r| seen.insert(r.get(key).cloned()));
+            }
+            let mut next = t.clone();
+            for key in ["order", "day", "distinct"] {
+                next.as_object_mut().unwrap().remove(key);
+            }
+            let nested = Fill {
+                rows: &data,
+                ..*fill
+            };
+            walk(&next, &nested, row, group, count)
         }
         Json::Object(o) if o.contains_key("repeat") => {
             let each = o
@@ -759,7 +1025,25 @@ fn walk(
                         groups
                     }
                 },
-                Some("group") => group.iter().map(|r| (*r, vec![*r])).collect(),
+                Some("group") => {
+                    let start = if o.get("page").and_then(Json::as_bool) == Some(true) {
+                        fill.page.saturating_sub(1).saturating_mul(fill.bound)
+                    } else {
+                        0
+                    };
+                    if o.get("page").and_then(Json::as_bool) == Some(true) && start >= group.len() {
+                        *count += 1;
+                        return Ok(vec![
+                            json!({"kind":"text", "properties":{"content":format!("No cards on column page {} in this answer.", fill.page)}}),
+                        ]);
+                    }
+                    group
+                        .iter()
+                        .skip(start)
+                        .take(fill.bound)
+                        .map(|r| (*r, vec![*r]))
+                        .collect()
+                }
                 Some("edges") => {
                     // Every edge, never the first few: the replacement says what the picture
                     // draws. The scene's own bound holds them.
@@ -799,12 +1083,25 @@ fn walk(
                     ))
                 }
             };
-            if o["repeat"] != "edges" && over.len() > fill.bound.max(fill.rows.vars.len()) {
+            if o["repeat"] != "edges"
+                && over.len()
+                    > (if o.contains_key("group") || o.get("window") == Some(&json!(true)) {
+                        MAX_BOUND
+                    } else {
+                        fill.bound.max(fill.rows.vars.len())
+                    })
+            {
                 return Err(refuse("renderer", "a repeat passes the lens's bound"));
             }
             let mut out = Vec::new();
             for (r, members) in over {
-                out.extend(walk(each, fill, Some(r), &members, count)?);
+                let mut metadata = r.clone();
+                metadata.insert("groupCount".into(), members.len().to_string());
+                metadata.insert(
+                    "pages".into(),
+                    members.len().div_ceil(fill.bound.max(1)).to_string(),
+                );
+                out.extend(walk(each, fill, Some(&metadata), &members, count)?);
             }
             Ok(out)
         }
@@ -827,11 +1124,14 @@ fn walk(
 
 /// A renderer template filled with a result: a model node, validated.
 pub fn expand(template: &Json, fill: &Fill<'_>) -> Result<Node, Error> {
-    if fill.bound > MAX_BOUND {
+    if fill.bound == 0 || fill.bound > MAX_BOUND {
         return Err(refuse("renderer", format!("a bound past {MAX_BOUND}")));
     }
     let mut count = 0;
     let mut out = walk(template, fill, None, &[], &mut count)?;
+    if count > crate::element::MAX_NODES {
+        return Err(refuse("renderer", "the expansion passes the node budget"));
+    }
     let one = out
         .pop()
         .filter(|_| out.is_empty())
@@ -919,11 +1219,17 @@ async fn result(
 ) -> Result<Representation, Error> {
     let prepared = read_prepared(inv, name).await?;
     let form = prepared.form;
-    // The lens asks for one row past its bound, so it knows it is past it. The store REFUSES an
+    // One row beyond the display bound (or structured answer window) detects overflow.
+    // The store REFUSES an
     // answer past `max_rows=` rather than cutting it, so the bound is a LIMIT the lens appends to
     // its own query (a query with its own LIMIT keeps it, inside the store's answer budget).
+    let answer_bound = if structured(&lens.renderer) {
+        MAX_BOUND
+    } else {
+        lens.bound
+    };
     let text = if form == Form::Select && !prepared.limit {
-        format!("{}\nLIMIT {}", prepared.query, lens.bound + 1)
+        format!("{}\nLIMIT {}", prepared.query, answer_bound + 1)
     } else {
         prepared.query
     };
@@ -1054,7 +1360,7 @@ pub async fn lensed(
         Verb::Source,
         iri(&format!("{NAME}{name}:focus:{resource}"))?,
     );
-    for (k, v) in &chosen {
+    for (k, v) in chosen.iter().filter(|(k, _)| k.as_str() != "page") {
         request = request.with_arg(k.clone(), ArgRef::Inline(v.clone().into_bytes()));
     }
     let body = match inv.issue(request).await {
@@ -1062,7 +1368,17 @@ pub async fn lensed(
             let (mut rows, edges) = if r.repr_type.media_type.as_str() == GRAPH {
                 graph_rows(&r.bytes, lens.bound)?
             } else {
-                (rows(&r.bytes, lens.bound)?, Rows::default())
+                (
+                    rows(
+                        &r.bytes,
+                        if structured(&lens.renderer) {
+                            MAX_BOUND
+                        } else {
+                            lens.bound
+                        },
+                    )?,
+                    Rows::default(),
+                )
             };
             // The focus is the resource the view is about, said in the heading, not a column.
             rows.vars.retain(|v| *v != lens.focus);
@@ -1071,6 +1387,7 @@ pub async fn lensed(
                 legend: &lens.legend,
                 focus: resource,
                 bound: lens.bound,
+                page: chosen.get("page").and_then(|p| p.parse().ok()).unwrap_or(1),
                 rows: &rows,
                 edges: &edges,
                 home: &home,
@@ -1096,10 +1413,13 @@ pub async fn lensed(
             let mut field = json!({"kind": "field", "properties": {
                 "label": format!("{}: {v}", f.label), "name": f.name, "input": "checkbox", "value": v}});
             if chosen.get(&f.name) == Some(v) {
-                field["hint"] = json!({ CHECKED: "checked" });
+                field["hint"] = json!({ CHECKED: "checked", GPUI_CHECKED: "checked" });
             }
             controls.push(field);
         }
+    }
+    if lens.renderer == "board" {
+        controls.push(json!({"kind": "field", "properties": {"label": "Column page (1–1000)", "name": "page", "input": "number", "value": chosen.get("page").map(String::as_str).unwrap_or("1")}}));
     }
     controls.push(json!({"kind": "button", "properties": {"label": "Show"}}));
     let mut children = vec![
@@ -1109,9 +1429,9 @@ pub async fn lensed(
         json!({"kind": "link", "properties": {"label": "The resource's own view", "href": crate::view::href(resource)}}),
         // A GET form with no action submits to the page it is on: the lens and the facets
         // arrive as query parameters, and the page's route reads them.
-        json!({"kind": "form", "properties": {"label": "Lens and facets", "method": "get"}, "children": controls}),
+        json!({"kind": "form", "properties": {"label": "Lens and facets", "method": "get", "action": html_href(name, resource, &Selection::new())}, "children": controls}),
     ];
-    if !chosen.is_empty() {
+    if chosen.keys().any(|k| k != "page") {
         let said: Vec<String> = lens
             .facets
             .iter()
@@ -1128,6 +1448,8 @@ pub async fn lensed(
 
 /// The html face's hint that a checkbox starts checked.
 pub const CHECKED: &str = "urn:iki:ui:hint:html:checked";
+/// The native face's hint that a facet checkbox starts checked.
+pub const GPUI_CHECKED: &str = "urn:iki:ui:hint:gpui:checked";
 
 fn chooser_node(choices: &[String], chosen: &str) -> Json {
     let options: Vec<Json> = choices
@@ -1195,6 +1517,48 @@ pub fn html_href(lens: &str, resource: &str, chosen: &Selection) -> String {
     out
 }
 
+/// A lensed page link as a screen name, for faces which navigate without a web door.
+/// The same route and percent encoding as [`html_href`]; other routes are refused.
+pub fn screen_from_href(href: &str) -> Result<String, Error> {
+    let (path, query) = href.split_once('?').unwrap_or((href, ""));
+    let (name, resource) = path
+        .strip_prefix(PAGE_PATH)
+        .and_then(|p| p.split_once("/resource/"))
+        .ok_or_else(|| refuse("href", "not a lensed page route"))?;
+    let mut name = unpct(name)?;
+    let resource = unpct(resource)?;
+    iri(&resource)?;
+    if resource
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '?' | '#' | '%' | '<' | '>' | '"'))
+    {
+        return Err(refuse(
+            "href",
+            "a lensed page resource carries no ? # % or space",
+        ));
+    }
+    let mut chosen = Selection::new();
+    for pair in query.split('&').filter(|p| !p.is_empty()) {
+        let (k, v) = pair
+            .split_once('=')
+            .ok_or_else(|| refuse("href", "a query parameter needs a value"))?;
+        let k = unpct(&k.replace('+', " "))?;
+        let v = unpct(&v.replace('+', " "))?;
+        if !variable_name(&k) {
+            return Err(refuse("href", "a parameter needs a variable name"));
+        }
+        if k == "lens" {
+            name = v;
+        } else if !v.is_empty() && chosen.insert(k, v).is_some() {
+            return Err(refuse("href", "choose one value per parameter"));
+        }
+    }
+    if !lens_name_ok(&name) {
+        return Err(refuse("lens", "not a lens name"));
+    }
+    Ok(screen_name(&name, &resource, &chosen))
+}
+
 /// The door path a lensed page is served at, before its lens's name: `/lens/name/`.
 pub const PAGE_PATH: &str = "/lens/name/";
 
@@ -1215,6 +1579,7 @@ pub fn fragment_href(lens: &str, resource: &str, chosen: &Selection) -> String {
 
 fn lens_name_ok(lens: &str) -> bool {
     !lens.is_empty()
+        && !matches!(lens, "." | "..")
         && lens
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
@@ -1601,7 +1966,7 @@ pub(crate) fn renderer_endpoint() -> AsyncFnEndpoint {
     .with_description(
         Description::new("ui-renderer").input(ikigai_core::ArgSpec::new("name").summary("the renderer's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("graph"))
             .title("A renderer, a named template")
-            .summary("A model template that repeats, boundedly, over a lens's result rows: graph, table, list.")
+            .summary("A model template that repeats, boundedly, over a lens's result rows: graph, table, list, thread, board, tree, timeline.")
             .verb(Verb::Source)
             .output("application/json"),
     )
@@ -1723,13 +2088,32 @@ pub(crate) fn default_query() -> FnEndpoint {
     )
 }
 
-/// The example lenses ([`EXAMPLES`]) and the contact graph's instance list, which names them.
+/// The example lenses ([`EXAMPLES`]), their demo graph and both graphs' instance lists.
 /// A host places it AFTER its own lenses, so a host's binding of the same name wins.
 pub fn examples() -> EndpointSpace {
     let mut space = EndpointSpace::new();
     for (name, lens, query) in EXAMPLES {
         space = bind_lens(space, name, lens, query);
     }
+    space = space
+        .bind(
+            Exact::new(DEMO_GRAPH),
+            fixed(
+                "ui-lens-demo-graph",
+                "Lens renderer demo data",
+                "text/turtle",
+                include_str!("../assets/lens/demo.ttl"),
+            ),
+        )
+        .bind(
+            Exact::new(format!("{INSTANCE}{DEMO_GRAPH}")),
+            fixed(
+                "ui-lens-demo-instance",
+                "Demo lenses",
+                "application/json",
+                r#"["demo-thread", "demo-board", "demo-tree", "demo-timeline"]"#,
+            ),
+        );
     space.bind(
         Exact::new(format!("{INSTANCE}{}", crate::scene::EXAMPLE_GRAPH)),
         fixed(
@@ -1809,6 +2193,7 @@ mod tests {
                 legend: "Items",
                 focus: "urn:ex:root",
                 bound,
+                page: 1,
                 rows,
                 edges: &Rows::default(),
                 home: &home,
@@ -1879,6 +2264,7 @@ mod tests {
                 legend: "x",
                 focus: "urn:a",
                 bound: 2,
+                page: 1,
                 rows: &r,
                 edges: &Rows::default(),
                 home: &home,
@@ -1892,6 +2278,7 @@ mod tests {
                 legend: "x",
                 focus: "urn:a",
                 bound: MAX_BOUND + 1,
+                page: 1,
                 rows: &r,
                 edges: &Rows::default(),
                 home: &home,
@@ -1920,5 +2307,106 @@ mod tests {
         .is_err());
         let l = Lens::parse(br#"{"renderer": "table", "bound": 50, "legend": "x"}"#, "l").unwrap();
         assert_eq!(l.focus, "focus");
+    }
+
+    fn records(values: &[Json]) -> Rows {
+        rows(&json!({"head":{"vars":["item", "label", "time", "broader"]}, "results":{"bindings": values.iter().map(|v| {
+            v.as_object().unwrap().iter().map(|(k,v)| (k.clone(), json!({"type":"literal", "value":v}))).collect::<serde_json::Map<_,_>>()
+        }).collect::<Vec<_>>()}}).to_string().into_bytes(), MAX_BOUND).unwrap()
+    }
+
+    #[test]
+    fn timeline_orders_instants_and_groups_days_in_utc() {
+        let r = records(&[
+            json!({"item":"urn:late", "label":"Later", "time":"2026-11-10T23:30:00-02:00"}),
+            json!({"item":"urn:early", "label":"Earlier", "time":"2026-11-11T00:00:00+02:00"}),
+            json!({"item":"urn:missing", "label":"No time"}),
+        ]);
+        let n = render("timeline", &r, 5);
+        let groups = all(&n, "group");
+        let dated: Vec<String> = groups
+            .iter()
+            .filter_map(|g| match &g.properties["label"] {
+                model::Value::Text(s)
+                    if s == "2026-11-10" || s == "2026-11-11" || s == "Undated" =>
+                {
+                    Some(s.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dated, ["2026-11-10", "2026-11-11", "Undated"]);
+        let links = all(&n, "link");
+        assert_eq!(
+            links[0].properties["label"],
+            model::Value::Text("Earlier".into())
+        );
+        assert_eq!(
+            links[1].properties["label"],
+            model::Value::Text("Later".into())
+        );
+    }
+
+    #[test]
+    fn a_cyclic_hierarchy_is_visible_and_counts_unique_descendants() {
+        let r = records(&[
+            json!({"item":"urn:a", "label":"A", "broader":"urn:b"}),
+            json!({"item":"urn:b", "label":"B", "broader":"urn:a"}),
+            json!({"item":"urn:orphan", "label":"Orphan", "broader":"urn:absent"}),
+        ]);
+        let n = render("tree", &r, 10);
+        let words = format!("{:?}", all(&n, "text"));
+        assert!(words.contains("contains a cycle"), "{words}");
+        assert!(words.contains("Cycle back"), "{words}");
+        assert!(words.contains("1 descendants"), "{words}");
+        assert!(all(&n, "link")
+            .iter()
+            .any(|l| l.properties["label"] == model::Value::Text("Orphan".into())));
+    }
+
+    #[test]
+    fn a_deep_hierarchy_stops_before_the_faces_depth_budget() {
+        let values: Vec<Json> = (0..80)
+            .map(|i| {
+                let mut r = json!({"item":format!("urn:n{i:03}"), "label":format!("Node {i}")});
+                if i > 0 {
+                    r["broader"] = json!(format!("urn:n{:03}", i - 1));
+                }
+                r
+            })
+            .collect();
+        let n = render("tree", &records(&values), 100);
+        model::parse(&serde_json::to_vec(&n).unwrap())
+            .expect("the faces can parse the stopped hierarchy");
+        let words = format!("{:?}", all(&n, "text"));
+        assert!(words.contains("Hierarchy bound reached"));
+        assert!(
+            !words.contains("contains a cycle"),
+            "a depth cutoff is not a cycle"
+        );
+    }
+
+    #[test]
+    fn an_incomplete_answer_window_never_claims_global_counts_or_endpoints() {
+        let values: Vec<Json> = (0..MAX_BOUND + 5)
+            .map(|i| {
+                let mut row =
+                    json!({"item":format!("urn:r:{i:04}"), "label":format!("Reply {i:04}")});
+                if i > 0 {
+                    row["replyTo"] = json!("urn:r:0000");
+                }
+                row
+            })
+            .collect();
+        let r = records(&values);
+        assert!(r.past);
+        assert_eq!(r.rows.len(), MAX_BOUND);
+        let n = render("thread", &r, 3);
+        let words = format!("{:?}", all(&n, "text"));
+        assert!(words.contains("999 replies in this answer"));
+        assert!(words.contains("Counts and thread endpoints describe this window only"));
+        let labels = format!("{:?}", all(&n, "link"));
+        assert!(labels.contains("Reply 0999"));
+        assert!(!labels.contains("Reply 1000"));
     }
 }

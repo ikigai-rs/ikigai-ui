@@ -40,6 +40,6 @@
     "urn:iki:ui:element:name:disclosure"
   ],
   "hints": [
-    "urn:iki:ui:hint:choice:"
+    "urn:iki:ui:hint:choice:", "urn:iki:ui:hint:group:"
   ]
 }

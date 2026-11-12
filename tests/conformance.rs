@@ -37,6 +37,16 @@ fn conforms() {
         "ui-lens-contact-list",
         "ui-lens-contact-list-query",
         "ui-lens-instance-contact",
+        "ui-lens-demo-thread",
+        "ui-lens-demo-thread-query",
+        "ui-lens-demo-board",
+        "ui-lens-demo-board-query",
+        "ui-lens-demo-tree",
+        "ui-lens-demo-tree-query",
+        "ui-lens-demo-timeline",
+        "ui-lens-demo-timeline-query",
+        "ui-lens-demo-graph",
+        "ui-lens-demo-instance",
     ] {
         suite = suite.pure(id);
     }
@@ -76,8 +86,8 @@ fn conforms() {
         )
         .fixture(
             Fixture::new("ui-view-lens", Verb::Source)
-                .binding("lens", "contact-table")
-                .binding("iri", ikigai_ui::scene::EXAMPLE_GRAPH),
+                .binding("lens", "demo-board")
+                .binding("iri", ikigai_ui::lens::DEMO_GRAPH),
         )
         // A lens query as a resource (ledger #3530): the preparer is pure over its `content`,
         // and a lens's prepared form is cached, threaded from its query's source.
@@ -243,6 +253,9 @@ fn conforms() {
         // The choice presentation hints (ledger #3537), this crate's own, documented at
         // `ikigai_ui::model::CHOICE_HINTS` and `RADIO`.
         .namespace("urn:iki:ui:hint:choice:")
+        .namespace("urn:iki:ui:hint:group:")
+        // Demo-only discussion/task vocabulary documented in assets/lens/demo.ttl.
+        .namespace("urn:iki:ui:example:lenses:")
         .self_named_space("ui", ikigai_ui::space)
         .host_named_space("ikigai_ui::pages(family, base)", pages)
         // Since core 0.2.5 a root exact alias is a view of its own (ledger #2513): listed, and

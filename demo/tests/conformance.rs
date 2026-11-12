@@ -36,6 +36,16 @@ fn conforms() {
         "ui-lens-contact-list",
         "ui-lens-contact-list-query",
         "ui-lens-instance-contact",
+        "ui-lens-demo-thread",
+        "ui-lens-demo-thread-query",
+        "ui-lens-demo-board",
+        "ui-lens-demo-board-query",
+        "ui-lens-demo-tree",
+        "ui-lens-demo-tree-query",
+        "ui-lens-demo-timeline",
+        "ui-lens-demo-timeline-query",
+        "ui-lens-demo-graph",
+        "ui-lens-demo-instance",
     ] {
         suite = suite.pure(id);
     }
@@ -180,6 +190,7 @@ fn conforms() {
         .namespace("urn:iki:ui:structure:")
         // The choice presentation hints (ledger #3537).
         .namespace("urn:iki:ui:hint:choice:")
+        .namespace("urn:iki:ui:example:lenses:")
         .body_space(root)
         .run_blocking(&kernel);
     println!("{report}");
