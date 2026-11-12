@@ -21,6 +21,14 @@
 //!   the region's space (core's confinement narrows; it cannot shadow), so a region cannot
 //!   override a setting the host's screen space binds.
 //!
+//! **Every read inside a region goes through its [`Reach`]** (ledger #3525). Core keeps a
+//! host's corridors AHEAD of a confinement (so a region cannot shadow a host's setting), which
+//! means a host scope whose corridor binds more than the settings would answer inside the
+//! region a name it does not allow, under the caller's whole grant. So the confined space is
+//! not the only wall: a reference or an element definition read inside a region is refused as
+//! `Unresolved` unless the region (and every region around it) allows it, and what it may read
+//! is read under the scopes of every region around it, wherever it is answered.
+//!
 //! The narrowed space is named by the SHA-256 of what it binds (each name, its media type and
 //! bytes, or its refusal), so two regions share cached answers only when they bind the same
 //! doors to the same answers. Regions nest: an inner region narrows the outer one's space, to
@@ -29,7 +37,8 @@
 use std::sync::Arc;
 
 use ikigai_core::{
-    Description, EndpointSpace, Error, Exact, FnEndpoint, Invocation, Iri, Request, Verb,
+    Description, EndpointSpace, Error, Exact, FnEndpoint, Invocation, Iri, Representation, Request,
+    Verb,
 };
 use sha2::{Digest, Sha256};
 
@@ -109,11 +118,59 @@ pub fn group(node: &Node) -> Node {
     }
 }
 
+/// What a composition may read where it stands: everything, outside every region; inside one,
+/// only the names every region around it allows (and the screen's settings), under the scopes
+/// every region around it names.
+#[derive(Clone, Debug, Default)]
+pub struct Reach {
+    /// `None` outside every region; else the names that may be read.
+    allow: Option<Vec<Iri>>,
+    /// `None` when no region around names scopes (the caller's own grant).
+    scopes: Option<Vec<String>>,
+}
+
+impl Reach {
+    /// Whether `iri` may be read here.
+    pub fn permits(&self, iri: &Iri) -> bool {
+        self.allow.as_ref().is_none_or(|a| a.contains(iri))
+    }
+
+    /// The scopes reads here are attenuated to, if any.
+    pub fn scopes(&self) -> Option<&[String]> {
+        self.scopes.as_deref()
+    }
+
+    /// `Source` on `iri` from here: `Unresolved` when it may not be read, else issued in `inv`
+    /// under the attenuated grant.
+    pub async fn source(&self, inv: &Invocation<'_>, iri: Iri) -> Result<Representation, Error> {
+        if !self.permits(&iri) {
+            return Err(Error::Unresolved(iri));
+        }
+        let request = Request::new(Verb::Source, iri);
+        match &self.scopes {
+            Some(s) => inv.issue_attenuated(request, s.clone()).await,
+            None => inv.issue(request).await,
+        }
+    }
+}
+
 /// `inv` narrowed to `node`'s region: confined to a space binding what the region allows (read
-/// now, in `inv`'s space, under the region's scopes) and the screen's settings.
-pub async fn narrow<'a>(inv: &'a Invocation<'_>, node: &Node) -> Result<Invocation<'a>, Error> {
+/// now, in `inv`'s space, under the region's scopes) and the screen's settings, and the
+/// [`Reach`] every read inside it goes through. `outer` is the reach where the region stands:
+/// a nested region allows only what the outer one does, under both one's scopes. `inv` is the
+/// SCREEN's invocation, never an outer region's: a region's bound answers were read under its
+/// own scopes and would answer a nested region's narrower ones.
+pub async fn narrow<'a>(
+    inv: &'a Invocation<'_>,
+    outer: &Reach,
+    node: &Node,
+) -> Result<(Invocation<'a>, Reach), Error> {
     let allow = allowed(node).map_err(refuse)?;
-    let scopes = scopes(node).map_err(refuse)?;
+    let own = scopes(node).map_err(refuse)?;
+    let scopes = match (outer.scopes.clone(), own) {
+        (None, s) | (s, None) => s,
+        (Some(a), Some(b)) => Some(a.into_iter().filter(|s| b.contains(s)).collect()),
+    };
     let settings = crate::setting::NAMES
         .iter()
         .map(|n| Iri::parse(format!("{}{n}", crate::setting::PREFIX)).expect("a setting's IRI"));
@@ -123,16 +180,26 @@ pub async fn narrow<'a>(inv: &'a Invocation<'_>, node: &Node) -> Result<Invocati
             names.push(s);
         }
     }
+    let reach = Reach {
+        allow: Some(names.iter().filter(|n| outer.permits(n)).cloned().collect()),
+        scopes,
+    };
+    let scopes = reach.scopes.clone();
     let mut space = EndpointSpace::new();
     let mut digest = Sha256::new();
     for iri in names {
+        digest.update(iri.as_str().as_bytes());
+        digest.update([0]);
+        if !outer.permits(&iri) {
+            // Not readable where the region stands: not bound inside it either.
+            digest.update(b"outside\0");
+            continue;
+        }
         let request = Request::new(Verb::Source, iri.clone());
         let read = match &scopes {
             Some(s) => inv.issue_attenuated(request, s.clone()).await,
             None => inv.issue(request).await,
         };
-        digest.update(iri.as_str().as_bytes());
-        digest.update([0]);
         let endpoint = match read {
             Ok(rep) => {
                 digest.update(b"ok\0");
@@ -172,5 +239,5 @@ pub async fn narrow<'a>(inv: &'a Invocation<'_>, node: &Node) -> Result<Invocati
         .map(|b| format!("{b:02x}"))
         .collect();
     let name = Iri::parse(format!("{SPACE_PREFIX}{hex}")).expect("a region's IRI");
-    Ok(inv.confine(name, Arc::new(space)))
+    Ok((inv.confine(name, Arc::new(space)), reach))
 }
