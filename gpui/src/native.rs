@@ -464,6 +464,12 @@ impl Screen {
                     path.into(),
                     text(node, "value").unwrap_or_default().to_string(),
                 );
+                // A radio group (ledger #3537) is one tab stop: the group, not each option.
+                if is_radio(node) {
+                    let focus = cx.focus_handle();
+                    self.tab_order.push((path.into(), focus.clone()));
+                    self.focus.insert(path.into(), focus);
+                }
             }
             "form" => {
                 self.forms.insert(
@@ -501,7 +507,13 @@ impl Screen {
             };
             self.scenes.insert(path.into(), state);
         }
-        if ["button", "link", "option", "scene", DISCLOSURE].contains(&node.kind.as_str()) {
+        let in_radio = node.kind == "option"
+            && path.rsplit_once('/').is_some_and(|(parent, _)| {
+                self.focus.contains_key(parent) && self.choices.contains_key(parent)
+            });
+        if ["button", "link", "option", "scene", DISCLOSURE].contains(&node.kind.as_str())
+            && !in_radio
+        {
             let focus = cx.focus_handle();
             self.tab_order.push((path.into(), focus.clone()));
             self.focus.insert(path.into(), focus);
@@ -513,6 +525,43 @@ impl Screen {
         if let Some(replacement) = node.replacement.as_deref() {
             self.install(replacement, &format!("{path}/replacement"), cx);
         }
+    }
+
+    /// Choose the `index`th option of the radio group `choice` at `path`, and say so in the
+    /// status line as a native radio group is announced: its label, the option, checked, and
+    /// where it is in the group.
+    fn choose(&mut self, choice: &Node, path: &str, index: usize, cx: &mut Context<Self>) {
+        let Some(option) = choice.children.get(index) else {
+            return;
+        };
+        let value = text(option, "value").unwrap_or_default().to_string();
+        self.choices.insert(path.into(), value);
+        self.message = radio_announcement(choice, index);
+        cx.notify();
+    }
+
+    /// Move the radio group at `path` by an arrow key, wrapping as native radios do: up and left
+    /// to the previous option, down and right to the next. Whether the key was an arrow.
+    fn radio_key(&mut self, choice: &Node, path: &str, key: &str, cx: &mut Context<Self>) -> bool {
+        let len = choice.children.len();
+        if len == 0 {
+            return false;
+        }
+        let current = choice
+            .children
+            .iter()
+            .position(|o| text(o, "value") == Some(self.choices[path].as_str()));
+        let next = match (key, current) {
+            ("up" | "left", Some(i)) => (i + len - 1) % len,
+            ("down" | "right", Some(i)) => (i + 1) % len,
+            ("up" | "left", None) => len - 1,
+            ("down" | "right", None) => 0,
+            ("space", Some(i)) => i,
+            ("space", None) => 0,
+            _ => return false,
+        };
+        self.choose(choice, path, next, cx);
+        true
     }
 
     /// Whether the node at `path` is shown: no disclosure above it is closed.
@@ -674,6 +723,57 @@ impl Screen {
                         )
                         .child(input);
                 }
+            }
+            "choice" if is_radio(node) => {
+                // A radio group (ledger #3537): one focusable group whose arrows move the
+                // selection, edged by `line` with its label as the legend; the chosen option is
+                // filled (●) and the others empty (○), and the ring is the group's.
+                let focus = self.focus[path].clone();
+                let mut group = div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(div().font_weight(gpui::FontWeight::BOLD).child(label()));
+                for (i, option) in node.children.iter().enumerate() {
+                    let selected = text(option, "value") == Some(self.choices[path].as_str());
+                    let (click_node, click_path, click_focus) =
+                        (node.clone(), path.to_string(), focus.clone());
+                    group = group.child(
+                        div()
+                            .id(gpui::SharedString::from(format!("{path}/{i}")))
+                            .flex()
+                            .gap_2()
+                            .min_h(px(24.))
+                            .cursor_pointer()
+                            .child(if selected { "●" } else { "○" })
+                            .child(text(option, "label").unwrap_or_default().to_string())
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                window.focus(&click_focus);
+                                this.choose(&click_node, &click_path, i, cx);
+                            })),
+                    );
+                }
+                let (key_node, key_path) = (node.clone(), path.to_string());
+                body = body.child(
+                    ring(
+                        div()
+                            .p_2()
+                            .border_1()
+                            .rounded_md()
+                            .border_color(colors.line)
+                            .child(group),
+                        &focus,
+                        gpui::SharedString::from(format!("{path}:radios")),
+                        colors,
+                    )
+                    .on_key_down(cx.listener(
+                        move |this, event: &gpui::KeyDownEvent, _, cx| {
+                            if this.radio_key(&key_node, &key_path, &event.keystroke.key, cx) {
+                                cx.stop_propagation();
+                            }
+                        },
+                    )),
+                );
             }
             "choice" => {
                 body = body.child(label());
@@ -953,6 +1053,28 @@ impl Screen {
         }
         body.into_any_element()
     }
+}
+
+/// Whether `node` is a choice its screen asks to show as radio buttons, the hint kept only
+/// because this face's descriptor claims `urn:iki:ui:hint:choice:` (ledger #3537).
+fn is_radio(node: &Node) -> bool {
+    ikigai_ui::model::is_radio(node)
+}
+
+/// What a radio group says when its `index`th option is chosen: `Lens: contact-table,
+/// checked, 2 of 4`.
+pub fn radio_announcement(choice: &Node, index: usize) -> String {
+    let option = choice
+        .children
+        .get(index)
+        .and_then(|o| text(o, "label"))
+        .unwrap_or_default();
+    format!(
+        "{}: {option}, checked, {} of {}",
+        text(choice, "label").unwrap_or_default(),
+        index + 1,
+        choice.children.len()
+    )
 }
 
 /// A painted frame as GPUI's image: BGRA already, as [`gpui::RenderImage`] keeps its pixels.
@@ -1711,6 +1833,188 @@ mod tests {
         screen.read_with(cx, |s, _| {
             assert!(!s.message().is_empty() && !s.message().starts_with("Loading"));
             assert_eq!(first_heading(s.snapshot().unwrap().root()), elements);
+        });
+    }
+
+    /// A screen of two choices: `//0` asks for radio buttons, `//1` does not.
+    fn radios_screen() -> EndpointSpace {
+        let screen = serde_json::json!({"kind": "group", "properties": {"label": "Radios"}, "children": [
+            {"kind": "choice", "properties": {"label": "Lens", "name": "lens", "value": "b"},
+             "hint": {ikigai_ui::model::RADIO: "radio"}, "children": [
+                {"kind": "option", "properties": {"label": "a", "value": "a"}},
+                {"kind": "option", "properties": {"label": "b", "value": "b"}},
+                {"kind": "option", "properties": {"label": "c", "value": "c"}}]},
+            {"kind": "choice", "properties": {"label": "Plain", "name": "plain", "value": "x"}, "children": [
+                {"kind": "option", "properties": {"label": "x", "value": "x"}},
+                {"kind": "option", "properties": {"label": "y", "value": "y"}}]}]});
+        let bytes = serde_json::to_vec(&screen).unwrap();
+        EndpointSpace::new().bind(
+            Exact::new("urn:iki:ui:screen:name:radios"),
+            FnEndpoint::new("test-radios", move |_: &Invocation<'_>| {
+                Ok(Representation::new(
+                    ReprType::new(ikigai_ui::model::MEDIA_TYPE),
+                    bytes.clone(),
+                ))
+            })
+            .with_description(
+                Description::new("test-radios")
+                    .title("Radios")
+                    .summary("A radio choice and a plain one.")
+                    .verb(Verb::Source)
+                    .output(ikigai_ui::model::MEDIA_TYPE),
+            ),
+        )
+    }
+
+    fn tab_paths(screen: &Entity<Screen>, cx: &mut gpui::VisualTestContext) -> Vec<String> {
+        screen.update(cx, |s, _| {
+            s.tab_order.iter().map(|(p, _)| p.clone()).collect()
+        })
+    }
+
+    /// A choice with the radio hint is one radio group (ledger #3537): one tab stop, the arrows
+    /// move the selection and wrap, each choice is announced, and Tab leaves the group. A choice
+    /// without the hint keeps its selectable options, one stop each.
+    #[gpui::test]
+    fn a_radio_choice_is_one_focusable_group_whose_arrows_move_the_selection(
+        cx: &mut TestAppContext,
+    ) {
+        let worker = demo_worker(Some(radios_screen()));
+        let (screen, cx) =
+            cx.add_window_view(|window, cx| Screen::new(worker, "radios", Theme::Auto, window, cx));
+        settle(&screen, cx);
+        screen.update(cx, |s, _| {
+            let root = s.snapshot.as_ref().expect("the radios screen").root();
+            assert!(ikigai_ui::model::is_radio(&root.children[0]), "{root:?}");
+            assert!(!ikigai_ui::model::is_radio(&root.children[1]));
+        });
+        assert_eq!(tab_paths(&screen, cx), ["//0", "//1/0", "//1/1"]);
+        let group = screen.update(cx, |s, _| s.focus["//0"].clone());
+        cx.update(|window, _| window.focus(&group));
+        let chosen = |cx: &mut gpui::VisualTestContext| {
+            screen.update(cx, |s, _| (s.choices["//0"].clone(), s.message.clone()))
+        };
+        cx.simulate_keystrokes("down");
+        assert_eq!(chosen(cx), ("c".into(), "Lens: c, checked, 3 of 3".into()));
+        cx.simulate_keystrokes("down");
+        assert_eq!(chosen(cx), ("a".into(), "Lens: a, checked, 1 of 3".into()));
+        cx.simulate_keystrokes("up");
+        assert_eq!(chosen(cx).0, "c");
+        cx.simulate_keystrokes("left");
+        assert_eq!(chosen(cx).0, "b");
+        cx.simulate_keystrokes("right");
+        assert_eq!(chosen(cx).0, "c");
+        // The focus stays on the group through the arrows; Tab leaves it for the next control.
+        cx.update(|window, _| assert!(group.is_focused(window)));
+        cx.simulate_keystrokes("tab");
+        let next = screen.update(cx, |s, _| s.focus["//1/0"].clone());
+        cx.update(|window, _| assert!(next.is_focused(window)));
+        // The plain choice is untouched by the arrows and keeps its value.
+        screen.update(cx, |s, _| assert_eq!(s.choices["//1"], "x"));
+    }
+
+    /// A GPUI descriptor that does not claim the choice hints drops the hint: the choice keeps
+    /// its selectable options, each its own stop.
+    #[gpui::test]
+    fn without_the_claim_the_radio_choice_keeps_its_options(cx: &mut TestAppContext) {
+        let mut descriptor: serde_json::Value = serde_json::from_slice(crate::DESCRIPTOR).unwrap();
+        descriptor.as_object_mut().unwrap()["hints"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|ns| ns != ikigai_ui::model::CHOICE_HINTS);
+        let bytes = serde_json::to_vec(&descriptor).unwrap();
+        let unclaimed = radios_screen().bind(
+            Exact::new("urn:iki:ui:target:name:gpui"),
+            FnEndpoint::new("test-gpui-no-choice-hints", move |_: &Invocation<'_>| {
+                Ok(
+                    Representation::new(ReprType::new("application/json"), bytes.clone())
+                        .cacheable(),
+                )
+            })
+            .with_description(
+                Description::new("test-gpui-no-choice-hints")
+                    .title("GPUI without the choice hints")
+                    .summary("The native descriptor, claiming no choice hint.")
+                    .verb(Verb::Source)
+                    .verb(Verb::Meta)
+                    .output("application/json"),
+            ),
+        );
+        let worker = demo_worker(Some(unclaimed));
+        let (screen, cx) =
+            cx.add_window_view(|window, cx| Screen::new(worker, "radios", Theme::Auto, window, cx));
+        settle(&screen, cx);
+        screen.update(cx, |s, _| {
+            let root = s.snapshot.as_ref().unwrap().root();
+            assert!(!ikigai_ui::model::is_radio(&root.children[0]), "{root:?}");
+        });
+        assert_eq!(
+            tab_paths(&screen, cx),
+            ["//0/0", "//0/1", "//0/2", "//1/0", "//1/1"]
+        );
+    }
+
+    /// The lensed view's chooser reaches the native face as a radio group. The worker opens only
+    /// plain screen names, so the lensed view's GPUI face is read here as the worker reads one,
+    /// validated as a snapshot and installed in a window.
+    #[gpui::test]
+    fn a_lensed_views_chooser_is_a_native_radio_group(cx: &mut TestAppContext) {
+        let kernel = ikigai_ui_demo::kernel(Arc::new(Fallback::new(vec![
+            Arc::new(crate::descriptor_space()) as Arc<dyn ikigai_core::Space>,
+            ikigai_ui_demo::root(Default::default()),
+        ])));
+        let iri = ikigai_core::Iri::parse(format!(
+            "urn:iki:ui:face:target:gpui:screen:lens:contact-list:resource:{}",
+            ikigai_ui::scene::EXAMPLE_GRAPH
+        ))
+        .unwrap();
+        let rep = futures::executor::block_on(kernel.issue(
+            ikigai_core::Request::new(Verb::Source, iri),
+            &Capability::root(),
+        ))
+        .unwrap();
+        let snapshot = Snapshot::from_face(&rep.bytes).unwrap();
+        fn find<'a>(n: &'a Node, path: String, out: &mut Vec<(String, &'a Node)>) {
+            if n.kind == "choice" {
+                out.push((path.clone(), n));
+            }
+            for (i, c) in n.children.iter().enumerate() {
+                find(c, format!("{path}/{i}"), out);
+            }
+        }
+        let mut choices = Vec::new();
+        find(snapshot.root(), "/".into(), &mut choices);
+        let (path, lens) = choices
+            .into_iter()
+            .find(|(_, c)| text(c, "name") == Some("lens"))
+            .expect("the lens chooser");
+        assert!(ikigai_ui::model::is_radio(lens), "{lens:?}");
+        let lens = lens.clone();
+        let worker = demo_worker(None);
+        let (screen, cx) = cx
+            .add_window_view(|window, cx| Screen::new(worker, "gallery", Theme::Auto, window, cx));
+        settle(&screen, cx);
+        screen.update(cx, |s, cx| {
+            s.tab_order.clear();
+            s.focus.clear();
+            s.choices.clear();
+            s.install(snapshot.root(), "/", cx);
+            s.snapshot = Some(snapshot.clone());
+            assert!(s.tab_order.iter().any(|(p, _)| *p == path));
+            assert!(!s
+                .tab_order
+                .iter()
+                .any(|(p, _)| p.starts_with(&format!("{path}/"))));
+            assert_eq!(s.choices[&path], "contact-list");
+        });
+        cx.run_until_parked();
+        let group = screen.update(cx, |s, _| s.focus[&path].clone());
+        cx.update(|window, _| window.focus(&group));
+        cx.simulate_keystrokes("down");
+        screen.update(cx, |s, _| {
+            assert_eq!(s.choices[&path], "graph");
+            assert_eq!(s.message, radio_announcement(&lens, 3));
+            assert_eq!(s.message, "Lens: graph, checked, 4 of 4");
         });
     }
 }

@@ -483,6 +483,14 @@ fn html(kernel: &ikigai_core::Kernel, screen: &str, args: &[(&str, &str)]) -> St
     String::from_utf8(r.bytes).unwrap()
 }
 
+/// Whether a checkbox in `page` starts checked (the lens chooser's radios are not checkboxes).
+fn checked_box(page: &str) -> bool {
+    page.split("<input ")
+        .skip(1)
+        .map(|tag| &tag[..tag.find('>').unwrap()])
+        .any(|tag| tag.contains("type=\"checkbox\"") && tag.contains(" checked"))
+}
+
 /// The html face opens a lensed view, and its form's parameters pick another lens and facets.
 #[test]
 fn a_lensed_view_has_an_html_route() {
@@ -495,13 +503,13 @@ fn a_lensed_view_has_an_html_route() {
         page.contains(">Topics<") || page.contains("Topics"),
         "{page}"
     );
-    assert!(!page.contains(" checked"), "{page}");
+    assert!(!checked_box(&page), "{page}");
     let page = html(
         &host,
         &screen,
         &[("lens", "contact-list"), ("type", ENUMERATION)],
     );
-    assert!(page.contains(" checked"), "{page}");
+    assert!(checked_box(&page), "{page}");
     assert!(page.contains("Showing only"), "{page}");
     let page = html(&host, &screen, &[("lens", "contact-table")]);
     assert!(
@@ -509,4 +517,119 @@ fn a_lensed_view_has_an_html_route() {
         "{page}"
     );
     assert!(!page.contains("type=\"checkbox\""), "{page}");
+}
+
+/// The radio buttons of the choice named `name` in `page`, as (value, checked).
+fn radios(page: &str, name: &str) -> Vec<(String, bool)> {
+    page.split("<input ")
+        .skip(1)
+        .map(|tag| &tag[..tag.find('>').unwrap()])
+        .filter(|tag| tag.contains("type=\"radio\"") && tag.contains(&format!("name=\"{name}\"")))
+        .map(|tag| {
+            let value = tag.split("value=\"").nth(1).unwrap();
+            let value = value[..value.find('"').unwrap()].to_string();
+            (value, tag.contains(" checked"))
+        })
+        .collect()
+}
+
+/// The lens chooser is one radio group (ledger #3537): a fieldset with its legend, a radio per
+/// lens, the shown lens checked, and no select. Native radios move with the arrow keys.
+#[test]
+fn a_lensed_views_chooser_is_radio_buttons_in_a_fieldset() {
+    let host = common::host(None);
+    let screen = format!("lens:contact-list:resource:{EXAMPLE_GRAPH}");
+    let page = html(&host, &screen, &[]);
+    assert!(page.contains("<fieldset"), "{page}");
+    assert!(page.contains(">Lens</legend>"), "{page}");
+    assert!(!page.contains("<select"), "{page}");
+    let lenses = radios(&page, "lens");
+    assert_eq!(
+        lenses,
+        [
+            ("contact-graph".to_string(), false),
+            ("contact-table".to_string(), false),
+            ("contact-list".to_string(), true),
+            ("graph".to_string(), false),
+        ],
+        "{page}"
+    );
+    // Each radio has its own label, tied by id.
+    for (value, _) in &lenses {
+        assert!(page.contains(&format!(">{value}</label>")), "{page}");
+    }
+    let page = html(&host, &screen, &[("lens", "contact-table")]);
+    let checked: Vec<String> = radios(&page, "lens")
+        .into_iter()
+        .filter(|(_, c)| *c)
+        .map(|(v, _)| v)
+        .collect();
+    assert_eq!(checked, ["contact-table"], "{page}");
+}
+
+/// A resource's own view offers its lenses the same way: the chooser carries the hint, and
+/// the html face draws it as radios.
+#[test]
+fn a_resource_views_lens_chooser_is_radio_buttons() {
+    let host = common::host(None);
+    let n = resource_view(&host, EXAMPLE_GRAPH);
+    let form = of(&n, "form")
+        .into_iter()
+        .find(|f| text(&f.properties["label"]) == "Lenses")
+        .unwrap()
+        .clone();
+    let chooser = of(&form, "choice")[0];
+    assert_eq!(
+        chooser.hint.get(ikigai_ui::model::RADIO),
+        Some(&ikigai_ui::model::Hint::Plain(Value::Text("radio".into()))),
+        "{chooser:?}"
+    );
+    let bytes = serde_json::to_vec(&form).unwrap();
+    let screen = EndpointSpace::new().bind(
+        Exact::new("urn:iki:ui:screen:name:resource-lenses"),
+        fixed(
+            "resource-lenses",
+            "application/json",
+            String::from_utf8(bytes).unwrap(),
+        ),
+    );
+    let host = common::host_with(None, vec![Arc::new(screen) as Arc<dyn Space>]);
+    let page = html(&host, "resource-lenses", &[]);
+    assert!(page.contains(">Lens</legend>"), "{page}");
+    assert!(!page.contains("<select"), "{page}");
+    assert_eq!(
+        radios(&page, "lens"),
+        [
+            ("contact-graph".to_string(), true),
+            ("contact-table".to_string(), false),
+            ("contact-list".to_string(), false),
+            ("graph".to_string(), false),
+        ],
+        "{page}"
+    );
+}
+
+/// An html descriptor that does not claim the choice hints keeps the select.
+#[test]
+fn a_face_that_does_not_claim_the_hint_keeps_the_select() {
+    let dir = common::scratch("choice-unclaimed");
+    std::fs::create_dir_all(dir.join("target")).unwrap();
+    let mut descriptor: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../assets/target/html.json")).unwrap();
+    descriptor.as_object_mut().unwrap().remove("hints");
+    std::fs::write(
+        dir.join("target/html.json"),
+        serde_json::to_vec(&descriptor).unwrap(),
+    )
+    .unwrap();
+    let host = common::host(Some(&dir));
+    let screen = format!("lens:contact-list:resource:{EXAMPLE_GRAPH}");
+    let page = html(&host, &screen, &[]);
+    assert!(page.contains("<select"), "{page}");
+    assert!(
+        page.contains("<option value=\"contact-list\" selected>"),
+        "{page}"
+    );
+    assert!(radios(&page, "lens").is_empty(), "{page}");
+    assert!(!page.contains("<fieldset"), "{page}");
 }

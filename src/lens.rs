@@ -1051,7 +1051,9 @@ fn chooser_node(choices: &[String], chosen: &str) -> Json {
         .iter()
         .map(|c| json!({"kind": "option", "properties": {"label": c, "value": c}}))
         .collect();
-    json!({"kind": "choice", "properties": {"label": "Lens", "name": "lens", "value": chosen}, "children": options})
+    // Radio buttons where the face claims the hint (ledger #3537), else its select.
+    json!({"kind": "choice", "properties": {"label": "Lens", "name": "lens", "value": chosen},
+        "hint": { model::RADIO: "radio" }, "children": options})
 }
 
 /// The lenses a resource declares (instance, dataset, types), without the default; empty

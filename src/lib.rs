@@ -695,6 +695,10 @@ pub fn space() -> EndpointSpace {
             template(&format!("{}{{name}}", html::ELEMENT_TEMPLATE_PREFIX)),
             html::element_template_endpoint(),
         )
+        .bind(
+            template(&format!("{}{{name}}", html::HINT_TEMPLATE_PREFIX)),
+            html::hint_template_endpoint(),
+        )
         .bind(Exact::new(html::EMPTY), html::empty_endpoint())
         .bind(
             template(&format!("{}{{graph}}", scene::LAYOUT_PREFIX)),
