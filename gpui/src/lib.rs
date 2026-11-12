@@ -15,8 +15,16 @@ use ikigai_ui::{
     target::Descriptor,
 };
 
-/// The descriptor implemented by this renderer, including interactive forms.
+/// The descriptor implemented by this renderer, including interactive forms. With the `scene`
+/// feature (ledger #3516) it also claims `scene`, drawn offscreen and painted as an image beside
+/// its replacement; without it, `scene` falls back to its replacement as before.
+#[cfg(not(feature = "scene"))]
 pub const DESCRIPTOR: &[u8] = include_bytes!("../assets/gpui.json");
+/// The descriptor implemented by this renderer, including interactive forms. With the `scene`
+/// feature (ledger #3516) it also claims `scene`, drawn offscreen and painted as an image beside
+/// its replacement; without it, `scene` falls back to its replacement as before.
+#[cfg(feature = "scene")]
+pub const DESCRIPTOR: &[u8] = include_bytes!("../assets/gpui-scene.json");
 
 /// The disclosure element (ledger #3512), which this renderer draws natively: a button that
 /// holds its open state in the window and shows or hides its body.
@@ -50,7 +58,8 @@ pub struct Snapshot(Arc<Node>);
 impl Snapshot {
     /// Validate an already resolved GPUI face. References, custom elements the descriptor
     /// does not claim (`elements`), and unsupported kinds are refused rather than resolved
-    /// from a render callback.
+    /// from a render callback. A replacement is refused too, except a natively drawn
+    /// `scene`'s: its accessible form, drawn beside the image (and validated the same way).
     pub fn from_face(bytes: &[u8]) -> Result<Self, ikigai_core::Error> {
         let node = model::parse(bytes)?;
         let descriptor = Descriptor::parse(DESCRIPTOR, "gpui")?;
@@ -58,13 +67,15 @@ impl Snapshot {
         while let Some(node) = stack.pop() {
             let native =
                 descriptor.renders.contains(&node.kind) || descriptor.elements.contains(&node.kind);
-            if !native || node.replacement.is_some() {
+            let kept = node.kind == "scene" && native;
+            if !native || (node.replacement.is_some() && !kept) {
                 return Err(ikigai_core::Error::InvalidArgument {
                     name: "snapshot".into(),
                     detail: format!("{} is not a resolved native GPUI node", node.kind),
                 });
             }
             stack.extend(&node.children);
+            stack.extend(node.replacement.as_deref());
         }
         Ok(Self(Arc::new(node)))
     }

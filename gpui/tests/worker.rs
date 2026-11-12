@@ -315,3 +315,43 @@ fn a_disclosure_reaches_the_native_face_whole_carrying_only_its_initial_state() 
     )
     .is_err());
 }
+
+/// Ledger #3516. Without the `scene` feature, nothing changes: the descriptor does not claim
+/// `scene` and the gallery's scene reaches the walker as its replacement (the graph as text).
+#[cfg(not(feature = "scene"))]
+#[test]
+fn without_the_scene_feature_a_scene_is_its_replacement() {
+    let descriptor = Descriptor::parse(DESCRIPTOR, "gpui").unwrap();
+    assert!(!descriptor.renders.iter().any(|k| k == "scene"));
+    let (worker, _) = host();
+    let gallery = wait(&worker.load("gallery")).unwrap();
+    assert!(find(gallery.root(), "scene").is_none());
+}
+
+/// Ledger #3516. With the `scene` feature the descriptor claims `scene`, and the snapshot
+/// keeps the scene whole: its datum named, its replacement beside it (validated as the rest).
+#[cfg(feature = "scene")]
+#[test]
+fn with_the_scene_feature_the_descriptor_claims_scene_and_keeps_its_replacement() {
+    let descriptor = Descriptor::parse(DESCRIPTOR, "gpui").unwrap();
+    assert!(descriptor.renders.iter().any(|k| k == "scene"));
+    let (worker, _) = host();
+    let gallery = wait(&worker.load("gallery")).unwrap();
+    let scene = find(gallery.root(), "scene").expect("the gallery keeps its scene");
+    let datum = text(scene, "datum").unwrap();
+    assert!(datum.starts_with(ikigai_ui::scene::SCENE_PREFIX), "{datum}");
+    assert!(scene.replacement.is_some(), "the accessible form is kept");
+    // The datum is read on the worker under the host's capability, and validated.
+    let datum = wait(&worker.scene(datum)).unwrap();
+    assert!(!datum.nodes.is_empty());
+    // A node cannot make the window read anything else.
+    assert!(wait(&worker.scene(ikigai_ui_demo::CONTACT)).is_err());
+    // Only a scene's replacement is kept: any other node's is still refused.
+    let other = serde_json::json!({"kind":"text","properties":{"content":"a"},
+        "replacement":{"kind":"text","properties":{"content":"b"}}});
+    assert!(Snapshot::from_face(&serde_json::to_vec(&other).unwrap()).is_err());
+    // And a scene's replacement is held to the same vocabulary.
+    let raw = serde_json::json!({"kind":"scene","properties":{"label":"g","datum":"urn:iki:ui:scene:graph:urn:x"},
+        "replacement":{"kind":"raw","properties":{"content":"<script>run()</script>"}}});
+    assert!(Snapshot::from_face(&serde_json::to_vec(&raw).unwrap()).is_err());
+}
