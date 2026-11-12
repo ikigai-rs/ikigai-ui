@@ -3,7 +3,7 @@
 fn main() {
     use gpui::{px, size, App, AppContext, Application, Bounds, WindowBounds, WindowOptions};
     use ikigai_core::{Capability, Fallback, Scope};
-    use ikigai_ui_gpui::{descriptor_space, native::Screen, worker::Worker};
+    use ikigai_ui_gpui::{descriptor_space, native::Screen, theme::Theme, worker::Worker};
     use std::sync::Arc;
 
     let store = ikigai_ui_demo::Store::default();
@@ -16,6 +16,17 @@ fn main() {
     let addr = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "127.0.0.1:8080".into());
+    // The second argument is a theme, as the HTML chooser names them; `auto` by default.
+    let theme = match std::env::args().nth(2) {
+        None => Theme::Auto,
+        Some(name) => Theme::parse(&name).unwrap_or_else(|| {
+            eprintln!(
+                "unknown theme {name}: expected one of {:?}",
+                ikigai_ui::THEMES
+            );
+            std::process::exit(2)
+        }),
+    };
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -51,7 +62,7 @@ fn main() {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     ..Default::default()
                 },
-                move |_, cx| cx.new(|cx| Screen::new(worker, screen, cx)),
+                move |window, cx| cx.new(|cx| Screen::new(worker, screen, theme, window, cx)),
             )
             .expect("native demo window");
         }

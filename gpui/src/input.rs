@@ -4,13 +4,43 @@
 use std::ops::Range;
 
 use gpui::{
-    actions, div, fill, hsla, point, prelude::*, px, relative, rgb, rgba, size, white, App, Bounds,
-    ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, FocusHandle, Focusable, GlobalElementId, KeyBinding, LayoutId, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, ShapedLine,
-    SharedString, Style, TextRun, UTF16Selection, UnderlineStyle, Window,
+    actions, div, fill, point, prelude::*, px, relative, size, App, Bounds, ClipboardItem, Context,
+    CursorStyle, ElementId, ElementInputHandler, Entity, EntityInputHandler, FocusHandle,
+    Focusable, GlobalElementId, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PaintQuad, Pixels, Point, ShapedLine, SharedString, Style, TextRun,
+    UTF16Selection, UnderlineStyle, Window,
 };
 use unicode_segmentation::*;
+
+use super::Colors;
+
+/// `runs` with the bytes in `range` drawn in `color`, splitting the runs at its ends.
+fn recolor(runs: Vec<TextRun>, range: Range<usize>, color: gpui::Hsla) -> Vec<TextRun> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    for run in runs {
+        let (start, end) = (at, at + run.len);
+        at = end;
+        let cuts = [
+            start,
+            range.start.clamp(start, end),
+            range
+                .end
+                .clamp(start, end)
+                .max(range.start.clamp(start, end)),
+            end,
+        ];
+        for piece in cuts.windows(2).filter(|w| w[1] > w[0]) {
+            let mut part = run.clone();
+            part.len = piece[1] - piece[0];
+            if piece[0] >= range.start && piece[1] <= range.end {
+                part.color = color;
+            }
+            out.push(part);
+        }
+    }
+    out
+}
 
 actions!(
     text_input,
@@ -43,6 +73,9 @@ pub(super) struct TextInput {
     pub(super) multiline: bool,
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
+    /// The palette's colors: fg (muted placeholder) on bg, edged by line, ringed by focus;
+    /// selected text is accent-fg on accent.
+    pub(super) colors: Colors,
 }
 
 impl TextInput {
@@ -275,7 +308,7 @@ impl TextInput {
             .unwrap_or(self.content.len())
     }
 
-    pub(super) fn new(value: &str, cx: &mut Context<Self>) -> Self {
+    pub(super) fn new(value: &str, colors: Colors, cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
             content: value.to_owned().into(),
@@ -287,6 +320,7 @@ impl TextInput {
             multiline: false,
             last_bounds: None,
             is_selecting: false,
+            colors,
         }
     }
 }
@@ -513,9 +547,9 @@ impl Element for TextElement {
             input.content.as_ref()
         };
         let color = if input.content.is_empty() {
-            hsla(0., 0., 0., 0.4)
+            input.colors.muted
         } else {
-            style.color
+            input.colors.fg
         };
         let mut lines = Vec::new();
         let mut selection = Vec::new();
@@ -557,6 +591,20 @@ impl Element for TextElement {
                     runs.retain(|run| run.len > 0);
                 }
             }
+            if !input.content.is_empty() {
+                // Selected text is accent-fg on its accent fill, a pair the palettes test.
+                let from = input
+                    .selected_range
+                    .start
+                    .saturating_sub(start)
+                    .min(text.len());
+                let to = input
+                    .selected_range
+                    .end
+                    .saturating_sub(start)
+                    .min(text.len());
+                runs = recolor(runs, from..to, input.colors.accent_fg);
+            }
             let shaped =
                 window
                     .text_system()
@@ -577,7 +625,7 @@ impl Element for TextElement {
                             y + window.line_height(),
                         ),
                     ),
-                    rgba(0x3311ff30),
+                    input.colors.accent,
                 ));
             }
             let cursor = input.cursor_offset();
@@ -587,7 +635,7 @@ impl Element for TextElement {
                         point(bounds.left() + shaped.x_for_index(cursor - start), y),
                         size(px(2.), window.line_height()),
                     ),
-                    gpui::blue(),
+                    input.colors.focus,
                 ));
             }
             lines.push(LayoutLine { start, shaped });
@@ -665,7 +713,10 @@ impl Render for TextInput {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .bg(rgb(0xeeeeee))
+            .border_1()
+            .rounded_md()
+            .border_color(self.colors.line)
+            .focus(|s| s.border_color(self.colors.focus))
             .line_height(px(30.))
             .text_size(px(16.))
             .child(
@@ -673,7 +724,7 @@ impl Render for TextInput {
                     .min_h(px(if self.multiline { 98. } else { 38. }))
                     .w_full()
                     .p(px(4.))
-                    .bg(white())
+                    .bg(self.colors.bg)
                     .child(TextElement { input: cx.entity() }),
             )
     }
@@ -709,9 +760,35 @@ mod tests {
     use super::*;
     use gpui::TestAppContext;
 
+    fn light() -> Colors {
+        Colors::new(&crate::theme::Tokens::compiled(&ikigai_ui::palette::LIGHT))
+    }
+
+    #[test]
+    fn recolor_paints_only_the_selected_bytes() {
+        let run = |len| TextRun {
+            len,
+            font: gpui::font("Helvetica"),
+            color: light().fg,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let runs = recolor(vec![run(3), run(4)], 2..5, light().accent_fg);
+        let shape: Vec<_> = runs
+            .iter()
+            .map(|r| (r.len, r.color == light().accent_fg))
+            .collect();
+        assert_eq!(shape, [(2, false), (1, true), (2, true), (2, false)]);
+        let empty = recolor(vec![run(3)], 1..1, light().accent_fg);
+        assert!(empty.iter().all(|r| r.color == light().fg));
+        assert_eq!(empty.iter().map(|r| r.len).sum::<usize>(), 3);
+    }
+
     #[gpui::test]
     fn ime_selection_replaces_the_direction_of_a_backward_selection(cx: &mut TestAppContext) {
-        let (input, cx) = cx.add_window_view(|_, cx| TextInput::new("before 🦀 after", cx));
+        let (input, cx) =
+            cx.add_window_view(|_, cx| TextInput::new("before 🦀 after", light(), cx));
         cx.update(|window, cx| {
             input.update(cx, |input, cx| {
                 // Select backward, then let the IME replace that selection with marked text.
@@ -734,7 +811,7 @@ mod tests {
 
     #[gpui::test]
     fn edits_do_not_hit_test_unicode_with_an_old_ascii_layout(cx: &mut TestAppContext) {
-        let (input, cx) = cx.add_window_view(|_, cx| TextInput::new("abcd", cx));
+        let (input, cx) = cx.add_window_view(|_, cx| TextInput::new("abcd", light(), cx));
         cx.run_until_parked();
         cx.update(|window, cx| {
             input.update(cx, |input, cx| {
@@ -754,7 +831,8 @@ mod tests {
 
     #[gpui::test]
     fn grapheme_deletion_and_large_multiline_paste_keep_valid_ranges(cx: &mut TestAppContext) {
-        let (input, cx) = cx.add_window_view(|_, cx| TextInput::new("e\u{301}🦀\n日本語", cx));
+        let (input, cx) =
+            cx.add_window_view(|_, cx| TextInput::new("e\u{301}🦀\n日本語", light(), cx));
         cx.update(|window, cx| {
             input.update(cx, |input, cx| {
                 input.multiline = true;
