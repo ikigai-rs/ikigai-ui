@@ -1238,6 +1238,7 @@ pub struct Pages {
     scripts: Vec<String>,
     push: Option<String>,
     chooser: bool,
+    lenses: bool,
 }
 
 impl Pages {
@@ -1250,7 +1251,23 @@ impl Pages {
             scripts: Vec::new(),
             push: None,
             chooser: true,
+            lenses: false,
         }
+    }
+
+    /// Whether the family serves lensed views as pages (ledger #3538): off unless turned on.
+    /// On, `{base}page:lens:{lens}[:facets:{…}]:resource:{iri}` is the shell (title, theme,
+    /// status region, `tokens.css`, `shell.js`, `scene-renderer.js`) over ikigai-ui's own
+    /// lensed view, `urn:iki:ui:html:screen:lens:…`, titled by
+    /// `urn:iki:ui:lens:title:lens:…` ([`lens::TITLE`]); the host binds nothing for it, and
+    /// its own `{base}fragment:lens:…` and `{base}title:lens:…` are no longer reached. The IRI
+    /// may arrive percent-encoded (a door's one segment) and is decoded and checked
+    /// ([`lens::page_screen`]); the request's `lens=` and facet parameters pick another lens
+    /// and facets, as the view's own form sends them. A door routes
+    /// `/lens/name/{lens}/resource/{+iri}` ([`lens::html_href`]) onto it.
+    pub fn lenses(mut self, on: bool) -> Self {
+        self.lenses = on;
+        self
     }
 
     /// Link a stylesheet from every page of the family. Repeats, in order.
@@ -1291,6 +1308,7 @@ impl Pages {
             scripts,
             push,
             chooser,
+            lenses,
         } = self;
         if !family_ok(&family) {
             return Err(ConfigError(format!(
@@ -1329,7 +1347,17 @@ impl Pages {
                 url("script", script)?
             ));
         }
-        let mut doors = EndpointSpace::new()
+        let mut doors = EndpointSpace::new();
+        if lenses {
+            // Before the family's own pages, so a lensed page name is never a host fragment.
+            doors = doors.bind(
+                LensPage {
+                    prefix: format!("{base}page:"),
+                },
+                lens_page_endpoint(family.clone()),
+            );
+        }
+        let mut doors = doors
             .bind(
                 template(&format!("{base}page:{{name}}")),
                 page_endpoint(family.clone()),
@@ -1346,7 +1374,20 @@ impl Pages {
                 no_chooser_endpoint(&family),
             );
         }
-        let aliases = AliasTable::new()
+        let mut aliases = AliasTable::new();
+        if lenses {
+            // Longer than the family's own prefixes, so these win for a lensed page's names.
+            aliases = aliases
+                .prefix_at_root(
+                    format!("urn:iki:ui:title:{family}:lens:"),
+                    format!("{}lens:", lens::TITLE),
+                )
+                .prefix_at_root(
+                    format!("urn:iki:ui:main:{family}:lens:"),
+                    "urn:iki:ui:html:screen:lens:",
+                );
+        }
+        let aliases = aliases
             .exact_at_root(
                 format!("urn:iki:ui:header:{family}"),
                 format!("{base}header"),
@@ -1390,6 +1431,86 @@ fn page_name_ok(name: &str) -> bool {
         && name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b':' | b'.' | b'_' | b'~' | b'-'))
+}
+
+/// `{base}page:lens:{…}`: a family's lensed pages ([`Pages::lenses`]).
+struct LensPage {
+    prefix: String,
+}
+
+impl ikigai_core::Grammar for LensPage {
+    fn match_iri(&self, iri: &Iri) -> Option<Bindings> {
+        let name = iri.as_str().strip_prefix(self.prefix.as_str())?;
+        let (lens, _, resource) = lens::parse_screen(name)?.ok()?;
+        let mut b = Bindings::new();
+        b.insert("name", name);
+        b.insert("lens", lens.as_str());
+        b.insert("iri", resource.as_str());
+        Some(b)
+    }
+
+    fn pattern(&self) -> String {
+        format!("{}lens:{{lens}}:resource:{{iri}}", self.prefix)
+    }
+}
+
+fn lens_page_endpoint(family: String) -> AsyncFnEndpoint {
+    let id = format!("ui-page-lens-{family}");
+    let composer =
+        Arc::new(ikigai_fn::compose_over(Iri::parse(SHELL).expect("an IRI")).named(id.clone()));
+    let description = Description::new(id.as_str())
+        .title("A lensed view as a page over the UI shell")
+        .summary(format!(
+            "The shared page shell filled with the `{family}` family's header, the lens's \
+             legend as the title and ikigai-ui's lensed view of the resource as the main \
+             content; its lens= and facet parameters pick another lens and facets."
+        ))
+        .verb(Verb::Source)
+        .verb(Verb::Meta)
+        .input(
+            ArgSpec::new("lens")
+                .summary("the lens's name")
+                .class(XSD_STRING)
+                .binding()
+                .example("contact-graph"),
+        )
+        .input(
+            ArgSpec::new("iri")
+                .summary("the resource, percent-encoded or not")
+                .class("http://www.w3.org/2001/XMLSchema#anyURI")
+                .binding()
+                .example(scene::EXAMPLE_GRAPH),
+        )
+        .input(
+            ArgSpec::new("theme")
+                .summary("the palette: auto follows the viewer's system (UI conventions D12)")
+                .class(XSD_STRING)
+                .one_of(THEMES)
+                .default_value("auto"),
+        )
+        .output(HTML);
+    AsyncFnEndpoint::new(id, move |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+        let composer = composer.clone();
+        let family = family.clone();
+        Box::pin(async move {
+            let name = inv
+                .bindings
+                .get("name")
+                .ok_or_else(|| Error::MissingArgument("name".to_string()))?;
+            let screen = lens::page_screen(inv, name)?;
+            let theme = inv
+                .inline_str("theme")
+                .ok()
+                .filter(|t| THEMES.contains(t))
+                .unwrap_or("auto");
+            let mut vars = Bindings::new();
+            vars.insert("family", family.as_str());
+            vars.insert("name", screen.as_str());
+            vars.insert("theme", theme);
+            composer.invoke(&inv.with_bindings(&vars)).await
+        })
+    })
+    .with_description(description)
 }
 
 fn page_endpoint(family: String) -> AsyncFnEndpoint {

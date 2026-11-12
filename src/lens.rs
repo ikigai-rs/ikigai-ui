@@ -14,6 +14,7 @@
 //! | `urn:iki:ui:lens:resource:{iri}` | data | `{iri}`'s lenses in precedence: instance, dataset, each type, then `graph` ([`precedence`]) |
 //! | `urn:iki:ui:renderer:name:{name}` | data | a renderer, a model template: `graph`, `table`, `list` are compiled in; a host's binding of the same name, placed first, wins |
 //! | `urn:iki:ui:view:lens:{lens}:resource:{iri}` | data | the lensed view: the legend, a radio chooser among `{iri}`'s lenses, the renderer filled with the result |
+//! | `urn:iki:ui:lens:title:lens:{lens}:resource:{iri}` | text | a lensed page's title: the legend and the resource; a family with [`crate::Pages::lenses`] serves `{base}page:lens:{lens}:resource:{iri}` in the shell, at the door's `/lens/name/{lens}/resource/{iri}` ([`html_href`]) |
 //! | `urn:iki:ui:home` | data (a host's) | the home mapping, a JSON prefix table `[{"prefix", "href"}]`, longest prefix wins |
 //! | `urn:iki:ui:home:resource:{iri}` | data | where `{iri}` links: its home by the table, else its own view ([`crate::view::href`]) |
 //!
@@ -1103,6 +1104,9 @@ pub async fn lensed(
     controls.push(json!({"kind": "button", "properties": {"label": "Show"}}));
     let mut children = vec![
         json!({"kind": "heading", "properties": {"content": lens.legend, "level": 2}}),
+        // Before the form, never against its button: a link under the button would crowd
+        // its target (WCAG 2.2 SC 2.5.8, axe target-size; ledger #3538).
+        json!({"kind": "link", "properties": {"label": "The resource's own view", "href": crate::view::href(resource)}}),
         // A GET form with no action submits to the page it is on: the lens and the facets
         // arrive as query parameters, and the page's route reads them.
         json!({"kind": "form", "properties": {"label": "Lens and facets", "method": "get"}, "children": controls}),
@@ -1115,7 +1119,6 @@ pub async fn lensed(
             .collect();
         children.push(json!({"kind": "text", "properties": {"content": format!("Showing only {}.", said.join("; "))}}));
     }
-    children.push(json!({"kind": "link", "properties": {"label": "The resource's own view", "href": crate::view::href(resource)}}));
     let view = json!({"kind": "group", "properties": {"label": lens.legend}, "children": children});
     let mut view: Node = serde_json::from_value(view).map_err(|e| refuse("lens", e))?;
     view.children.push(body);
@@ -1177,8 +1180,27 @@ pub fn screen_name(lens: &str, resource: &str, chosen: &Selection) -> String {
     )
 }
 
-/// Where a browser opens a lensed view: the html face of its screen.
+/// Where a browser opens a lensed view as a PAGE, in the shell (ledger #3538):
+/// `/lens/name/{lens}/resource/{iri}`, the IRI percent-encoded as one segment, and the chosen
+/// facets (with `lens=`, so they are read) as the query. A host's door routes it onto its page
+/// family's `{base}page:lens:{lens}:resource:{+iri}` ([`crate::Pages::lenses`]).
 pub fn html_href(lens: &str, resource: &str, chosen: &Selection) -> String {
+    let mut out = format!("{PAGE_PATH}{}/resource/{}", pct(lens), pct(resource));
+    if !chosen.is_empty() {
+        out.push_str(&format!("?lens={}", pct(lens)));
+        for (k, v) in chosen {
+            out.push_str(&format!("&{}={}", pct(k), pct(v)));
+        }
+    }
+    out
+}
+
+/// The door path a lensed page is served at, before its lens's name: `/lens/name/`.
+pub const PAGE_PATH: &str = "/lens/name/";
+
+/// Where htmx swaps a lensed view in as a FRAGMENT, no shell: the html face of its screen,
+/// `/ui/html:screen:lens:…` (the door's `/ui/{+rest}` route).
+pub fn fragment_href(lens: &str, resource: &str, chosen: &Selection) -> String {
     let name = screen_name(lens, resource, chosen);
     let mut out = String::from("/ui/html:screen:");
     for b in name.bytes() {
@@ -1189,6 +1211,63 @@ pub fn html_href(lens: &str, resource: &str, chosen: &Selection) -> String {
         }
     }
     out
+}
+
+fn lens_name_ok(lens: &str) -> bool {
+    !lens.is_empty()
+        && lens
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+}
+
+/// The screen a lensed PAGE shows: its name (`lens:{lens}[:facets:{…}]:resource:{iri}`, the
+/// IRI as the door gave it, percent-encoded or not) read, the IRI decoded and checked (an
+/// absolute IRI with no `?`, `#`, `%` or space, so it stays one name), and the request's `lens=`
+/// and facets folded in ([`fold`]). Anything else is refused with `InvalidArgument` before
+/// anything is read.
+pub fn page_screen(inv: &Invocation<'_>, name: &str) -> Result<String, Error> {
+    let (lens, chosen, resource) = parse_screen(name).ok_or_else(|| {
+        refuse(
+            "name",
+            format!("`{name}` is not lens:{{lens}}:resource:{{iri}}"),
+        )
+    })??;
+    if !lens_name_ok(&lens) {
+        return Err(refuse("lens", format!("`{lens}` is not a lens name")));
+    }
+    let resource = unpct(&resource)?;
+    if resource
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '?' | '#' | '%' | '<' | '>' | '"'))
+    {
+        return Err(refuse(
+            "iri",
+            format!("`{resource}`: a lensed page's resource carries no ? # % or space"),
+        ));
+    }
+    iri(&resource)?;
+    fold(inv, &screen_name(&lens, &resource, &chosen))
+}
+
+/// `urn:iki:ui:lens:title:lens:{lens}[:facets:{…}]:resource:{iri}`: a lensed page's title,
+/// the lens's legend and the resource (its name when the lens cannot be read).
+pub const TITLE: &str = "urn:iki:ui:lens:title:";
+
+struct LensTitle;
+
+impl ikigai_core::Grammar for LensTitle {
+    fn match_iri(&self, iri: &Iri) -> Option<ikigai_core::Bindings> {
+        let name = iri.as_str().strip_prefix(TITLE)?;
+        let (lens, _, resource) = parse_screen(name)?.ok()?;
+        let mut b = ikigai_core::Bindings::new();
+        b.insert("lens", lens.as_str());
+        b.insert("iri", resource.as_str());
+        Some(b)
+    }
+
+    fn pattern(&self) -> String {
+        format!("{TITLE}lens:{{lens}}:resource:{{iri}}")
+    }
 }
 
 fn pct(v: &str) -> String {
@@ -1313,6 +1392,33 @@ impl ikigai_core::Grammar for LensScreen {
 /// The lensed screens, in [`crate::space`].
 pub(crate) fn bind_screens(space: EndpointSpace) -> EndpointSpace {
     space.bind(
+        LensTitle,
+        AsyncFnEndpoint::new("ui-lens-title", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let lens = inv.bindings.get("lens").unwrap_or_default().to_string();
+                let resource = inv.bindings.get("iri").unwrap_or_default().to_string();
+                let legend = match read_lens(inv, &lens).await {
+                    Ok(l) => l.legend,
+                    Err(_) => lens,
+                };
+                Ok(Representation::new(
+                    ReprType::new(crate::HTML),
+                    format!("{legend}: {resource}").into_bytes(),
+                )
+                .cacheable())
+            })
+        })
+        .with_description(
+            Description::new("ui-lens-title")
+                .input(ikigai_core::ArgSpec::new("lens").summary("the lens's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("contact-list"))
+                .input(ikigai_core::ArgSpec::new("iri").summary("the resource").class(XSD_ANY_URI).binding().example(crate::scene::EXAMPLE_GRAPH))
+                .title("A lensed page's title")
+                .summary("The title a lensed page's shell shows: the lens's legend and the resource, as text.")
+                .verb(Verb::Source)
+                .output(crate::HTML),
+        ),
+    )
+    .bind(
         LensScreen,
         AsyncFnEndpoint::new("ui-screen-lens", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
             Box::pin(async move {
