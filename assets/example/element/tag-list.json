@@ -1,0 +1,29 @@
+{
+  "kind": "urn:iki:ui:element:name:tag-list",
+  "properties": {
+    "fallback": "Topics: hydrology, flooding, open data.",
+    "label": "Topics"
+  },
+  "children": [
+    {
+      "kind": "link",
+      "properties": {
+        "label": "hydrology",
+        "href": "/topic/hydrology"
+      }
+    },
+    {
+      "kind": "text",
+      "properties": {
+        "content": "flooding"
+      }
+    },
+    {
+      "kind": "link",
+      "properties": {
+        "label": "open data",
+        "href": "/topic/open-data"
+      }
+    }
+  ]
+}

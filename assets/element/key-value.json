@@ -1,0 +1,18 @@
+{
+  "arguments": [
+    {
+      "name": "label",
+      "summary": "what the pairs describe, the table's caption",
+      "required": true
+    }
+  ],
+  "expansion": {
+    "kind": "table",
+    "properties": {
+      "caption": "{label}"
+    },
+    "children": [
+      "{children}"
+    ]
+  }
+}

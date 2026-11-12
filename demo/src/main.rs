@@ -7,7 +7,7 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or_else(|| "127.0.0.1:8080".to_string());
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!(
-        "ikigai-ui demo on http://{}/ (the gallery, /page/contact, /page/support)",
+        "ikigai-ui demo on http://{}/ (the gallery, /page/elements, /page/contact, /page/support)",
         listener.local_addr()?
     );
     ikigai_ui_demo::serve(listener, Default::default()).await
