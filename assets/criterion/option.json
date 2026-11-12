@@ -1,0 +1,56 @@
+{
+  "kind": "option",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/select-dropdown.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/select.md"
+      ],
+      "semantics": "A native <option> in its choice's <select>, whose text is the option's label and whose value is the option's value; with the radio hint, a native radio named by its <label for>.",
+      "keyboard": [
+        { "key": "Arrow keys", "outcome": "In the open list (or the radio group), move to the option." },
+        { "key": "Enter or Space", "outcome": "Chooses the option." }
+      ],
+      "name": "The option's label, the same words as its visible text.",
+      "role": "Option (menu item in a pop-up list); radio button with the radio hint.",
+      "state": "Selected (checked, with the radio hint) or not.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the option's label grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the option's label whole, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <option> element.", "probe": "element", "argument": "option" },
+        { "mode": "see", "statement": "The option submits what the model says: its value is the option's value.", "probe": "value" },
+        { "mode": "see", "statement": "The option's text is its label, so its accessible name matches what I see.", "probe": "name-from-content" },
+        { "mode": "hear", "statement": "WHEN I move to the option with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR its label and its place in the list (1 of 2)." },
+        { "mode": "hear", "statement": "WHEN I choose the option I HEAR it expressed as selected (or checked)." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/controls/dropdown.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/select.md"
+      ],
+      "semantics": "One focusable control per option in its choice, its label as text, the chosen option in accent-fg on accent. GPUI exposes no accessibility tree, so no option role or selected state reaches assistive technology.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the option, in document order, and the focus ring shows." },
+        { "key": "Space or Enter", "outcome": "Chooses the option." }
+      ],
+      "name": "The option's label.",
+      "role": "Option.",
+      "state": "Selected or not.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the option's label grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the option and its focus ring whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the option: it is one stop in the window's tab order.", "probe": "tab-stop" },
+        { "mode": "see", "statement": "WHEN I press Space on the focused option I SEE it chosen, set apart in accent-fg on accent." },
+        { "mode": "hear", "statement": "WHEN I Tab to the option with a screen reader (VoiceOver, Orca, Narrator) I HEAR its label and I HEAR it expressed as selected or not." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
+    }
+  ]
+}

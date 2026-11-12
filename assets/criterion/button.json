@@ -52,13 +52,13 @@
         { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the button's label and focus ring whole." }
       ],
       "check": [
-        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the button and its ring drawn in the focus color." },
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the button and its ring drawn in the focus color.", "probe": "tab-stop" },
         { "mode": "see", "statement": "WHEN I press Space or Enter on the focused button I SEE its form submit and the label say (Submitting…) until it is answered." },
         { "mode": "see", "statement": "The button's label is drawn in accent-fg on accent, a pair the palettes hold to the text floor." },
         { "mode": "hear", "statement": "WHEN I Tab to the button with a screen reader (VoiceOver, Orca, Narrator) I HEAR its purpose is clear and I HEAR it identify its role of button." },
         { "mode": "hear", "statement": "WHEN I activate the button I HEAR the outcome, and I HEAR it expressed as busy while its form submits." }
       ],
-      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today, and no test verifies its SEE checks in CI (ACCESSIBILITY.md, the native face's limitations)."
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
     }
   ]
 }

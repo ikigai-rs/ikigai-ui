@@ -56,14 +56,14 @@
         { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the label, the input and its focus ring whole." }
       ],
       "check": [
-        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the input and its ring drawn in the focus color." },
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the input and its ring drawn in the focus color.", "probe": "tab-stop" },
         { "mode": "see", "statement": "I SEE the label stay visible above the input, an asterisk after it when the field is required." },
         { "mode": "see", "statement": "I SEE the hint as text under the input and the error in words, not only in the danger color." },
         { "mode": "see", "statement": "WHEN I press Space on a focused checkbox field I SEE it toggle between ☐ and ☑." },
         { "mode": "hear", "statement": "WHEN I Tab to the input with a screen reader (VoiceOver, Orca, Narrator) I HEAR its purpose is clear and I HEAR it identify itself as its input type." },
         { "mode": "hear", "statement": "WHEN I Tab to the input I HEAR the hint and any error read after the label, and I HEAR it expressed as required or invalid when it is." }
       ],
-      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today, and no CI job verifies its SEE checks (the window tests in gpui/src/native.rs run by hand; ACCESSIBILITY.md)."
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
     }
   ]
 }

@@ -1,0 +1,56 @@
+{
+  "kind": "form",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/page-level/form.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/form.md"
+      ],
+      "semantics": "A native <form> named by its heading (aria-labelledby), its description a hint under it, its fields, choices and buttons inside; a refusal replaces it in place with each field's error beside it.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Moves through the form's controls in order." },
+        { "key": "Enter (in a field)", "outcome": "Submits the form." },
+        { "key": "Space or Enter (on its button)", "outcome": "Submits the form." }
+      ],
+      "name": "The form's label, its heading's text.",
+      "role": "Form.",
+      "group": "The form's label names the group its fields are in.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the heading, labels and fields grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the fields stack in one column under the heading, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <form> element.", "probe": "element", "argument": "form" },
+        { "mode": "see", "statement": "The form is named by its heading: aria-labelledby points at it, and it says the form's label.", "probe": "labelled-by" },
+        { "mode": "see", "statement": "I SEE the form's heading above its controls: the face emits it as a real <h3>.", "probe": "contains", "argument": "h3" },
+        { "mode": "hear", "statement": "WHEN I Tab into the form with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR its name with its first control." },
+        { "mode": "hear", "statement": "WHEN I submit the form and it is refused I HEAR the status say so, naming the field, and each error with its field." },
+        { "mode": "hear", "statement": "WHEN I list the page's landmarks I HEAR the form by its name." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/form.md"
+      ],
+      "semantics": "The form's label and description above its controls, inside a line border; a refusal says itself in words under them, each field's error beside its field. GPUI exposes no accessibility tree, so no form role reaches assistive technology.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Moves through the form's controls in order." },
+        { "key": "Space or Enter (on its button)", "outcome": "Submits the form." }
+      ],
+      "name": "The form's label.",
+      "role": "Form.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the label, the fields and the feedback grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the form and its border whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "A form adds no stop of its own to the window's tab order; its controls are its stops.", "probe": "no-tab-stop" },
+        { "mode": "see", "statement": "WHEN the form is refused I SEE the refusal in words under it and each error beside its field." },
+        { "mode": "hear", "statement": "WHEN I Tab into the form with a screen reader (VoiceOver, Orca, Narrator) I HEAR its name and, after a refusal, each error." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "kind": "scene",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/ikigai-rs/ikigai-ui/blob/77f00b7a49724f6b95a2cc6e8304739f10d5a627/ACCESSIBILITY.md",
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/complex-graphics.md"
+      ],
+      "semantics": "A native <figure>: a <figcaption> naming the scene with a link to its replacement (\"The same graph as text\"), a <canvas> (tabindex 0, role application, aria-roledescription \"3D scene\", named by the scene's label and its keys), hidden until it has drawn, and the replacement after it, always on the page. The replacement, a table with a row per edge, IS the accessible form.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the canvas once it has drawn, and to the link to the replacement." },
+        { "key": "Arrow keys", "outcome": "Orbit the scene." },
+        { "key": "+ and -", "outcome": "Zoom." },
+        { "key": "N and Shift+N", "outcome": "Select the next and the previous node; #status says the selection." },
+        { "key": "Escape", "outcome": "Clears the selection." }
+      ],
+      "name": "The scene's label, then its keys.",
+      "role": "3D scene (application).",
+      "group": "The selection, said in the shell's #status.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the caption and the replacement grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the replacement reflow in place of the canvas, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <figure> element.", "probe": "element", "argument": "figure" },
+        { "mode": "see", "statement": "The canvas is named by the scene's label, then its keys, in aria-label.", "probe": "aria-label" },
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the drawn canvas: tabindex 0.", "probe": "contains", "argument": "canvas[tabindex=0]" },
+        { "mode": "see", "statement": "The canvas says what it is: role application.", "probe": "contains", "argument": "canvas[role=application]" },
+        { "mode": "see", "statement": "I SEE a link in the caption to the replacement, after the canvas, and the canvas stays hidden until it has drawn.", "probe": "replacement" },
+        { "mode": "hear", "statement": "WHEN I Tab to the drawn canvas with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR the scene's name, \"3D scene\" and its keys." },
+        { "mode": "hear", "statement": "WHEN I press N on the canvas I HEAR the selected node and its edges, said once by #status." },
+        { "mode": "hear", "statement": "WHEN I follow \"The same graph as text\" I HEAR the replacement table, every edge with its headers." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/ikigai-rs/ikigai-ui/blob/77f00b7a49724f6b95a2cc6e8304739f10d5a627/ACCESSIBILITY.md"
+      ],
+      "semantics": "Without the scene feature, the window draws the replacement in the scene's place; with it, the scene as an image, focusable, beside its replacement. GPUI exposes no accessibility tree, so neither reaches assistive technology.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "With the scene feature, focus moves to the scene; the replacement's links and controls follow." },
+        { "key": "Arrow keys, + and -, N and Shift+N, Escape", "outcome": "With the scene feature, orbit, zoom, select and clear, as on the html face." }
+      ],
+      "name": "The scene's label.",
+      "role": "Image, then its replacement.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the replacement grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the replacement whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "I SEE the replacement, every edge of the graph, whether the scene draws or not." },
+        { "mode": "see", "statement": "WHEN I select a node with N I SEE the selection said in words." },
+        { "mode": "hear", "statement": "WHEN I reach the scene with a screen reader (VoiceOver, Orca, Narrator) I HEAR its replacement, every edge." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
+    }
+  ]
+}

@@ -22,3 +22,7 @@
 # Optional replacement subtree, validated by its own kind shape.
 <urn:iki:ui:kind:name:group:property:name:replacement> sh:path <urn:iki:ui:property:name:replacement> ;
   sh:maxCount 1 ; sh:class <urn:iki:ui:node> .
+
+# Its accessibility acceptance criteria, one per target (ledger #3542): what each face emits, its
+# keys, what a screen reader announces, and the SEE and HEAR checks (urn:iki:ui:shape:criterion).
+<urn:iki:ui:kind:name:group> <urn:iki:ui:criterion:term:criterion> <urn:iki:ui:criterion:kind:group:target:html>, <urn:iki:ui:criterion:kind:group:target:gpui> .

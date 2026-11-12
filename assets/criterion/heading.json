@@ -1,0 +1,54 @@
+{
+  "kind": "heading",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/heading.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/heading.md"
+      ],
+      "semantics": "A native <h1> to <h6> at the heading's level, whose text is its content: a heading names the section after it, and the levels nest without skipping.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Passes it by: it is not a stop in the tab order." },
+        { "key": "Screen reader heading keys (H, or the rotor)", "outcome": "Move to the heading, and by level (1 to 6)." }
+      ],
+      "name": "The heading's content, the same words as its visible text.",
+      "role": "Heading, level 1 to 6.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the heading grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the heading wrap onto as many lines as it needs, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native heading element at the node's level: <h2> for level 2.", "probe": "heading-level" },
+        { "mode": "see", "statement": "The heading's text is its content, so what a screen reader lists is what I see.", "probe": "name-from-content" },
+        { "mode": "see", "statement": "A heading is not a control: nothing in it is a stop in the tab order.", "probe": "no-tab-stop" },
+        { "mode": "hear", "statement": "WHEN I move by headings with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR the heading's text and I HEAR it identify itself as a heading at its level." },
+        { "mode": "hear", "statement": "WHEN I list the page's headings I HEAR them in order, their levels nesting without a skip." },
+        { "mode": "hear", "statement": "WHEN I swipe to the heading with a mobile screen reader (TalkBack, VoiceOver) I HEAR its text and the role of heading." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/patterns/headings.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/heading.md"
+      ],
+      "semantics": "The heading's content as bold text, larger the higher its level (level 1 the largest), in fg on bg. GPUI exposes no accessibility tree, so no heading role or level reaches assistive technology.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Passes it by: it is not a stop in the tab order." }
+      ],
+      "name": "The heading's content.",
+      "role": "Heading, level 1 to 6.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the heading grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the heading whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "A heading adds no stop to the window's tab order.", "probe": "no-tab-stop" },
+        { "mode": "see", "statement": "I SEE the heading larger and bolder than the text after it, and a lower level smaller than a higher one." },
+        { "mode": "hear", "statement": "WHEN I move by headings with a screen reader (VoiceOver, Orca, Narrator) I HEAR the heading's text and its level." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
+    }
+  ]
+}

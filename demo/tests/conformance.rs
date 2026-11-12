@@ -236,6 +236,12 @@ fn conforms() {
                 .binding("target", "html"),
         )
         .pure("ui-criterion")
+        .fixture(
+            Fixture::new("ui-criterion-element", Verb::Source)
+                .binding("element", "meter")
+                .binding("target", "gpui"),
+        )
+        .pure("ui-criterion-element")
         .pure("ui-shape-criterion")
         .vocabulary(ikigai_ui::criterion::SHAPE)
         // ikigai-ui's own vocabularies, as its tests/conformance.rs registers them.

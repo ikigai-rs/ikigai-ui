@@ -211,6 +211,13 @@ fn conforms() {
                 .binding("target", "html"),
         )
         .pure("ui-criterion")
+        .fixture(
+            Fixture::new("ui-criterion-element", Verb::Source)
+                .binding("element", "meter")
+                .binding("target", "gpui"),
+        )
+        .pure("ui-criterion-element")
+        .cacheable("ui-criterion-element")
         .cacheable("ui-criterion")
         .pure("ui-shape-criterion")
         .cacheable("ui-shape-criterion")

@@ -1,0 +1,62 @@
+{
+  "kind": "disclosure",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/expander-accordion.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/expander.md"
+      ],
+      "semantics": "Claimed natively: a native <details class=\"ui-disclosure\"> whose <summary> is the summary line, open only when the model says so. The browser gives the summary its button role and expanded or collapsed state, with no script and no ARIA written; the body is in the tab order and the accessibility tree only while open.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the summary and is strongly visually indicated." },
+        { "key": "Enter or Space", "outcome": "Opens or closes the body." },
+        { "key": "Tab (open)", "outcome": "Moves on into the body's links and controls." }
+      ],
+      "name": "The summary line.",
+      "role": "Button (disclosure).",
+      "state": "Expanded or collapsed.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the summary and the body grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the summary and the open body wrap in place, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <details> element.", "probe": "element", "argument": "details" },
+        { "mode": "see", "statement": "I SEE the summary line as a native <summary>.", "probe": "contains", "argument": "summary" },
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the summary: it is in the tab order natively.", "probe": "focusable" },
+        { "mode": "see", "statement": "WHEN the summary has focus I SEE a focus ring of at least 2px in the focus color.", "probe": "focus-visible" },
+        { "mode": "see", "statement": "The disclosure opens as the model says: open exactly when its open is true.", "probe": "open-state" },
+        { "mode": "hear", "statement": "WHEN I Tab to the summary with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR its text, a button role and collapsed or expanded." },
+        { "mode": "hear", "statement": "WHEN I press Enter or Space I HEAR the new state, expanded or collapsed." },
+        { "mode": "hear", "statement": "WHEN I swipe to it with a mobile screen reader (TalkBack, VoiceOver) I HEAR the same, and a double tap toggles it." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/controls/expandable.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/expander.md"
+      ],
+      "semantics": "Claimed natively: the summary is one focusable control in the window's tab order (▸ closed, ▾ open), toggled by Space, Enter or pointer, its state held by the window, not the model; open, its body's controls follow it in the tab order, closed, they leave it. GPUI exposes no accessibility tree, so no expanded state reaches a screen reader.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Focus moves to the summary, and the focus ring shows." },
+        { "key": "Space or Enter", "outcome": "Opens or closes the body." },
+        { "key": "Tab (open)", "outcome": "Moves on into the body's links." }
+      ],
+      "name": "The summary line.",
+      "role": "Button (disclosure).",
+      "state": "Expanded or collapsed.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the summary and the body grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the summary, its marker and its focus ring whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "WHEN I use the Tab key I SEE focus reach the summary: it is one stop in the window's tab order.", "probe": "tab-stop" },
+        { "mode": "see", "statement": "WHEN I press Space on the summary I SEE the body open, and Enter closes it again; the model is unchanged.", "probe": "toggles" },
+        { "mode": "see", "statement": "I SEE the state as ▸ or ▾ beside the summary, not only by what follows it." },
+        { "mode": "hear", "statement": "WHEN I Tab to the summary with a screen reader (VoiceOver, Orca, Narrator) I HEAR its text, a button role and collapsed or expanded." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
+    }
+  ]
+}

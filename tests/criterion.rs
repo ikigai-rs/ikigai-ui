@@ -1,8 +1,10 @@
-//! Accessibility acceptance criteria per kind and target, as data (ledger #3541): the sheets and
-//! the closed shape agree, the criteria resolve by name in their Turtle and text faces and are
-//! cached, each kind's descriptor links its own, and every SEE check of button, link and field
-//! on the html face is verified against the gallery's rendered HTML. A SEE check with no probe
-//! is reported as not verified, never skipped.
+//! Accessibility acceptance criteria per kind, element and target, as data (ledgers #3541 and
+//! #3542): the sheets and the closed shape agree, the criteria resolve by name in their Turtle
+//! and text faces and are cached, each kind's descriptor links its own, every SEE check with a
+//! probe on the html face is verified against the rendered HTML of every node of its kind or
+//! element on the gallery and elements screens, and the support matrix counts them. A SEE check
+//! with no probe is reported as not verified, never skipped; the gpui face's probes run in the
+//! window tests (`gpui/src/native.rs`).
 
 mod common;
 
@@ -55,9 +57,19 @@ fn every_criterion_conforms_to_the_closed_shape() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 6, "button, link and field, on html and gpui");
-    // The shape's closed set of probes is the Rust one.
-    let probes = format!("\"^({})$\"", criterion::PROBES.join("|"));
+    assert_eq!(
+        seen,
+        2 * (KINDS.len() + criterion::ELEMENTS.len()),
+        "every kind and element"
+    );
+    // The shape's closed set of probes is the Rust ones, html's then gpui's own.
+    let mut all: Vec<&str> = criterion::PROBES.to_vec();
+    all.extend(
+        criterion::GPUI_PROBES
+            .iter()
+            .filter(|p| !criterion::PROBES.contains(p)),
+    );
+    let probes = format!("\"^({})$\"", all.join("|"));
     assert!(
         criterion::SHAPE.contains(&probes),
         "the shape's probes are {probes}"
@@ -144,6 +156,22 @@ fn the_shape_and_the_rust_validator_refuse_the_same() {
     ];
     assert!(conforms(&valid));
     assert!(criterion::parse(json).is_ok());
+    // An element's criterion names its element as its kind, and only one.
+    let meter = criterion::turtle("meter", criterion::criterion("meter", "html").unwrap());
+    assert!(conforms(&meter), "{meter}");
+    assert!(meter.contains("c:kind <urn:iki:ui:element:name:meter>"));
+    for broken in [
+        meter.replacen(
+            "  c:kind <urn:iki:ui:element:name:meter> ;\n",
+            "  c:kind <urn:iki:ui:element:name:meter> ;\n  c:kind <urn:iki:ui:kind:name:text> ;\n",
+            1,
+        ),
+        meter.replacen("  c:kind <urn:iki:ui:element:name:meter> ;\n", "", 1),
+        meter.replacen("element:name:meter>", "widget:name:meter>", 1),
+    ] {
+        assert_ne!(broken, meter);
+        assert!(!conforms(&broken), "the shape refuses {broken}");
+    }
     for (what, turtle, sheet) in cases {
         assert_ne!(turtle, valid, "{what}: the Turtle case changed something");
         assert_ne!(sheet, json, "{what}: the sheet case changed something");
@@ -180,6 +208,22 @@ fn the_shape_and_the_rust_validator_refuse_the_same() {
             "an element probe with no element",
             json.replacen(r#", "argument": "button""#, "", 1),
         ),
+        (
+            "a gpui probe on the html face",
+            json.replacen(r#""probe": "focusable""#, r#""probe": "toggles""#, 1),
+        ),
+        (
+            "an html probe on the gpui face",
+            json.replacen(r#""probe": "tab-stop""#, r#""probe": "focusable""#, 1),
+        ),
+        (
+            "an element that is not one of this crate's",
+            include_str!("../assets/criterion/meter.json").replacen(
+                r#""kind": "meter""#,
+                r#""kind": "rating""#,
+                1,
+            ),
+        ),
     ] {
         assert_ne!(sheet, json, "{what}: the case changed something");
         assert!(criterion::parse(&sheet).is_err(), "Rust refuses {what}");
@@ -193,9 +237,14 @@ fn criteria_resolve_by_name_in_turtle_and_text_and_are_cached() {
         for target in TARGETS {
             let c = criterion::criterion(kind, target).unwrap();
             let iri = criterion::iri(kind, target);
+            let what = if criterion::is_element(kind) {
+                "element"
+            } else {
+                "kind"
+            };
             assert_eq!(
                 iri,
-                format!("urn:iki:ui:criterion:kind:{kind}:target:{target}")
+                format!("urn:iki:ui:criterion:{what}:{kind}:target:{target}")
             );
             let (t, body) = read(&kernel, &iri, None).unwrap();
             assert_eq!(t, "text/turtle");
@@ -230,9 +279,20 @@ fn criteria_resolve_by_name_in_turtle_and_text_and_are_cached() {
         (t.as_str(), shape.as_str()),
         ("text/turtle", criterion::SHAPE)
     );
-    // A kind with no criteria yet, a target that is not one, a name that is not a kind.
+    // Every kind has criteria now, each element under its own name: an element as a kind or a
+    // kind as an element, the example element with none, a target that is not one, a name
+    // that is not a kind.
+    assert_eq!(
+        criterion::iri("key-value", "gpui"),
+        "urn:iki:ui:criterion:element:key-value:target:gpui"
+    );
+    for kind in KINDS.iter().map(|k| k.name) {
+        assert!(criterion::sheet(kind).is_some(), "{kind} has criteria");
+    }
     for iri in [
-        criterion::iri("heading", "html"),
+        "urn:iki:ui:criterion:kind:meter:target:html".to_string(),
+        "urn:iki:ui:criterion:element:button:target:html".to_string(),
+        "urn:iki:ui:criterion:element:rating:target:html".to_string(),
         criterion::iri("button", "tty"),
         criterion::iri("blink", "html"),
     ] {
@@ -274,6 +334,10 @@ fn every_source_is_attributed_in_the_notice() {
     for kind in criterion::kinds() {
         for target in TARGETS {
             for source in &criterion::criterion(kind, target).unwrap().source {
+                // This repository's own ACCESSIBILITY.md (meter, scene) is no third party's.
+                if source.starts_with("https://github.com/ikigai-rs/ikigai-ui/") {
+                    continue;
+                }
                 let repo = source.split('/').take(5).collect::<Vec<_>>().join("/");
                 assert!(notice.contains(&repo), "{repo} in NOTICE");
                 let commit = source.split('/').nth(6).unwrap();
@@ -378,7 +442,42 @@ fn text_of(html: &str, tag: &Tag) -> String {
     unescape(text.trim())
 }
 
-const CONTROLS: [&str; 5] = ["button", "a", "input", "select", "textarea"];
+/// What a `<div>` wrapper's label names: its control.
+const LABELLED: [&str; 5] = ["input", "select", "textarea", "meter", "button"];
+
+/// The node's subject: its HTML's outermost element, or the control in a `<div>` wrapper.
+fn subject(tags: &[Tag]) -> Option<&Tag> {
+    let root = tags.first()?;
+    if root.name != "div" {
+        return Some(root);
+    }
+    tags.iter()
+        .find(|t| LABELLED.contains(&t.name.as_str()))
+        .or(Some(root))
+}
+
+/// Whether `tag` is in the tab order natively.
+fn natively_focusable(tag: &Tag) -> bool {
+    match tag.name.as_str() {
+        "a" => tag.get("href").is_some_and(|h| !h.is_empty()),
+        "input" => tag.get("type") != Some("hidden"),
+        "button" | "select" | "textarea" | "summary" => true,
+        _ => false,
+    }
+}
+
+/// `tag`, `tag[name]` or `tag[name=value]` matches `t`.
+fn matches(selector: &str, t: &Tag) -> bool {
+    let (name, attribute) = match selector.split_once('[') {
+        Some((name, rest)) => (name, rest.strip_suffix(']')),
+        None => (selector, None),
+    };
+    t.name == name
+        && attribute.is_none_or(|a| match a.split_once('=') {
+            Some((n, v)) => t.get(n) == Some(v),
+            None => t.get(a).is_some(),
+        })
+}
 
 fn property(node: &Node, name: &str) -> Option<String> {
     node.properties.get(name).map(|v| match v {
@@ -436,33 +535,38 @@ fn verify(
     sheets: &Stylesheets,
 ) -> Result<(), String> {
     let tags = tags(html);
-    let control = tags
-        .iter()
-        .find(|t| CONTROLS.contains(&t.name.as_str()))
-        .ok_or("no control element")?;
+    let subject = subject(&tags).ok_or("no element")?;
+    let control = if subject.name == "details" {
+        tags.iter()
+            .find(|t| t.name == "summary")
+            .ok_or("a <details> with no <summary>")?
+    } else {
+        subject
+    };
     let label = property(node, "label").unwrap_or_default();
     match probe {
         "element" => {
             let want = argument.ok_or("element names no element")?;
-            if control.name != want {
-                return Err(format!("the control is <{}>, not <{want}>", control.name));
+            if subject.name != want {
+                return Err(format!("the subject is <{}>, not <{want}>", subject.name));
             }
         }
         "attribute" => {
             let (name, value) = argument
                 .and_then(|a| a.split_once('='))
                 .ok_or("attribute is name=value")?;
-            if control.get(name) != Some(value) {
-                return Err(format!("{name} is {:?}, not {value:?}", control.get(name)));
+            if subject.get(name) != Some(value) {
+                return Err(format!("{name} is {:?}, not {value:?}", subject.get(name)));
+            }
+        }
+        "contains" => {
+            let selector = argument.ok_or("contains names no element")?;
+            if !tags.iter().any(|t| matches(selector, t)) {
+                return Err(format!("nothing matches {selector}"));
             }
         }
         "focusable" => {
-            let native = match control.name.as_str() {
-                "a" => control.get("href").is_some_and(|h| !h.is_empty()),
-                "input" => control.get("type") != Some("hidden"),
-                _ => true,
-            };
-            if !native {
+            if !natively_focusable(control) {
                 return Err(format!(
                     "<{}> is not in the tab order natively",
                     control.name
@@ -474,6 +578,18 @@ fn verify(
             if let Some(t) = control.get("tabindex") {
                 if t.trim().starts_with('-') {
                     return Err(format!("tabindex={t}"));
+                }
+            }
+        }
+        "no-tab-stop" => {
+            for t in &tags {
+                if natively_focusable(t) {
+                    return Err(format!("<{}> is in the tab order", t.name));
+                }
+                if let Some(i) = t.get("tabindex") {
+                    if !i.trim().starts_with('-') {
+                        return Err(format!("<{}> has tabindex={i}", t.name));
+                    }
                 }
             }
         }
@@ -516,9 +632,12 @@ fn verify(
             }
         }
         "name-from-content" => {
+            let want = property(node, "label")
+                .or_else(|| property(node, "content"))
+                .unwrap_or_default();
             let text = text_of(html, control);
-            if text != label {
-                return Err(format!("its text is {text:?}, its label {label:?}"));
+            if text != want {
+                return Err(format!("its text is {text:?}, its name {want:?}"));
             }
             for a in ["aria-label", "aria-labelledby"] {
                 if control.get(a).is_some() {
@@ -527,32 +646,169 @@ fn verify(
             }
         }
         "name-from-label" => {
-            let id = control.get("id").ok_or("the control has no id")?;
+            let id = subject.get("id").ok_or("the control has no id")?;
             let tag = tags
                 .iter()
                 .find(|t| t.name == "label" && t.get("for") == Some(id))
                 .ok_or(format!("no <label for=\"{id}\">"))?;
             let text = text_of(html, tag);
             if text != label {
-                return Err(format!("the label says {text:?}, the field {label:?}"));
+                return Err(format!("the label says {text:?}, the node {label:?}"));
             }
-            if control.get("placeholder").is_some_and(|p| p == label) {
+            if subject.get("placeholder").is_some_and(|p| p == label) {
                 return Err("a placeholder as the label".into());
             }
             for a in ["aria-label", "aria-labelledby"] {
-                if control.get(a).is_some() {
+                if subject.get(a).is_some() {
                     return Err(format!("{a} overrides its <label>"));
                 }
             }
         }
+        "labelled-by" => {
+            let id = subject.get("aria-labelledby").ok_or("no aria-labelledby")?;
+            let tag = tags
+                .iter()
+                .find(|t| t.get("id") == Some(id))
+                .ok_or(format!("no element {id}"))?;
+            let text = text_of(html, tag);
+            if text != label {
+                return Err(format!("{id} says {text:?}, the node {label:?}"));
+            }
+        }
+        "aria-label" => {
+            let named = tags
+                .iter()
+                .find_map(|t| t.get("aria-label"))
+                .ok_or("no aria-label")?;
+            if label.is_empty() || (named != label && !named.starts_with(&format!("{label}:"))) {
+                return Err(format!("aria-label is {named:?}, the label {label:?}"));
+            }
+        }
+        "heading-level" => {
+            let level = property(node, "level").ok_or("the node has no level")?;
+            if subject.name != format!("h{level}") {
+                return Err(format!("<{}> for level {level}", subject.name));
+            }
+        }
+        "content" => {
+            let want = property(node, "content").unwrap_or_default();
+            let text = text_of(html, subject);
+            if text != want {
+                return Err(format!("its text is {text:?}, the content {want:?}"));
+            }
+        }
+        "caption" => {
+            let want = property(node, "caption").unwrap_or(label);
+            let caption = tags
+                .iter()
+                .find(|t| t.name == "caption")
+                .ok_or("no <caption>")?;
+            let text = text_of(html, caption);
+            if want.is_empty() || text != want {
+                return Err(format!("the caption says {text:?}, the node {want:?}"));
+            }
+        }
+        "header-scope" => {
+            let headers: Vec<&Tag> = tags.iter().filter(|t| t.name == "th").collect();
+            if headers.is_empty() {
+                return Err("no header cell".into());
+            }
+            if let Some(th) = headers
+                .iter()
+                .find(|t| !matches!(t.get("scope"), Some("row" | "col")))
+            {
+                return Err(format!("a <th> with scope {:?}", th.get("scope")));
+            }
+        }
+        "items" => {
+            let items = tags.iter().filter(|t| t.name == "li").count();
+            if items != node.children.len() {
+                return Err(format!("{items} <li> for {} children", node.children.len()));
+            }
+        }
+        "alt" => {
+            let want = property(node, "alt").unwrap_or_default();
+            if subject.name != "img" || want.is_empty() || subject.get("alt") != Some(&want) {
+                return Err(format!(
+                    "<{}> alt {:?}, the node's {want:?}",
+                    subject.name,
+                    subject.get("alt")
+                ));
+            }
+        }
+        "value" => {
+            let want = property(node, "value").ok_or("the node has no value")?;
+            if subject.get("value") != Some(want.as_str()) {
+                return Err(format!("value is {:?}, not {want:?}", subject.get("value")));
+            }
+        }
+        "quiet" => {
+            for t in &tags {
+                let live = t.get("aria-live").is_some()
+                    || matches!(t.get("role"), Some("status" | "alert" | "log"));
+                if live {
+                    return Err(format!("<{}> is a live region", t.name));
+                }
+            }
+        }
+        "open-state" => {
+            let details = tags
+                .iter()
+                .find(|t| t.name == "details")
+                .ok_or("no <details>")?;
+            let open = property(node, "open").as_deref() == Some("true");
+            if details.get("open").is_some() != open {
+                return Err(format!("open is {open}, the <details> says otherwise"));
+            }
+        }
+        "range" => {
+            let meter = tags
+                .iter()
+                .find(|t| t.name == "meter")
+                .ok_or("no <meter>")?;
+            for (name, default) in [("value", None), ("min", Some("0")), ("max", Some("1"))] {
+                let want = property(node, name)
+                    .or(default.map(String::from))
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .ok_or(format!("the node has no {name}"))?;
+                let said = meter.get(name).and_then(|v| v.parse::<f64>().ok());
+                if said != Some(want) {
+                    return Err(format!("{name} is {said:?}, the node's {want}"));
+                }
+            }
+        }
+        "replacement" => {
+            let canvas = tags
+                .iter()
+                .find(|t| t.name == "canvas")
+                .ok_or("no <canvas>")?;
+            if canvas.get("hidden").is_none() {
+                return Err("the canvas is not hidden before it draws".into());
+            }
+            let id = tags
+                .iter()
+                .find_map(|t| {
+                    (t.name == "a")
+                        .then(|| t.get("href")?.strip_prefix('#'))
+                        .flatten()
+                })
+                .ok_or("no link to the replacement")?;
+            let target = tags
+                .iter()
+                .find(|t| t.get("id") == Some(id))
+                .ok_or(format!("the link points at {id}, which is not there"))?;
+            if target.start < canvas.start {
+                return Err(format!("{id} comes before the canvas"));
+            }
+        }
         "href" => {
             let want = property(node, "href").ok_or("the node has no href")?;
-            if control.get("href") != Some(want.as_str()) {
-                return Err(format!("href is {:?}, not {want:?}", control.get("href")));
+            if subject.get("href") != Some(want.as_str()) {
+                return Err(format!("href is {:?}, not {want:?}", subject.get("href")));
             }
         }
         "described-by" => {
-            let ids: Vec<&str> = control
+            let ids: Vec<&str> = subject
                 .get("aria-describedby")
                 .ok_or("no aria-describedby")?
                 .split_whitespace()
@@ -573,7 +829,7 @@ fn verify(
                 if tag.get("class") != Some(class) {
                     return Err(format!("{id} is not the {class}"));
                 }
-                if tag.start < control.start {
+                if tag.start < subject.start {
                     return Err(format!("{id} comes before the control"));
                 }
                 let text = text_of(html, tag);
@@ -585,14 +841,14 @@ fn verify(
         "required" => {
             let required = property(node, "required").as_deref() == Some("true");
             let said =
-                control.get("aria-required") == Some("true") || control.get("required").is_some();
+                subject.get("aria-required") == Some("true") || subject.get("required").is_some();
             if said != required {
                 return Err(format!("required is {required}, the control says {said}"));
             }
         }
         "invalid" => {
             let invalid = property(node, "error").is_some();
-            let said = control.get("aria-invalid") == Some("true");
+            let said = subject.get("aria-invalid") == Some("true");
             if said != invalid {
                 return Err(format!("an error: {invalid}; aria-invalid: {said}"));
             }
@@ -615,16 +871,6 @@ fn verify(
     Ok(())
 }
 
-/// Every node of `kinds` in `node`, with its html face's node path (`n`, `n.1`, `n.1.2`).
-fn nodes<'a>(node: &'a Node, path: String, kinds: &[&str], out: &mut Vec<(String, &'a Node)>) {
-    if kinds.contains(&node.kind.as_str()) {
-        out.push((path.clone(), node));
-    }
-    for (i, child) in node.children.iter().enumerate() {
-        nodes(child, format!("{path}.{i}"), kinds, out);
-    }
-}
-
 fn gallery_sheets(kernel: &Kernel) -> Stylesheets {
     Stylesheets {
         css: [ikigai_ui::TOKENS_CSS, "urn:iki:ui:base.css"]
@@ -634,29 +880,49 @@ fn gallery_sheets(kernel: &Kernel) -> Stylesheets {
     }
 }
 
-/// Checks the html SEE checks of every button, link and field in the gallery, as its html
-/// face renders them. A SEE check with no probe is reported, never skipped; a probe that fails
-/// fails the test. The gpui face's checks are reported too: this test reads HTML only.
+/// The screens the html probes read: every kind is on the gallery, every element on the
+/// elements screen.
+const SCREENS: [&str; 2] = ["gallery", "elements"];
+
+/// Checks the html SEE checks of every kind and element on the gallery and elements screens,
+/// each node as its html face renders it. A SEE check with no probe is reported, never
+/// skipped; a probe that fails fails the test, and so does a criterion with a probe and no
+/// node on either screen to check it on. The gpui face's checks are reported too: this test
+/// reads HTML only, and the window tests check those with a probe.
 #[test]
 fn every_see_check_holds_on_the_gallery_html() {
     let kernel = common::host(None);
-    let page = render::source(&kernel, "urn:iki:ui:html:screen:gallery", &[]).unwrap();
-    let face = render::source(&kernel, "urn:iki:ui:face:target:html:screen:gallery", &[]).unwrap();
-    let face = model::parse(face.as_bytes()).unwrap();
     let sheets = gallery_sheets(&kernel);
-    let kinds: Vec<&str> = criterion::kinds().collect();
-    let mut found = Vec::new();
-    nodes(&face, "n".into(), &kinds, &mut found);
+    let mut found: Vec<(String, String, &'static str, Node)> = Vec::new();
+    let mut pages = Vec::new();
+    for screen in SCREENS {
+        let page =
+            render::source(&kernel, &format!("urn:iki:ui:html:screen:{screen}"), &[]).unwrap();
+        let source =
+            render::source(&kernel, &format!("urn:iki:ui:screen:name:{screen}"), &[]).unwrap();
+        let source = model::parse(source.as_bytes()).unwrap();
+        let face = render::source(
+            &kernel,
+            &format!("urn:iki:ui:face:target:html:screen:{screen}"),
+            &[],
+        )
+        .unwrap();
+        let face = model::parse(face.as_bytes()).unwrap();
+        for (at, name, node) in criterion::subjects(&source, &face) {
+            let path: String = std::iter::once("n".to_string())
+                .chain(at.iter().map(|i| i.to_string()))
+                .collect::<Vec<_>>()
+                .join(".");
+            found.push((screen.to_string(), path, name, node.clone()));
+        }
+        pages.push((screen, page));
+    }
 
     let mut verified = 0;
     let mut failures = Vec::new();
     let mut report = Vec::new();
-    for kind in &kinds {
-        let at: Vec<&(String, &Node)> = found.iter().filter(|(_, n)| n.kind == *kind).collect();
-        assert!(
-            !at.is_empty(),
-            "the gallery has no {kind}, so nothing verifies its criteria"
-        );
+    for kind in criterion::kinds() {
+        let at: Vec<_> = found.iter().filter(|(_, _, n, _)| *n == kind).collect();
         let html_c = criterion::criterion(kind, "html").unwrap();
         for (under, n, check) in html_c.checks() {
             if check.mode != Mode::See {
@@ -669,24 +935,31 @@ fn every_see_check_holds_on_the_gallery_html() {
                 ));
                 continue;
             };
-            for (path, node) in &at {
+            assert!(
+                !at.is_empty(),
+                "no {kind} on {SCREENS:?}, so nothing verifies its {under} {n} ({probe})"
+            );
+            for (screen, path, _, node) in &at {
                 let html = render::source(
                     &kernel,
-                    &format!("urn:iki:ui:html:screen:gallery:node:{path}"),
+                    &format!("urn:iki:ui:html:screen:{screen}:node:{path}"),
                     &[],
                 )
                 .unwrap();
+                let page = &pages.iter().find(|(s, _)| s == screen).unwrap().1;
                 assert!(
                     page.contains(&html),
-                    "{path}'s HTML is the gallery's own: {html}"
+                    "{screen} {path}'s HTML is the page's own: {html}"
                 );
                 match verify(probe, check.argument.as_deref(), node, &html, &sheets) {
                     Ok(()) => {
                         verified += 1;
-                        report.push(format!("ok {kind} html {under} {n} ({probe}) at {path}"));
+                        report.push(format!(
+                            "ok {kind} html {under} {n} ({probe}) at {screen} {path}"
+                        ));
                     }
                     Err(e) => failures.push(format!(
-                        "FAILED {kind} html {under} {n} ({probe}) at {path}: {e}: {}",
+                        "FAILED {kind} html {under} {n} ({probe}) at {screen} {path}: {e}: {}",
                         check.statement
                     )),
                 }
@@ -696,17 +969,69 @@ fn every_see_check_holds_on_the_gallery_html() {
         let gpui = criterion::criterion(kind, "gpui").unwrap();
         let unread = gpui.checks().filter(|(_, _, c)| see(c)).count();
         report.push(format!(
-            "NOT VERIFIED {kind} gpui: {unread} SEE checks, which this test cannot read from HTML"
+            "NOT VERIFIED HERE {kind} gpui: {unread} SEE checks, which this test cannot read from HTML"
         ));
     }
     println!("{}", report.join("\n"));
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    // Two buttons, three links and three fields in the gallery today, every probe on each.
+    // Every probe on every node it applies to: at least one check per probe and kind.
+    let probes: usize = criterion::kinds()
+        .map(|k| {
+            criterion::criterion(k, "html")
+                .unwrap()
+                .checks()
+                .filter(|(_, _, c)| c.probe.is_some())
+                .count()
+        })
+        .sum();
     assert!(
-        verified >= 30,
-        "{verified} probes verified:\n{}",
+        verified >= probes,
+        "{verified} probes verified of {probes}:\n{}",
         report.join("\n")
     );
+}
+
+/// The support matrix's accessibility column is each criterion's tally: per target, each kind
+/// and element, its SEE checks, those a test verifies, and its HEAR checks, in JSON and on the
+/// support page.
+#[test]
+fn the_support_matrix_counts_verified_see_and_untested_hear_checks() {
+    let kernel = kernel();
+    let (_, json) = read(&kernel, "urn:iki:ui:support", None).unwrap();
+    let support: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let (_, page) = read(&kernel, "urn:iki:ui:support", Some("text/html")).unwrap();
+    for target in TARGETS {
+        for kind in criterion::kinds() {
+            let c = criterion::criterion(kind, target).unwrap();
+            let see = c.checks().filter(|(_, _, k)| k.mode == Mode::See).count();
+            let probed = c
+                .checks()
+                .filter(|(_, _, k)| k.mode == Mode::See && k.probe.is_some())
+                .count();
+            let hear = c.checks().filter(|(_, _, k)| k.mode == Mode::Hear).count();
+            let tally = &support[target]["a11y"][kind];
+            assert_eq!(tally["see"], see, "{target} {kind}");
+            assert_eq!(tally["see_verified"], probed, "{target} {kind}");
+            assert_eq!(tally["hear_untested"], hear, "{target} {kind}");
+            assert!(
+                hear > 0,
+                "{target} {kind}: every criterion has a HEAR check"
+            );
+        }
+        // The html face's SEE checks: every one verified but the 400% zoom.
+        let html = &support["html"]["a11y"]["heading"];
+        assert_eq!(html["see_verified"], html["see"].as_u64().unwrap() - 1);
+    }
+    for (row, cells) in [
+        // The targets in name order: gpui, then html.
+        ("heading", "<td>Renders</td><td>SEE: 1 of 4 verified by a test; HEAR: 1 untested</td><td>Renders</td><td>SEE: 4 of 5 verified by a test; HEAR: 3 untested</td>"),
+        ("urn:iki:ui:element:name:meter", "<td>Native</td><td>SEE: 1 of 4 verified by a test; HEAR: 1 untested</td><td>Native</td><td>SEE: 5 of 6 verified by a test; HEAR: 2 untested</td>"),
+        ("urn:iki:ui:element:name:rating", "<td>Expanded from its definition</td><td>No criteria</td><td>Expanded from its definition</td><td>No criteria</td>"),
+    ] {
+        let row = format!("<tr><th scope=\"row\">{row}</th>");
+        assert!(page.contains(&format!("{row}{cells}")), "{row}{cells} in\n{page}");
+    }
+    assert!(page.contains("<th scope=\"col\">gpui accessibility</th>"));
 }
 
 /// The probes are not vacuous: a face that drew a button as a `<div>`, a field whose label
@@ -810,6 +1135,190 @@ fn a_broken_face_fails_its_probes() {
         "focusable",
     ] {
         verify(probe, None, &field, good_field, &sheets).unwrap();
+    }
+    // The probes of the other kinds and the elements, each against a face that breaks it, and
+    // the same face whole, which passes.
+    let heading = node(r#"{"kind":"heading","properties":{"content":"Totals","level":2}}"#);
+    let text = node(r#"{"kind":"text","properties":{"content":"A <b> stays text."}}"#);
+    let list = node(
+        r#"{"kind":"list","properties":{"label":"Steps"},"children":[{"kind":"text","properties":{"content":"Read"}},{"kind":"text","properties":{"content":"Write"}}]}"#,
+    );
+    let table = node(r#"{"kind":"table","properties":{"caption":"Totals"}}"#);
+    let form = node(r#"{"kind":"form","properties":{"label":"Sign up"}}"#);
+    let image = node(r#"{"kind":"image","properties":{"src":"/a.jpg","alt":"A lighthouse"}}"#);
+    let option = node(r#"{"kind":"option","properties":{"label":"Small","value":"s"}}"#);
+    let disclosure = node(
+        r#"{"kind":"urn:iki:ui:element:name:disclosure","properties":{"summary":"How often?","open":true}}"#,
+    );
+    let meter = node(
+        r#"{"kind":"urn:iki:ui:element:name:meter","properties":{"label":"Capacity","value":82,"max":100}}"#,
+    );
+    let scene = node(r#"{"kind":"scene","properties":{"label":"The graph"}}"#);
+    let good_list =
+        r#"<ul class="ui-list" aria-label="Steps"><li><p>Read</p></li><li><p>Write</p></li></ul>"#;
+    let good_table = r#"<table class="ui-table"><caption>Totals</caption><tbody><tr><th scope="col"><p>Fruit</p></th></tr><tr><th scope="row"><p>Apples</p></th><td><p>3</p></td></tr></tbody></table>"#;
+    let good_form = r#"<form id="ui-n" class="ui-form" aria-labelledby="ui-n-label"><h3 id="ui-n-label">Sign up</h3></form>"#;
+    let good_details = r#"<details class="ui-disclosure" open><summary>How often?</summary><p>Daily.</p></details>"#;
+    let good_meter = r#"<div class="ui-meter"><label for="m">Capacity</label> <meter id="m" value="82" min="0" max="100">82</meter> <span>82 of 100</span></div>"#;
+    let good_scene = r##"<figure class="ui-scene"><figcaption>The graph <a href="#t">The same graph as text</a></figcaption><canvas tabindex="0" role="application" aria-label="The graph: arrow keys orbit" hidden></canvas><div id="t"><table></table></div></figure>"##;
+    let cases: [(&str, Option<&str>, &Node, &str, String); 20] = [
+        (
+            "heading-level",
+            None,
+            &heading,
+            "<h2>Totals</h2>",
+            "<h3>Totals</h3>".into(),
+        ),
+        (
+            "name-from-content",
+            None,
+            &heading,
+            "<h2>Totals</h2>",
+            "<h2>Sums</h2>".into(),
+        ),
+        (
+            "no-tab-stop",
+            None,
+            &heading,
+            "<h2>Totals</h2>",
+            r#"<h2 tabindex="0">Totals</h2>"#.into(),
+        ),
+        (
+            "content",
+            None,
+            &text,
+            "<p>A &lt;b&gt; stays text.</p>",
+            "<p>A  stays text.</p>".into(),
+        ),
+        (
+            "quiet",
+            None,
+            &text,
+            "<p>A &lt;b&gt; stays text.</p>",
+            r#"<p role="status">A &lt;b&gt; stays text.</p>"#.into(),
+        ),
+        (
+            "aria-label",
+            None,
+            &list,
+            good_list,
+            good_list.replace("Steps", "Stairs"),
+        ),
+        (
+            "items",
+            None,
+            &list,
+            good_list,
+            good_list.replace("<li><p>Write</p></li>", "<p>Write</p>"),
+        ),
+        (
+            "caption",
+            None,
+            &table,
+            good_table,
+            good_table.replace("<caption>Totals</caption>", ""),
+        ),
+        (
+            "header-scope",
+            None,
+            &table,
+            good_table,
+            good_table.replace(r#" scope="row""#, ""),
+        ),
+        (
+            "labelled-by",
+            None,
+            &form,
+            good_form,
+            good_form.replace(">Sign up</h3>", ">Join</h3>"),
+        ),
+        (
+            "contains",
+            Some("h3"),
+            &form,
+            good_form,
+            good_form.replace("h3", "p"),
+        ),
+        (
+            "alt",
+            None,
+            &image,
+            r#"<img src="/a.jpg" alt="A lighthouse">"#,
+            r#"<img src="/a.jpg" alt="">"#.into(),
+        ),
+        (
+            "value",
+            None,
+            &option,
+            r#"<option value="s">Small</option>"#,
+            r#"<option value="l">Small</option>"#.into(),
+        ),
+        (
+            "element",
+            Some("details"),
+            &disclosure,
+            good_details,
+            good_details.replace("details", "div"),
+        ),
+        (
+            "focusable",
+            None,
+            &disclosure,
+            good_details,
+            good_details.replace("<summary>", r#"<summary tabindex="-1">"#),
+        ),
+        (
+            "open-state",
+            None,
+            &disclosure,
+            good_details,
+            good_details.replace(" open>", ">"),
+        ),
+        (
+            "name-from-label",
+            None,
+            &meter,
+            good_meter,
+            good_meter.replace(r#"for="m""#, r#"for="x""#),
+        ),
+        (
+            "range",
+            None,
+            &meter,
+            good_meter,
+            good_meter.replace(r#"max="100""#, r#"max="1""#),
+        ),
+        (
+            "aria-label",
+            None,
+            &scene,
+            good_scene,
+            good_scene.replace("The graph:", "A graph:"),
+        ),
+        (
+            "replacement",
+            None,
+            &scene,
+            good_scene,
+            good_scene.replace(" hidden>", ">"),
+        ),
+    ];
+    for (probe, argument, node, good, broken) in cases {
+        verify(probe, argument, node, good, &sheets)
+            .unwrap_or_else(|e| panic!("{probe} holds on {good}: {e}"));
+        assert_ne!(good, broken, "{probe}: the case changed something");
+        assert!(
+            verify(probe, argument, node, &broken, &sheets).is_err(),
+            "{probe} refuses {broken}"
+        );
+    }
+    // A probe the sheets name is one this test knows; and so is every probe.
+    for probe in criterion::PROBES {
+        assert!(
+            !verify(probe, Some("p"), &text, "<p>x</p>", &sheets)
+                .is_err_and(|e| e.ends_with("no such probe")),
+            "{probe} is implemented"
+        );
     }
     // A stylesheet that sets text in px, or takes the ring away, fails its probe.
     for (css, probe) in [

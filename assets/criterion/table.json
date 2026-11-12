@@ -1,0 +1,55 @@
+{
+  "kind": "table",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/table.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/table.md"
+      ],
+      "semantics": "A native <table> whose <caption> names it, its header cells native <th> with scope (col for a header row, row for each row's first cell), its data cells <td>.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Passes it by: it is not a stop in the tab order." },
+        { "key": "Screen reader table keys (T, Ctrl+Alt+arrows)", "outcome": "Move to the table, and from cell to cell, each cell read with its headers." }
+      ],
+      "name": "The table's caption.",
+      "role": "Table, with its number of rows and columns.",
+      "group": "Each data cell's column and row headers, read with it.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the cells grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the table whole, scrolling inside its own region if it must, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <table> element.", "probe": "element", "argument": "table" },
+        { "mode": "see", "statement": "I SEE a caption that names the table: the table's caption.", "probe": "caption" },
+        { "mode": "see", "statement": "The table has header cells, each a <th> with a scope of row or col.", "probe": "header-scope" },
+        { "mode": "hear", "statement": "WHEN I reach the table with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR its caption and its number of rows and columns." },
+        { "mode": "hear", "statement": "WHEN I move from cell to cell I HEAR each cell with its column and row headers." },
+        { "mode": "hear", "statement": "WHEN I swipe through the table with a mobile screen reader (TalkBack, VoiceOver) I HEAR each cell with its headers." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/patterns/table.md"
+      ],
+      "semantics": "The table's caption, then a row of cells per row, header cells in bold, rows separated by a rule. GPUI exposes no accessibility tree, so no table role or header reaches assistive technology.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Passes it by: it is not a stop in the tab order." }
+      ],
+      "name": "The table's caption.",
+      "role": "Table.",
+      "group": "Each data cell's headers.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the caption and the cells grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the rows whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "A table adds no stop of its own to the window's tab order.", "probe": "no-tab-stop" },
+        { "mode": "see", "statement": "I SEE the header cells set apart in bold, not only by color." },
+        { "mode": "hear", "statement": "WHEN I move through the table with a screen reader (VoiceOver, Orca, Narrator) I HEAR each cell with its headers." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
+    }
+  ]
+}

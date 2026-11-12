@@ -452,7 +452,8 @@ fn the_new_elements_expand_into_core_kinds_on_both_faces() {
         }
         assert!(
             page.contains(&format!(
-                "<tr><th scope=\"row\">{iri}</th><td>Expanded from its definition</td><td>Expanded from its definition</td></tr>"
+                "<tr><th scope=\"row\">{iri}</th>{}</tr>",
+                support_cells(name, "Expanded from its definition")
             )),
             "{page}"
         );
@@ -578,7 +579,8 @@ fn a_disclosure_is_a_definition_of_core_kinds_and_both_faces_claim_it() {
     let page = common::text(&kernel, "urn:iki:ui:support", &[("as", "text/html")]);
     assert!(
         page.contains(&format!(
-            "<tr><th scope=\"row\">{DISCLOSURE}</th><td>Native</td><td>Native</td></tr>"
+            "<tr><th scope=\"row\">{DISCLOSURE}</th>{}</tr>",
+            support_cells("disclosure", "Native")
         )),
         "{page}"
     );
@@ -802,5 +804,23 @@ fn meter_expansion_defaults_and_remaining_ladder_paths_are_text() {
         "urn:iki:ui:support",
         &[("as", "text/html")],
     );
-    assert!(support.contains("<tr><th scope=\"row\">urn:iki:ui:element:name:meter</th><td>Native</td><td>Native</td></tr>"));
+    assert!(support.contains(&format!(
+        "<tr><th scope=\"row\">urn:iki:ui:element:name:meter</th>{}</tr>",
+        support_cells("meter", "Native")
+    )));
+}
+
+/// An element's cells on the support page: per target (gpui, then html), how it is drawn and
+/// its accessibility criterion's tally (ledger #3542).
+fn support_cells(name: &str, drawn: &str) -> String {
+    ["gpui", "html"]
+        .iter()
+        .map(|target| {
+            let t = ikigai_ui::criterion::tally(name, target).unwrap();
+            format!(
+                "<td>{drawn}</td><td>SEE: {} of {} verified by a test; HEAR: {} untested</td>",
+                t.see_verified, t.see, t.hear_untested
+            )
+        })
+        .collect()
 }

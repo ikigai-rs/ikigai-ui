@@ -1,0 +1,54 @@
+{
+  "kind": "visual",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/complex-graphics.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/figure.md"
+      ],
+      "semantics": "A native <figure> holding an element of role img named by the visual's label (aria-label), and a <figcaption> with its description in words: what the picture shows is there as text.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Passes it by: it is not a stop in the tab order." }
+      ],
+      "name": "The visual's label.",
+      "role": "Image (graphic), in a figure.",
+      "group": "The description, in the figure's caption.",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the caption grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the visual scale down and its caption wrap, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <figure> element.", "probe": "element", "argument": "figure" },
+        { "mode": "see", "statement": "The picture is one element of role img.", "probe": "contains", "argument": "div[role=img]" },
+        { "mode": "see", "statement": "The picture is named by the visual's label in aria-label.", "probe": "aria-label" },
+        { "mode": "see", "statement": "I SEE the description in a <figcaption> under the picture.", "probe": "contains", "argument": "figcaption" },
+        { "mode": "see", "statement": "A visual is not a control: nothing in it is a stop in the tab order.", "probe": "no-tab-stop" },
+        { "mode": "hear", "statement": "WHEN I reach the visual with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR its label and the role of image, then its caption." },
+        { "mode": "hear", "statement": "WHEN I swipe to it with a mobile screen reader (TalkBack, VoiceOver) I HEAR its label and its caption." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/patterns/graphics-visual-elements.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/figure.md"
+      ],
+      "semantics": "The window draws no picture: a visual falls back to text, its label and description in fg on bg. GPUI exposes no accessibility tree, so the text does not reach assistive technology.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Passes it by: it is not a stop in the tab order." }
+      ],
+      "name": "The visual's label, as text.",
+      "role": "None (text).",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the label and description grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the text whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "I SEE the visual's label and description as text in its place." },
+        { "mode": "hear", "statement": "WHEN I reach the visual's place with a screen reader (VoiceOver, Orca, Narrator) I HEAR its label and its description." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "kind": "status",
+  "criteria": [
+    {
+      "target": "html",
+      "source": [
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/web/component/alert-notification.md",
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-web/aria-live.md"
+      ],
+      "semantics": "A native <p class=\"ui-status\"> in its place on the page, its text the status's content. It is not a live region: the page has one, the shell's #status, which says what changed; an in-place status is read where it stands.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Passes it by: it is not a stop in the tab order." }
+      ],
+      "name": "None: a status is read in place, not named.",
+      "role": "None (text).",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my text size to 200% I SEE the status grow with it, with no loss of information.", "probe": "text-scales" },
+        { "mode": "see", "statement": "WHEN I zoom the page to 400% I SEE the status wrap in its place, with no horizontal scrolling." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "The face emits a native <p> element.", "probe": "element", "argument": "p" },
+        { "mode": "see", "statement": "The paragraph's text is the status's content.", "probe": "content" },
+        { "mode": "see", "statement": "The status is quiet: no aria-live and no status, alert or log role, so only the shell's #status announces.", "probe": "quiet" },
+        { "mode": "see", "statement": "A status is not a control: nothing in it is a stop in the tab order.", "probe": "no-tab-stop" },
+        { "mode": "hear", "statement": "WHEN I read the page with a desktop screen reader (NVDA, JAWS, VoiceOver) I HEAR the status in its place in the reading order." },
+        { "mode": "hear", "statement": "WHEN the status changes after something I did I HEAR it said once, by the shell's #status, and never twice." }
+      ]
+    },
+    {
+      "target": "gpui",
+      "source": [
+        "https://github.com/charlietriplett/atomica11y-skills/blob/4b8b1e712fd924517a2f2fd75b5479f123ba9704/atomica11y-skills/accessible-design/alert.md",
+        "https://github.com/tmobile/magentaA11y/blob/f5132b4fc73cfa700c236a8da88f0276024b68c3/public/content/documentation/native/notifications/snackbar-toast.md"
+      ],
+      "semantics": "The status's content as text in fg on bg, in its place in the window. GPUI exposes no accessibility tree, so no change is announced.",
+      "keyboard": [
+        { "key": "Tab", "outcome": "Passes it by: it is not a stop in the tab order." }
+      ],
+      "name": "None: a status is read in place.",
+      "role": "None (text).",
+      "setting": [
+        { "mode": "see", "statement": "WHEN I set my system text size to 200% I SEE the status grow with it, with no loss of information." },
+        { "mode": "see", "statement": "WHEN I magnify the window with the system zoom I SEE the status whole." }
+      ],
+      "check": [
+        { "mode": "see", "statement": "A status adds no stop to the window's tab order.", "probe": "no-tab-stop" },
+        { "mode": "see", "statement": "I SEE the status's content as text in its place, in words, not only in color." },
+        { "mode": "hear", "statement": "WHEN the status changes I HEAR it with a screen reader (VoiceOver, Orca, Narrator), once." }
+      ],
+      "note": "GPUI 0.2.2 exposes no accessibility tree (no AccessKit): every HEAR check fails on this face today. Its SEE checks with a probe run on GPUI's test platform (gpui/src/native.rs), which no CI job runs yet (gpui/README.md, Verification); the rest are reported as not verified."
+    }
+  ]
+}
