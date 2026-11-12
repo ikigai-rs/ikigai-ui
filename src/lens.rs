@@ -1104,6 +1104,9 @@ pub async fn lensed(
     controls.push(json!({"kind": "button", "properties": {"label": "Show"}}));
     let mut children = vec![
         json!({"kind": "heading", "properties": {"content": lens.legend, "level": 2}}),
+        // Before the form, never against its button: a link under the button would crowd
+        // its target (WCAG 2.2 SC 2.5.8, axe target-size; ledger #3538).
+        json!({"kind": "link", "properties": {"label": "The resource's own view", "href": crate::view::href(resource)}}),
         // A GET form with no action submits to the page it is on: the lens and the facets
         // arrive as query parameters, and the page's route reads them.
         json!({"kind": "form", "properties": {"label": "Lens and facets", "method": "get"}, "children": controls}),
@@ -1116,7 +1119,6 @@ pub async fn lensed(
             .collect();
         children.push(json!({"kind": "text", "properties": {"content": format!("Showing only {}.", said.join("; "))}}));
     }
-    children.push(json!({"kind": "link", "properties": {"label": "The resource's own view", "href": crate::view::href(resource)}}));
     let view = json!({"kind": "group", "properties": {"label": lens.legend}, "children": children});
     let mut view: Node = serde_json::from_value(view).map_err(|e| refuse("lens", e))?;
     view.children.push(body);
