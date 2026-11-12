@@ -31,11 +31,21 @@
 //!   `{"repeat": "group", "each": T}` repeats over that group's rows;
 //! - `{"repeat": "vars", "each": T}` — once per projected variable (`{?var}` is its name);
 //!   `{"repeat": "cells", "each": T}` — once per variable of the current row (`{?value}`);
+//! - `{"repeat": "edges", "each": T}` — once per edge of a CONSTRUCT's result graph (`{?from}`,
+//!   `{?edge}`, `{?to}`, as labels), every one, within the scene's [`crate::scene::MAX_EDGES`];
 //! - `{"past": "words"}` — a `text` only when the result had more rows than the bound: what the
 //!   renderer does past its bound is to show the first `bound` rows and say so.
 //!
-//! In any string, `{?v}` is the row's value of `?v`, `{home:?v}` its home link, and `{legend}`,
-//! `{focus}`, `{bound}`, `{shown}` the lens's. A `link` whose value is not an IRI is its text.
+//! In any string, `{?v}` is the row's value of `?v`, `{home:?v}` its home link, and `{lens}`,
+//! `{legend}`, `{focus}`, `{bound}`, `{shown}` the lens's.
+//!
+//! **The `graph` renderer draws the lens's own result** (ledger #3532). A CONSTRUCT lens's
+//! result is its graph as JSON-LD; its rows are the graph's nodes (`?node`, `?label`, by label)
+//! and its edges are the graph's. The renderer's scene is
+//! `urn:iki:ui:scene:graph:urn:iki:ui:lens:name:{lens}:focus:{iri}`, the scene of that result
+//! ([`crate::scene`]), laid out by the seeded layout and cached, golden-threaded from the
+//! result; the selection beside it is the same nodes as links, and its replacement a table of
+//! every edge. A SELECT lens drawn as a graph is its `?node`s, with no edges. A `link` whose value is not an IRI is its text.
 //! A bound past [`MAX_BOUND`], or an expansion past [`crate::element::MAX_NODES`] nodes, is
 //! refused, never unbounded.
 
@@ -76,6 +86,8 @@ pub const MAX_BOUND: usize = 1000;
 pub const MAX_BYTES: usize = 64 * 1024;
 /// The SPARQL result media type.
 pub const RESULTS: &str = "application/sparql-results+json";
+/// A CONSTRUCT lens's result media type: the result graph, as node objects.
+pub const GRAPH: &str = "application/ld+json";
 
 const XSD_ANY_URI: &str = "http://www.w3.org/2001/XMLSchema#anyURI";
 
@@ -431,6 +443,8 @@ impl Home {
 
 /// What a template is filled with.
 pub struct Fill<'a> {
+    /// The lens's name.
+    pub lens: &'a str,
     /// The lens's legend.
     pub legend: &'a str,
     /// The resource.
@@ -439,6 +453,9 @@ pub struct Fill<'a> {
     pub bound: usize,
     /// The result.
     pub rows: &'a Rows,
+    /// The result graph's edges (`?from`, `?edge`, `?to`, as labels): a CONSTRUCT's; a
+    /// SELECT names none.
+    pub edges: &'a Rows,
     /// The home mapping.
     pub home: &'a Home,
 }
@@ -455,6 +472,7 @@ fn sub(s: &str, fill: &Fill<'_>, row: Option<&Row>) -> String {
         let key = &rest[open + 1..open + close];
         let value = |v: &str| row.and_then(|r| r.get(v)).cloned().unwrap_or_default();
         let got = match key {
+            "lens" => Some(fill.lens.to_string()),
             "legend" => Some(fill.legend.to_string()),
             "focus" => Some(fill.focus.to_string()),
             "bound" => Some(fill.bound.to_string()),
@@ -541,6 +559,17 @@ fn walk(
                     }
                 },
                 Some("group") => group.iter().map(|r| (*r, vec![*r])).collect(),
+                Some("edges") => {
+                    // Every edge, never the first few: the replacement says what the picture
+                    // draws. The scene's own bound holds them.
+                    if fill.edges.rows.len() > crate::scene::MAX_EDGES {
+                        return Err(refuse(
+                            "renderer",
+                            "an edge repeat passes the scene's bound",
+                        ));
+                    }
+                    fill.edges.rows.iter().map(|r| (r, vec![r])).collect()
+                }
                 Some("vars") => {
                     owned = fill
                         .rows
@@ -565,11 +594,11 @@ fn walk(
                 other => {
                     return Err(refuse(
                         "renderer",
-                        format!("`repeat` is rows, group, vars or cells, not {other:?}"),
+                        format!("`repeat` is rows, group, edges, vars or cells, not {other:?}"),
                     ))
                 }
             };
-            if over.len() > fill.bound.max(fill.rows.vars.len()) {
+            if o["repeat"] != "edges" && over.len() > fill.bound.max(fill.rows.vars.len()) {
                 return Err(refuse("renderer", "a repeat passes the lens's bound"));
             }
             let mut out = Vec::new();
@@ -712,6 +741,10 @@ async fn result(
             "bindings",
             ArgRef::Inline(bindings.to_string().into_bytes()),
         );
+    if form == Form::Construct {
+        // The result graph as node objects: what the `graph` renderer's scene reads.
+        request = request.with_arg("as", ArgRef::Inline(GRAPH.into()));
+    }
     if !lens.graphs.is_empty() {
         // `{focus}` names the resource itself as a source: a graph argument, resolved through
         // the kernel under the caller's capability, never text in the query.
@@ -732,6 +765,56 @@ async fn result(
         request = request.with_arg("graph", ArgRef::Inline(graphs.join(" ").into_bytes()));
     }
     inv.issue(request).await
+}
+
+/// A CONSTRUCT's result graph as rows: its nodes (`?node`, `?label`), by label, the first
+/// `bound` kept; and every edge (`?from`, `?edge`, `?to`, as labels), in the graph's order.
+pub fn graph_rows(bytes: &[u8], bound: usize) -> Result<(Rows, Rows), Error> {
+    let graph = crate::scene::read_graph(bytes)?;
+    let mut nodes: Vec<(&String, &String)> = graph
+        .nodes
+        .iter()
+        .map(|(id, (label, _))| (label, id))
+        .collect();
+    nodes.sort();
+    let label = |id: &str| {
+        graph
+            .nodes
+            .get(id)
+            .map(|(l, _)| l.clone())
+            .unwrap_or_default()
+    };
+    let all: Vec<Row> = nodes
+        .iter()
+        .map(|(label, id)| {
+            Row::from([
+                ("node".to_string(), (*id).clone()),
+                ("label".to_string(), (*label).clone()),
+            ])
+        })
+        .collect();
+    let past = all.len() > bound;
+    let rows = Rows {
+        vars: vec!["node".into(), "label".into()],
+        rows: all.into_iter().take(bound).collect(),
+        past,
+    };
+    let edges = Rows {
+        vars: vec!["from".into(), "edge".into(), "to".into()],
+        rows: graph
+            .edges
+            .iter()
+            .map(|(from, p, to)| {
+                Row::from([
+                    ("from".to_string(), label(from)),
+                    ("edge".to_string(), crate::scene::short(p)),
+                    ("to".to_string(), label(to)),
+                ])
+            })
+            .collect(),
+        past: false,
+    };
+    Ok((rows, edges))
 }
 
 fn words_node(content: impl Into<String>) -> Node {
@@ -761,14 +844,20 @@ async fn lensed(inv: &Invocation<'_>, name: &str, resource: &str) -> Result<Node
         .await
     {
         Ok(r) => {
-            let mut rows = rows(&r.bytes, lens.bound)?;
+            let (mut rows, edges) = if r.repr_type.media_type.as_str() == GRAPH {
+                graph_rows(&r.bytes, lens.bound)?
+            } else {
+                (rows(&r.bytes, lens.bound)?, Rows::default())
+            };
             // The focus is the resource the view is about, said in the heading, not a column.
             rows.vars.retain(|v| *v != lens.focus);
             let fill = Fill {
+                lens: name,
                 legend: &lens.legend,
                 focus: resource,
                 bound: lens.bound,
                 rows: &rows,
+                edges: &edges,
                 home: &home,
             };
             if rows.rows.is_empty() {
@@ -819,7 +908,7 @@ pub(crate) fn result_endpoint() -> AsyncFnEndpoint {
     .with_description(
         Description::new("ui-lens-result").input(ikigai_core::ArgSpec::new("lens").summary("the lens's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("graph")).input(ikigai_core::ArgSpec::new("iri").summary("the resource").class(XSD_ANY_URI).binding().example(crate::scene::EXAMPLE_GRAPH))
             .title("A lens's result for a resource")
-            .summary("The lens's read-only query run for the resource, bound as a term to its focus variable, under the caller's capability.")
+            .summary("The lens's read-only query run for the resource, bound as a term to its focus variable, under the caller's capability. A SELECT or ASK answers with SPARQL results JSON; a CONSTRUCT with its result graph as JSON-LD (application/ld+json), the face the graph renderer's scene reads.")
             .verb(Verb::Source)
             .output(RESULTS),
     )
@@ -1059,10 +1148,12 @@ mod tests {
         expand(
             &t,
             &Fill {
+                lens: "items",
                 legend: "Items",
                 focus: "urn:ex:root",
                 bound,
                 rows,
+                edges: &Rows::default(),
                 home: &home,
             },
         )
@@ -1127,10 +1218,12 @@ mod tests {
         let e = expand(
             &t,
             &Fill {
+                lens: "items",
                 legend: "x",
                 focus: "urn:a",
                 bound: 2,
                 rows: &r,
+                edges: &Rows::default(),
                 home: &home,
             },
         );
@@ -1138,10 +1231,12 @@ mod tests {
         let e = expand(
             &t,
             &Fill {
+                lens: "items",
                 legend: "x",
                 focus: "urn:a",
                 bound: MAX_BOUND + 1,
                 rows: &r,
+                edges: &Rows::default(),
                 home: &home,
             },
         );

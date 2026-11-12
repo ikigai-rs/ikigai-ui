@@ -1,6 +1,9 @@
-# The contact contract's nodes, for the scene and the selection beside it.
+# The contact contract's labeled nodes and the links between them, for the scene and the
+# selection beside it.
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT DISTINCT ?focus ?node ?label WHERE {
-  GRAPH ?focus { ?node rdfs:label ?label }
+CONSTRUCT { ?node rdfs:label ?label . ?node ?p ?o } WHERE {
+  GRAPH ?focus {
+    ?node rdfs:label ?label .
+    OPTIONAL { ?node ?p ?o . FILTER(isIRI(?o)) }
+  }
 }
-ORDER BY ?label
