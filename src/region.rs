@@ -130,6 +130,11 @@ pub struct Reach {
 }
 
 impl Reach {
+    /// Whether this is inside a region.
+    pub fn confined(&self) -> bool {
+        self.allow.is_some()
+    }
+
     /// Whether `iri` may be read here.
     pub fn permits(&self, iri: &Iri) -> bool {
         self.allow.as_ref().is_none_or(|a| a.contains(iri))

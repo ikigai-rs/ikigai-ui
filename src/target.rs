@@ -628,7 +628,61 @@ fn compose_in<'a>(
                 });
             }
         }
+        if reach.confined() {
+            node = scenes_within(inv, reach, &node).await?;
+        }
         open_regions(screen, reach, &node, descriptor, budget, regions).await
+    })
+}
+
+/// Each `scene` inside a region held to it (ledger #3536). A face reads a scene's datum AFTER
+/// composition, outside the region (the native window through its worker, a page through the
+/// door), and the region is a `group` by then. So here: a datum the region does not allow is
+/// `Unresolved` (the face refuses, as for a reference), and one its scopes do not grant
+/// (`Denied`) is withheld: the scene is its replacement, which names no datum. Nested regions
+/// are left to their own, narrower reach.
+fn scenes_within<'a>(
+    inv: &'a Invocation<'_>,
+    reach: &'a crate::region::Reach,
+    node: &'a Node,
+) -> Composed<'a> {
+    Box::pin(async move {
+        if node.kind == crate::region::KIND {
+            return Ok(node.clone());
+        }
+        if node.kind == "scene" {
+            if let Some(Value::Text(datum)) = node.properties.get("datum") {
+                let iri = Iri::parse(datum.as_str()).map_err(|e| Error::InvalidArgument {
+                    name: "datum".into(),
+                    detail: e.to_string(),
+                })?;
+                match reach.source(inv, iri).await {
+                    Ok(_) => {}
+                    Err(Error::Denied(_)) => {
+                        let replacement =
+                            node.replacement
+                                .as_deref()
+                                .ok_or_else(|| Error::InvalidArgument {
+                                    name: "scene".into(),
+                                    detail: "a scene needs a `replacement`, its accessible form"
+                                        .into(),
+                                })?;
+                        return scenes_within(inv, reach, replacement).await;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+        let mut out = node.clone();
+        let mut children = Vec::with_capacity(node.children.len());
+        for child in &node.children {
+            children.push(scenes_within(inv, reach, child).await?);
+        }
+        out.children = children;
+        if let Some(r) = &node.replacement {
+            out.replacement = Some(Box::new(scenes_within(inv, reach, r).await?));
+        }
+        Ok(out)
     })
 }
 

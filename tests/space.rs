@@ -853,3 +853,61 @@ fn a_generated_view_inside_a_region_reads_no_linked_resource_the_region_does_not
         "the region's view read urn:demo:wallet, which it does not allow"
     );
 }
+
+/// Ledger #3536: a face reads a `scene`'s datum after composition, where the region is only a
+/// group; so composition holds the datum to the region. Not allowed: refused, never entered.
+/// Allowed but not granted by the region's scopes: the scene is its replacement.
+#[test]
+fn a_scene_inside_a_region_is_held_to_it() {
+    const DATUM: &str = "urn:iki:ui:scene:graph:urn:demo:card";
+    let scene = serde_json::json!({"kind": "scene", "properties": {"label": "Cards", "datum": DATUM},
+        "replacement": {"kind": "text", "properties": {"content": "Scene withheld"}}});
+    let reached = Arc::new(AtomicU32::new(0));
+    let mut space = EndpointSpace::new().bind(Exact::new(DATUM), card(reached.clone()));
+    for (name, body) in [
+        (
+            "narrow",
+            region("urn:demo:greeting", None, vec![scene.clone()]),
+        ),
+        (
+            "scoped",
+            region(
+                DATUM,
+                Some("urn:cap:demo:greeting:read"),
+                vec![scene.clone()],
+            ),
+        ),
+    ] {
+        space = space.bind(
+            Exact::new(format!("urn:iki:ui:screen:name:{name}")),
+            model_endpoint("screen", screen(vec![body])),
+        );
+    }
+    // Ahead of the library's own scene endpoint, which would read `urn:demo:card` as a graph.
+    let kernel = common::kernel(Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(space),
+        common::root(None, vec![]),
+    ])));
+    for target in ["html", "gpui"] {
+        let err = face(
+            &kernel,
+            &format!("urn:iki:ui:face:target:{target}:screen:narrow"),
+            &Capability::root(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, Error::Unresolved(t) if t.as_str() == DATUM),
+            "{err}"
+        );
+    }
+    assert_eq!(reached.load(Ordering::SeqCst), 0, "the datum was entered");
+    let scoped = face(
+        &kernel,
+        "urn:iki:ui:face:target:html:screen:scoped",
+        &Capability::scoped([SCOPE]),
+    )
+    .unwrap();
+    let body = String::from_utf8_lossy(&scoped.bytes);
+    assert!(!body.contains(DATUM), "{body}");
+    assert!(body.contains("Scene withheld"), "{body}");
+}
