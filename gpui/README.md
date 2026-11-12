@@ -1,6 +1,7 @@
 # ikigai-ui-gpui
 
-A native macOS GPUI renderer for ikigai-ui's resolved screen model. Run the demo:
+A native GPUI renderer for ikigai-ui's resolved screen model, with windows on macOS, Linux and
+FreeBSD (Wayland or X11) and Windows. Run the demo:
 
 ```sh
 cargo run -p ikigai-ui-gpui --bin ikigai-ui-demo-native -- 127.0.0.1:8080
@@ -13,11 +14,81 @@ service contract. Native submissions call that service's Sink directly, with the
 same contact-write capability the HTML door grants. Service refusals appear beside
 the named field and in a form summary; values remain editable after refusal.
 
-The window backend currently requires macOS. GPUI 0.2.2 uses runtime Metal shader
-compilation, so Xcode's separate Metal compiler is unnecessary. Linux and Windows
-can build and test the portable snapshot/worker API, but this crate does not yet
-supply windows on those platforms. No webview, JavaScript runtime or HTML renderer
-is embedded in the native windows.
+GPUI's default features are what give it a window platform and a text system, and this crate
+turns them off, so `Cargo.toml` names each target's own by name (ledger #3526):
+
+| Target | GPUI features | Window platform | Text system |
+|---|---|---|---|
+| macOS | `font-kit` | Metal (shaders compiled at run time, so no Xcode Metal compiler) | Core Text via font-kit |
+| Linux, FreeBSD | `wayland`, `x11`, `font-kit` | Wayland if `WAYLAND_DISPLAY` is set, else X11 on `DISPLAY`; blade on Vulkan | cosmic-text |
+| Windows | `windows-manifest` | Direct3D 11 | DirectWrite |
+
+A dropped one fails silently (no text, or no window), so `tests/text_system.rs` pins each line,
+here and in the reader app. No webview, JavaScript runtime or HTML renderer is embedded in the
+native windows.
+
+### Linux
+
+What it needs at run time (any desktop has them): libxkbcommon and libxkbcommon-x11, libxcb,
+libwayland-client (loaded at run time, Wayland only), fontconfig (loaded at run time), and a
+Vulkan driver for blade (Mesa's `mesa-vulkan-drivers`, or the GPU vendor's). Building needs no
+`-dev` package: GPUI links libxkbcommon, libxkbcommon-x11 and libxcb by their development names
+(`libxkbcommon.so`), and when those are missing `build.rs` links the runtime libraries
+(`libxkbcommon.so.0`, `libxkbcommon-x11.so.0`, `libxcb.so.1`) instead. On Debian or Ubuntu:
+
+```sh
+sudo apt install libxkbcommon0 libxkbcommon-x11-0 libxcb1 libwayland-client0 libfontconfig1 \
+  mesa-vulkan-drivers   # or libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev to build the usual way
+cargo run -p ikigai-ui-gpui --bin ikigai-ui-demo-native -- 127.0.0.1:8080
+```
+
+Run it from a terminal in the desktop session: the session sets `WAYLAND_DISPLAY` (Wayland) or
+`DISPLAY` (X11). With neither, the demo says so and exits. `WAYLAND_DISPLAY= cargo run ...` forces
+X11 (through Xwayland on a Wayland desktop). `RUST_LOG` does nothing: the demo installs no logger.
+
+Run on lawnboy (Pop!_OS 24.04, Intel UHD and NVIDIA RTX 3060, 2026-11-12), as a user who could
+not reach the desktop session's display, so on displays of its own:
+
+- **X11**: Xvfb at `:93`, Mesa's llvmpipe Vulkan (`VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json`;
+  the NVIDIA driver cannot present to Xvfb and drew black windows). The three windows opened and
+  drew their text (the gallery, elements and contact screens). GPUI 0.2.2's X11 client draws its
+  first frame only after an X event arrives; under a bare X server with no window manager and no
+  input, nothing arrives and the windows stay black until something (a window mapped over them,
+  a key) wakes it. A desktop session's window manager does this at once.
+- **Wayland**: weston 13 (`--backend=x11 --renderer=pixman --shell=kiosk`) on that Xvfb, same
+  Vulkan driver: the contact screen drew in full, text included. Weston's headless backend cannot
+  host it: it offers no `wl_seat`, and GPUI 0.2.2 panics without one (`wayland/client.rs:503`).
+
+### Windows
+
+For someone who has not built the repository before (Windows 10 or 11, x64):
+
+1. Install the Rust toolchain: download and run `rustup-init.exe` from <https://rustup.rs>, and
+   accept its offer to install the Visual Studio C++ Build Tools ("Desktop development with
+   C++", which brings the Windows SDK: the linker, `rc.exe` for the application manifest, and
+   `fxc.exe`, which a `--release` build uses to compile GPUI's shaders).
+2. Install Git from <https://git-scm.com/download/win>.
+3. In a new PowerShell window:
+
+   ```powershell
+   git clone https://github.com/ikigai-rs/ikigai-ui.git
+   cd ikigai-ui
+   cargo run -p ikigai-ui-gpui --bin ikigai-ui-demo-native -- 127.0.0.1:8080
+   ```
+
+   The first build takes several minutes. Three windows open (gallery, elements, contact), and
+   the same screens are served as HTML at <http://127.0.0.1:8080>. Allow the firewall prompt
+   for private networks if one appears (the door listens on 127.0.0.1 only). Add `dark`,
+   `light` or `high-contrast` after the address to pick a theme; `auto` follows Windows' app
+   mode (Settings, Personalization, Colors).
+4. What to check: every window has text (headings, labels, button captions); Tab and Shift+Tab
+   move the focus ring; typing, Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V edit a field; an IME
+   (Windows+Period for emoji, or a Japanese keyboard) composes into a field; submitting the
+   contact form empty shows the refusals beside the fields; changing Windows' app mode with
+   `auto` repaints the windows; the windows are sharp at 150% scaling.
+
+The reader app (`apps/reader`) builds and opens its window the same way: `cargo run -p
+ikigai-reader -- <host config> <host state> <host age key> <layers.json>` (a local layer host).
 
 ## Themes
 

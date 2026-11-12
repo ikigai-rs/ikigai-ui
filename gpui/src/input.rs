@@ -736,6 +736,7 @@ impl Focusable for TextInput {
     }
 }
 
+/// `secondary` is Cmd on macOS and Ctrl on Linux and Windows, as each platform's editing keys are.
 pub(super) fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("enter", Enter, Some("TextInput")),
@@ -745,14 +746,20 @@ pub(super) fn bind_keys(cx: &mut App) {
         KeyBinding::new("right", Right, Some("TextInput")),
         KeyBinding::new("shift-left", SelectLeft, Some("TextInput")),
         KeyBinding::new("shift-right", SelectRight, Some("TextInput")),
-        KeyBinding::new("cmd-a", SelectAll, Some("TextInput")),
-        KeyBinding::new("cmd-v", Paste, Some("TextInput")),
-        KeyBinding::new("cmd-c", Copy, Some("TextInput")),
-        KeyBinding::new("cmd-x", Cut, Some("TextInput")),
+        KeyBinding::new("secondary-a", SelectAll, Some("TextInput")),
+        KeyBinding::new("secondary-v", Paste, Some("TextInput")),
+        KeyBinding::new("secondary-c", Copy, Some("TextInput")),
+        KeyBinding::new("secondary-x", Cut, Some("TextInput")),
         KeyBinding::new("home", Home, Some("TextInput")),
         KeyBinding::new("end", End, Some("TextInput")),
-        KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, Some("TextInput")),
     ]);
+    // macOS's character palette; Linux and Windows open their emoji pickers through the IME.
+    #[cfg(target_os = "macos")]
+    cx.bind_keys([KeyBinding::new(
+        "ctrl-cmd-space",
+        ShowCharacterPalette,
+        Some("TextInput"),
+    )]);
 }
 
 #[cfg(all(test, target_os = "macos"))]

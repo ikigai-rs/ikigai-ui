@@ -1,5 +1,11 @@
-//! The demo host's native companion: one shared Store, a web door and GPUI windows.
-#[cfg(target_os = "macos")]
+//! The demo host's native companion: one shared Store, a web door and GPUI windows, on macOS,
+//! Linux and FreeBSD (Wayland or X11) and Windows.
+#[cfg(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "windows"
+))]
 fn main() {
     use gpui::{px, size, App, AppContext, Application, Bounds, WindowBounds, WindowOptions};
     use ikigai_core::{Capability, Fallback, Scope};
@@ -51,6 +57,17 @@ fn main() {
             }
         });
     });
+    // With neither WAYLAND_DISPLAY nor DISPLAY set, GPUI runs headless and no window opens.
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    if ["WAYLAND_DISPLAY", "DISPLAY"]
+        .iter()
+        .all(|var| std::env::var_os(var).is_none_or(|v| v.is_empty()))
+    {
+        eprintln!(
+            "No display: set WAYLAND_DISPLAY (Wayland) or DISPLAY (X11) to open the windows."
+        );
+        std::process::exit(1);
+    }
     let capability = Capability::root().attenuate([ikigai_ui_demo::CONTACT_WRITE]);
     let worker = Worker::new(kernel, capability, Scope::empty());
     Application::new().run(move |cx: &mut App| {
@@ -76,8 +93,13 @@ fn main() {
     });
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "windows"
+)))]
 fn main() {
-    eprintln!("The native demo currently requires macOS. The snapshot worker is portable.");
+    eprintln!("GPUI has no window platform here. The snapshot worker is portable.");
     std::process::exit(1);
 }
