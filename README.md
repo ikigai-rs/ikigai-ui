@@ -19,6 +19,7 @@ dark follows your GitHub theme). The native GPUI windows are captured by
 |---|---|
 | `urn:iki:ui:htmx` | htmx 2.0.4, vendored and SHA-256 pinned; the shell loads it with `integrity=` and configures it once (`allowEval:false`, `allowScriptTags:false`) |
 | `urn:iki:ui:tokens.css` | one token set (gonk's names, with `--line` for component borders and `--rule` for decorative lines) in light, dark and high contrast; `auto` follows the system, `prefers-contrast: more` picks high contrast, `data-theme` overrides; every pair contrast-tested (WCAG 2.2 AA, AAA for high contrast) |
+| `urn:iki:ui:base.css` | an opt-in base stylesheet for a family with no look of its own (`Pages::stylesheet("/ui/base.css")`): system type, the header, groups as cards, fields, buttons, tables, lists, figures and the disclosure, every color a token, so it follows the theme; the demo uses it, gonk keeps its own |
 | `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint, and live views refetched from the door's push stream |
 | `urn:iki:ui:template:shell` | the page shell: landmarks, a skip link, the status region, the theme chooser in the header, no inline script or style |
 | `urn:iki:ui:theme-chooser:{theme}` | the theme chooser, `{theme}` selected: a GET form with a "Theme" label, a native select of Auto (system), Light, Dark and High contrast, and an Apply button for a page with no script |

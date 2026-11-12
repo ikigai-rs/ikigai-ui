@@ -128,6 +128,8 @@ fn conforms() {
         .fixture(Fixture::new("ui-page-uidemo", Verb::Source).binding("name", "gallery"))
         .pure("uidemo-header")
         .pure("uidemo-title")
+        // The gallery image: compiled-in bytes.
+        .pure("uidemo-img")
         // ikigai-ui's own endpoints, with the fixtures and markings its tests/conformance.rs
         // gives them.
         .fixture(
