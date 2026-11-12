@@ -328,6 +328,12 @@ Two of those decisions stand as amended on 2026-11-01 (ledger #2133, carried out
   control (an input, a button) and is held to SC 1.4.11's 3:1. `--rule` is a decorative line (a
   table rule, a section divider), which SC 1.4.11 exempts; it is held to a stated 1.3:1 so no
   palette can make it vanish, and light keeps gonk's `#c9d1d9`. High contrast holds both to 7:1.
+- **D12, a palette is data, read as a table.** `urn:iki:ui:palette:{name}` is a resource a host
+  may rebind, so it is never spliced as text: `palette::Table::parse` reads it (every token of
+  `TOKENS` once, each value `#rrggbb`, nothing else) and holds it to the floor (`PAIRS`) before
+  either face draws with it. `tokens.css` is written from the parsed colors, and a palette that
+  carries `}` or `;`, a value that is not a color or a pair below its floor refuses the stylesheet,
+  naming why (ledger #3529). The native face reads the same table.
 
 ## License
 

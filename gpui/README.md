@@ -112,7 +112,9 @@ cargo run -p ikigai-ui-gpui --bin ikigai-ui-demo-native -- 127.0.0.1:8080 dark
 
 The palette is a resource: `Worker::palette` reads `urn:iki:ui:palette:{name}` through the
 host's kernel on a worker thread, so a host that overrides a palette repaints the native windows
-as it repaints the HTML face. Until it arrives, or if the kernel refuses it (the refusal is
+as it repaints the HTML face. It is parsed into the same `palette::Table` the token stylesheet
+is written from, so a palette that is not a full table of `#rrggbb` colors, or that misses the
+contrast floor, is refused here as it is there. Until it arrives, or if the kernel refuses it (the refusal is
 shown), the compiled table of the same name stands in. Colors go by role, as the HTML face
 uses them: text `fg` on `bg`, placeholders `muted`, links `accent`, errors `danger`, buttons,
 selected options and selected text `accent-fg` on `accent`, control borders `line`, table
