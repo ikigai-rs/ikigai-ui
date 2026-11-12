@@ -48,22 +48,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     // The gallery through the html target's templates (ledger #3355), in the demo shell, so axe
-    // covers every kind, a table with header cells and a form.
-    let gallery =
-        ikigai_ui::testkit::render::source(&kernel, "urn:iki:ui:html:screen:gallery", &[])?;
+    // covers every kind, a table with header cells and a form; and the custom elements (ledger
+    // #3358), expanded by the html target, the same way.
     let about = ikigai_ui::testkit::render::source(&kernel, "urn:demo:page:about", &[])?;
     let (head, rest) = about
         .split_once("<main id=\"main\" tabindex=\"-1\">")
         .expect("the shell's main");
     let (_, tail) = rest.split_once("</main>").expect("the shell's main");
-    let page = format!(
-        "{head}<main id=\"main\" tabindex=\"-1\">\n<h1>Gallery</h1>\n{gallery}\n</main>{tail}"
-    );
-    files.push((
-        "/gallery.html".to_string(),
-        common::HTML.to_string(),
-        page.into_bytes(),
-    ));
+    for (screen, title) in [("gallery", "Gallery"), ("elements", "Elements")] {
+        let body = ikigai_ui::testkit::render::source(
+            &kernel,
+            &format!("urn:iki:ui:html:screen:{screen}"),
+            &[],
+        )?;
+        let page = format!(
+            "{head}<main id=\"main\" tabindex=\"-1\">\n<h1>{title}</h1>\n{body}\n</main>{tail}"
+        );
+        files.push((
+            format!("/{screen}.html"),
+            common::HTML.to_string(),
+            page.into_bytes(),
+        ));
+    }
     // The image example's source: a 1x1 grey PNG, so the page loads with no 404.
     const PNG: &[u8] = &[
         137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0,

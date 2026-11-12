@@ -130,6 +130,7 @@ body { margin: 0; background: var(--bg); color: var(--fg); }
 a { color: var(--accent); }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 nav a { display: inline-block; padding: 0.25rem 0.5rem; } /* 24px targets (WCAG 2.2 SC 2.5.8) */
+.ui-list > li > a { display: inline-block; min-height: 24px; padding: 0.125rem 0; } /* a list of links (a card's, a tag list) stacks its targets: 24px each (SC 2.5.8) */
 .ui-skip { position: absolute; left: -999px; top: 0; }
 .ui-skip:focus { left: 0.5rem; top: 0.5rem; z-index: 10; padding: 0.5rem; background: var(--bg); color: var(--fg); }
 .ui-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

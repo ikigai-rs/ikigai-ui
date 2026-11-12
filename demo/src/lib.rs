@@ -10,7 +10,7 @@
 //! | `urn:iki:uidemo:inbox` | data | a UI node: the latest submission's sender, readable only under [`SUBMISSION_READ`]; the contact screen references it, so a caller without the grant sees it withheld ([`INBOX_WITHHELD`]) |
 //! | `urn:iki:uidemo:prefixes` | data | the demo's prefix table, `demo:` for `urn:iki:uidemo:` ([`PREFIXES`]) |
 //! | `urn:iki:uidemo:example:rating` | data | a rating element node, which `write` references as `demo:example:rating` |
-//! | `urn:iki:uidemo:page:{name}` | composition | the shell over a fragment ([`ikigai_ui::Pages`]): `gallery`, `contact`, `support` |
+//! | `urn:iki:uidemo:page:{name}` | composition | the shell over a fragment ([`ikigai_ui::Pages`]): `gallery`, `elements`, `contact`, `support` |
 //! | `urn:iki:uidemo:fragment:{name}` | composition | the page's body: a note and the screen it shows |
 //!
 //! The contact form is not written by hand: it is the `form` node ikigai-ui generates from the
@@ -50,8 +50,9 @@ pub const INBOX_WITHHELD: &str =
 /// The values `topic` takes.
 pub const TOPICS: [&str; 3] = ["question", "feedback", "support"];
 /// The demo's pages.
-pub const PAGES: [(&str, &str); 3] = [
+pub const PAGES: [(&str, &str); 4] = [
     ("gallery", "Gallery"),
+    ("elements", "Elements"),
     ("contact", "Contact"),
     ("support", "Support"),
 ];
@@ -353,6 +354,11 @@ fn fragment_parts(name: &str) -> (&'static str, &'static str, Option<&'static st
         "gallery" => (
             "<h1>Gallery</h1>\n<p>Every UI node kind, rendered by the html target's templates.</p>",
             "urn:iki:ui:html:screen:gallery",
+            None,
+        ),
+        "elements" => (
+            "<h1>Elements</h1>\n<p>Custom elements, each a composition of core kinds, expanded by the html target.</p>",
+            "urn:iki:ui:html:screen:elements",
             None,
         ),
         "contact" => ("<h1>Contact</h1>", "urn:iki:ui:html:screen:contact", None),

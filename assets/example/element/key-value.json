@@ -1,0 +1,72 @@
+{
+  "kind": "urn:iki:ui:element:name:key-value",
+  "properties": {
+    "fallback": "Gauge 14: Mill Lane, 2.31 m, read 2026-11-10.",
+    "label": "Gauge 14"
+  },
+  "children": [
+    {
+      "kind": "group",
+      "properties": {
+        "label": "Station",
+        "header": "row"
+      },
+      "children": [
+        {
+          "kind": "text",
+          "properties": {
+            "content": "Station"
+          }
+        },
+        {
+          "kind": "text",
+          "properties": {
+            "content": "Mill Lane"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "group",
+      "properties": {
+        "label": "Level",
+        "header": "row"
+      },
+      "children": [
+        {
+          "kind": "text",
+          "properties": {
+            "content": "Level"
+          }
+        },
+        {
+          "kind": "text",
+          "properties": {
+            "content": "2.31 m"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "group",
+      "properties": {
+        "label": "Read",
+        "header": "row"
+      },
+      "children": [
+        {
+          "kind": "text",
+          "properties": {
+            "content": "Read"
+          }
+        },
+        {
+          "kind": "text",
+          "properties": {
+            "content": "2026-11-10"
+          }
+        }
+      ]
+    }
+  ]
+}

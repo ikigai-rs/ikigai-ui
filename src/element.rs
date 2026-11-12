@@ -483,16 +483,44 @@ pub const SCREEN: &str = "urn:iki:ui:screen:name:elements";
 
 /// This crate's example elements, compiled in, each overridable from `element/{name}.json` in
 /// the UI directory (so an edit there recomputes exactly the screens that use it).
-pub const ELEMENTS: [crate::Artifact; 1] = [crate::Artifact {
-    iri: "urn:iki:ui:element:name:rating",
-    id: "ui-element-name",
-    file: "element/rating.json",
-    media_type: "application/json",
-    bytes: include_bytes!("../assets/element/rating.json"),
-}];
+pub const ELEMENTS: [crate::Artifact; 4] = [
+    crate::Artifact {
+        iri: "urn:iki:ui:element:name:rating",
+        id: "ui-element-name",
+        file: "element/rating.json",
+        media_type: "application/json",
+        bytes: include_bytes!("../assets/element/rating.json"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:element:name:card",
+        id: "ui-element-name",
+        file: "element/card.json",
+        media_type: "application/json",
+        bytes: include_bytes!("../assets/element/card.json"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:element:name:key-value",
+        id: "ui-element-name",
+        file: "element/key-value.json",
+        media_type: "application/json",
+        bytes: include_bytes!("../assets/element/key-value.json"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:element:name:tag-list",
+        id: "ui-element-name",
+        file: "element/tag-list.json",
+        media_type: "application/json",
+        bytes: include_bytes!("../assets/element/tag-list.json"),
+    },
+];
 
 /// Each element's example node, in [`ELEMENTS`]' order.
-pub const EXAMPLES: [&str; 1] = [include_str!("../assets/example/element/rating.json")];
+pub const EXAMPLES: [&str; 4] = [
+    include_str!("../assets/example/element/rating.json"),
+    include_str!("../assets/example/element/card.json"),
+    include_str!("../assets/example/element/key-value.json"),
+    include_str!("../assets/example/element/tag-list.json"),
+];
 
 fn known(name: &str) -> Result<&'static crate::Artifact, Error> {
     ELEMENTS

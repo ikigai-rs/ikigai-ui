@@ -20,7 +20,7 @@ behavior, and the same tests.
 | `urn:iki:ui:target:name:{target}` | the `html` or `gpui` descriptor: versioned capabilities, rendered kinds, fallbacks and target limits |
 | `urn:iki:ui:support` | every target against every kind, plus capabilities, composed from descriptors; JSON by default, `as=text/html` for the support page |
 | `urn:iki:ui:face:target:{target}:screen:{screen}` | `urn:iki:ui:screen:name:{screen}` with the descriptor's fallbacks applied; model JSON by default, `as=application/ld+json` for named JSON-LD nodes |
-| `urn:iki:ui:element:name:{name}` | a custom element's definition (ledger #3358): its argument contract and its expansion, a model template over core kinds and other elements; a face renders an element natively when its descriptor claims it, else expands it (bounded by depth and nodes produced, a cycle refused), else its declared `replacement`, else its `fallback` text. `rating` is the example, shown expanded at `urn:iki:ui:screen:name:elements` |
+| `urn:iki:ui:element:name:{name}` | a custom element's definition (ledger #3358): its argument contract and its expansion, a model template over core kinds and other elements; a face renders an element natively when its descriptor claims it, else expands it (bounded by depth and nodes produced, a cycle refused), else its declared `replacement`, else its `fallback` text. `rating`, `card`, `key-value` and `tag-list` are this crate's, shown at `urn:iki:ui:screen:name:elements` (the demo's `/page/elements`) and expanded on every face |
 | `artifacts(&[Artifact], dir)` | your own artifacts, with the same two deliveries: compiled in, or a file under your directory prefix |
 
 ```rust
@@ -128,8 +128,10 @@ The face applies this fallback ladder to every node:
 
 1. Render natively when the descriptor's `renders` claims the kind and its limits and child
    constraints permit it.
-2. Expand into core kinds. This stage is reserved in the face function; today's closed
-   vocabulary has no custom elements to expand.
+2. Expand into core kinds. A custom element (`urn:{ns}:ui:element:name:{name}`) the descriptor
+   does not claim in `elements` is replaced by its definition's expansion, its arguments and
+   children spliced in, recursively and bounded (`ikigai_ui::element`, ledger #3358); the result walks
+   this same ladder. An element with no readable definition goes on to step 3.
 3. Use the node's optional `replacement` subtree, otherwise the descriptor's
    `fallback` kind. A replacement subtree walks the same ladder. Descriptor chains try
    native rendering at each destination, then its expansion, then its next replacement.
@@ -217,9 +219,11 @@ cargo run -p ikigai-ui-demo -- 127.0.0.1:9000
 ```
 
 One binary (`demo/`, the workspace member `ikigai-ui-demo`, never published), one kernel and
-one ikigai-web door. It serves three pages in the shared shell:
+one ikigai-web door. It serves four pages in the shared shell:
 
 - `/` or `/page/gallery`: the gallery screen, every node kind rendered by the html target.
+- `/page/elements`: the custom elements (`rating`, `card`, `key-value`, `tag-list`), each
+  expanded into core kinds by the html target.
 - `/page/contact`: a contact form. **The form is a client generated from the service's
   model, not written by hand.** The model is the contact service's own contract (the
   one its OpenAPI description is projected from). `urn:iki:ui:screen:name:contact` is an alias

@@ -1,0 +1,18 @@
+{
+  "arguments": [
+    {
+      "name": "label",
+      "summary": "what the tags are, the list's name",
+      "required": true
+    }
+  ],
+  "expansion": {
+    "kind": "list",
+    "properties": {
+      "label": "{label}"
+    },
+    "children": [
+      "{children}"
+    ]
+  }
+}
