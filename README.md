@@ -4,6 +4,17 @@ The shared UI path for [ikigai](https://github.com/ikigai-rs) hosts, as resource
 space and every page you serve gets the same htmx, the same themes, the same refusal and focus
 behavior, and the same tests.
 
+## What it looks like
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/gallery-dark.webp">
+  <img src="docs/screenshots/gallery-light.webp" width="480" alt="The demo gallery page in the shared shell: a header with Gallery, Elements, Contact and Support links and a Theme chooser set to Auto (system), then every node kind rendered by the html target: headings and text, a sign-up form with the note An email address has an @ in it under its email field, navigation links, lists, a fruit table, and media.">
+</picture>
+
+The HTML gallery above is generated from the demo's fixtures (`scripts/screenshots.sh`; light or
+dark follows your GitHub theme). The native GPUI windows are captured by
+`scripts/gpui-screenshots.sh` on a machine with a screen, as `docs/screenshots/gpui-*.png`.
+
 | name | what you get |
 |---|---|
 | `urn:iki:ui:htmx` | htmx 2.0.4, vendored and SHA-256 pinned; the shell loads it with `integrity=` and configures it once (`allowEval:false`, `allowScriptTags:false`) |
@@ -27,6 +38,14 @@ behavior, and the same tests.
 | `urn:iki:ui:scene-renderer.js` | the html face's WebGPU renderer, a first-party script like shell.js: fixed shaders, reads only the datum its `scene` names (a same-origin path), orbit/zoom/select by mouse and keyboard, the selection said in `#status`. With no WebGPU, no adapter or no script the canvas stays hidden and the scene's replacement is the scene |
 | `scene` (a core kind) | `label` (its fallback text), `datum` (the scene datum's IRI) and a REQUIRED `replacement`, its accessible form (the same graph as text). The html face draws the canvas with the replacement beside it, linked from the caption; a face that does not claim `scene` (gpui in phase 1, or an html descriptor a host overrides) shows the replacement in its place, else the label. The gallery's is the demo's contact contract as triples, `urn:iki:ui:example:graph:contact`. The s-expression face spells a replacement `:replacement (…)` |
 | `artifacts(&[Artifact], dir)` | your own artifacts, with the same two deliveries: compiled in, or a file under your directory prefix |
+
+The gallery's scene as a reader without WebGPU gets it, its replacement (the canvas is not
+pictured: headless Chromium's screenshots do not carry WebGPU pixels):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/scene-dark.webp">
+  <img src="docs/screenshots/scene-light.webp" width="360" alt="The gallery's scene, the contact contract as a graph, shown as its replacement because the browser that took this had no WebGPU: the caption with a link to the same graph as text, then a From, Relation, To table listing contact hasPart name, email, topic and message, and topic valueReference question, bug and other.">
+</picture>
 
 ```rust
 let kernel = Kernel::new(Arc::new(Fallback::new(vec![
@@ -230,8 +249,21 @@ one ikigai-web door. It serves four pages in the shared shell:
 - `/` or `/page/gallery`: the gallery screen, every node kind rendered by the html target.
 - `/page/elements`: the custom elements (`rating`, `card`, `key-value`, `tag-list`, each
   expanded into core kinds by the html target, and `disclosure`, native as `<details>`).
+
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/elements-dark.webp">
+    <img src="docs/screenshots/elements-light.webp" width="480" alt="The demo elements page: a rating reading Service: 4 out of 5; a Field notes card with two links; a Gauge 14 key-value table of station Mill Lane, level 2.31 m, read 2026-11-10; a tag list of hydrology, flooding and open data; and a closed disclosure asking How often is the gauge read?">
+  </picture>
+
 - `/page/contact`: a contact form. **The form is a client generated from the service's
-  model, not written by hand.** The model is the contact service's own contract (the
+  model, not written by hand.**
+
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/contact-refusal-dark.webp">
+    <img src="docs/screenshots/contact-refusal-light.webp" width="480" alt="The generated contact form after a refused submission: name Ada Example, email ada-at-example with the refusal 'an address like ada@example.org' in red directly under the email field, topic question, a message, and a Submit button.">
+  </picture>
+
+  The model is the contact service's own contract (the
   one its OpenAPI description is projected from). `urn:iki:ui:screen:name:contact` is an alias
   for `urn:iki:ui:form:resource:urn:iki:uidemo:contact`, and the html target renders the
   generated node. The same generation works from an OpenAPI document
@@ -243,6 +275,11 @@ one ikigai-web door. It serves four pages in the shared shell:
   `urn:iki:uidemo:submission:id:{id}`. `urn:iki:uidemo:submission` lists the stored ones. Both
   require `urn:cap:uidemo:submission:read`, which the door does not grant.
 - `/page/support`: the support matrix, what each target renders of each node kind.
+
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/support-dark.webp">
+    <img src="docs/screenshots/support-light.webp" width="480" alt="The support page: a table of each node kind against the gpui and html targets, html rendering every kind and gpui rendering some and falling back to text or a list for the rest; below it, the custom elements, expanded on both targets except the native disclosure, and each target's capabilities.">
+  </picture>
 
 There is no sign-in yet: the door grants every request a write to the contact service and
 nothing else. Sign-in comes later (#2169). The submissions live in memory and are gone
