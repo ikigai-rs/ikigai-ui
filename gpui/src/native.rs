@@ -2558,6 +2558,98 @@ mod tests {
         }
     }
 
+    /// The personal selection and operation are ordinary native form controls. Invalid
+    /// edits stay at the form and never fire the target; a valid edit passes pre-flight.
+    #[gpui::test]
+    fn operations_prefill_native_forms_and_keep_refusals_at_the_gesture(cx: &mut TestAppContext) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let called = Arc::new(AtomicUsize::new(0));
+        let received = called.clone();
+        let host = EndpointSpace::new().bind(
+            Exact::new("urn:native:repeat"),
+            FnEndpoint::new("native-repeat", move |_: &Invocation<'_>| {
+                received.fetch_add(1, Ordering::SeqCst);
+                Ok(Representation::new(
+                    ReprType::new("text/plain"),
+                    b"Done".to_vec(),
+                ))
+            })
+            .with_description(
+                Description::new("native-repeat")
+                    .title("Repeat")
+                    .summary("A typed native operation.")
+                    .verb(Verb::Sink)
+                    .requires("urn:cap:native:repeat")
+                    .input(
+                        ikigai_core::ArgSpec::new("times")
+                            .class("http://www.w3.org/2001/XMLSchema#integer"),
+                    ),
+            ),
+        );
+        let worker = demo_worker(Some(host));
+        let chosen = BTreeMap::from([(
+            "dropped".into(),
+            r#"[{"value":"2","datatype":"http://www.w3.org/2001/XMLSchema#integer"}]"#.into(),
+        )]);
+        let name = ikigai_ui::lens::screen_name("operations", "urn:native:personal", &chosen);
+        let (screen, cx) =
+            cx.add_window_view(|window, cx| Screen::new(worker, &name, Theme::Auto, window, cx));
+        settle(&screen, cx);
+        fn find<'a>(
+            n: &'a Node,
+            path: String,
+            kind: &str,
+            key: &str,
+            value: &str,
+        ) -> Option<(String, &'a Node)> {
+            if n.kind == kind && text(n, key) == Some(value) {
+                return Some((path, n));
+            }
+            n.children
+                .iter()
+                .enumerate()
+                .find_map(|(i, c)| find(c, format!("{path}/{i}"), kind, key, value))
+        }
+        let (form_path, input_path, form, button) = screen.update(cx, |s, _| {
+            let root = s.snapshot.as_ref().unwrap().root();
+            let (fp, form) = find(
+                root,
+                "/".into(),
+                "form",
+                "resource",
+                "urn:iki:ui:lens:operation:urn:native:repeat",
+            )
+            .unwrap();
+            let (ip, input) = find(form, fp.clone(), "field", "name", "times").unwrap();
+            assert_eq!(text(input, "value"), Some("2"));
+            assert!(s.tab_order.iter().any(|(p, _)| p == &ip));
+            (fp, ip, form.clone(), form.children.last().unwrap().clone())
+        });
+        for (value, expected) in [("bad", 0), ("3", 1)] {
+            screen.update(cx, |s, cx| {
+                s.inputs[&input_path].update(cx, |input, _| input.content = value.into());
+                s.submit(&form, &form_path, &button, cx);
+            });
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while screen.update(cx, |s, cx| {
+                s.poll(cx);
+                s.forms[&form_path].pending.is_some()
+            }) {
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            assert_eq!(called.load(Ordering::SeqCst), expected);
+            screen.update(cx, |s, cx| {
+                assert_eq!(s.inputs[&input_path].read(cx).content.as_ref(), value);
+                if expected == 0 {
+                    assert!(s.forms[&form_path].feedback.fields.contains_key("times"));
+                } else {
+                    assert!(s.forms[&form_path].feedback.fields.is_empty());
+                }
+            });
+        }
+    }
+
     /// The dashboard a `construct` lens builds as the model (ledger #3520) is an ordinary
     /// screen to the native face: its GPUI face validates as a snapshot, installs in a window,
     /// and each type it links is a tab stop.

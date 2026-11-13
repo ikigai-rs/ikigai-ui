@@ -22,10 +22,29 @@ use ikigai_core::Verb;
 
 #[test]
 fn conforms() {
-    let root = common::root(None, vec![Arc::new(common::form_models())]);
+    let probe = ikigai_core::EndpointSpace::new().bind(
+        ikigai_core::Exact::new("urn:iki:ui:lens:name:action-probe"),
+        ikigai_core::FnEndpoint::new("test-action-probe", |_: &ikigai_core::Invocation<'_>| {
+            Ok(ikigai_core::Representation::new(ikigai_core::ReprType::new("application/json"),
+                br#"{"renderer":"table","bound":10,"legend":"Probe","actions":{"extend":{"graph":"urn:probe:graph"},"connect":{"graph":"urn:probe:graph"}}}"#.to_vec()).cacheable())
+        }).with_description(ikigai_core::Description::new("test-action-probe").title("Probe").summary("Gesture configuration for conformance.").verb(Verb::Source).output("application/json")));
+    let root = common::root(None, vec![Arc::new(common::form_models()), Arc::new(probe)]);
     let kernel = common::kernel(root.clone());
     let pages = Arc::new(common::demo_pages());
-    let mut suite = Suite::new();
+    let mut suite = Suite::new()
+        .pure("test-action-probe")
+        .pure("ui-lens-operations")
+        .cacheable("test-action-probe")
+        .cacheable("ui-lens-extend")
+        .cacheable("ui-lens-connect");
+    for id in ["ui-lens-extend", "ui-lens-connect"] {
+        suite = suite.fixture(Fixture::new(id,Verb::Source).binding("lens","action-probe"))
+            .opt_out_check(id,Check::Pipeline,"Gestures receive named generated-form fields, not a pipeline content body. tests/lens_actions.rs fires both against a real graph-scoped store.")
+            .opt_out_check(id,Check::Outputs,"Source definitions are checked by the fixture and tests/lens_actions.rs; named-field Sink outputs are exercised against the real store there, rather than the conformance pipeline probe.");
+    }
+    suite = suite
+        .opt_out_check("ui-lens-operation",Check::Enforced,"This forwarding Sink inherits the chosen operation's dynamic authority; no single static scope describes every target. tests/lens_actions.rs proves capability filtering and refusal after attenuation before invoke.")
+        .opt_out_check("ui-lens-operation",Check::Outputs,"This forwarding Sink's output is its target's. tests/lens_actions.rs invokes a real target through the pre-flight wrapper and verifies refused calls never reach it.");
     // The lenses' data is compiled in: pure, cacheable constants (ledger #3518).
     for id in [
         "ui-lens-graph",

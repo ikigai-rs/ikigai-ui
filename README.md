@@ -302,6 +302,56 @@ radio lens chooser, linked selection, and checkbox facets. Queries still run und
 the caller's capability and the store's time and answer budgets. A denied graph is
 reported as withheld in words.
 
+A vocabulary lens can declare gestures in its JSON definition:
+
+```json
+"actions": {
+  "extend": {"graph": "urn:example:vocabulary"},
+  "connect": {"graph": "urn:example:vocabulary"}
+}
+```
+
+`urn:iki:ui:lens:name:{lens}:action:extend` and `:action:connect` are data on
+Source and named Sinks on submission. The surrounding screen offers a linked
+selection, links to select rendered terms, editable term fields (including terms
+from another vocabulary), and forms generated through
+`urn:iki:ui:form:resource:{action}`. `selected=` and `target=` pre-fill those forms.
+Extend adds `target rdfs:subClassOf selected` and types the new class; connect adds
+`selected relation target`, choosing `rdfs:subClassOf`, `owl:equivalentClass`, or
+SKOS `exactMatch` / `closeMatch`. No renderer executes a gesture.
+
+Forms appear only when the caller's `urn:kernel:actions` offers
+`urn:iki:store:graph-update` and the caller holds
+`urn:cap:store:write:graph:<graph>`. Submission checks again. The lens fixes the
+graph; form inputs cannot override it. Extend verifies the selected class through
+`urn:iki:store:graph-ask`. If `urn:iki:ui:lens:shapes:{graph}` exists, the proposed
+complete graph is checked through `urn:shacl:validate` before writing. These reads
+need the graph's read grant too. SHACL is a pre-flight, not an atomic transaction
+with other writers. The store cuts the graph's thread on success, refreshing lenses
+that read it. Refusals remain at the form on both faces.
+
+The operations composition is
+`urn:iki:ui:view:lens:operations:resource:{personal-iri}`, also available through
+`/lens/name/operations/resource/{personal-iri}`. Its ordinary text field accepts a
+personal dropped set, for example:
+
+```json
+[{"iri":"urn:person:alice"},
+ {"value":"2","datatype":"http://www.w3.org/2001/XMLSchema#integer"}]
+```
+
+The selection is request-local, never shared mutable state. Resource types are
+read under the caller's capability (JSON-LD or the host's RDF/SPARQL reader);
+literals default to `xsd:string`. The capability-scoped manifold ranks matching
+Sink operations. Each operation uses its generated form, pre-filled by input
+class, with editable values. Submission goes through
+`urn:iki:ui:lens:operation:{operation-iri}`, which rechecks availability and calls
+`urn:kernel:validate` before invoking the target under the same capability.
+Selections are limited to 32 values, and the first 32 fitting forms are shown;
+limits and withheld reads are said in words. Template operations that still need
+IRI bindings are omitted. The kernel validation argument format cannot escape
+ampersands or newlines, so those submitted values receive an explicit refusal.
+
 The four structured examples are attached to `urn:iki:ui:example:graph:lenses` by
 `lens::examples()`, which the demo installs. Open, for example,
 `http://127.0.0.1:8080/lens/name/demo-board/resource/urn%3Aiki%3Aui%3Aexample%3Agraph%3Alenses`.
