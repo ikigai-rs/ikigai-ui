@@ -3,6 +3,8 @@
 //! ikigai-fs, the way a host overrides an artifact (D17's Delivery A).
 #![allow(dead_code)] // each test binary uses its own part of this module
 
+pub mod lens_actions;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

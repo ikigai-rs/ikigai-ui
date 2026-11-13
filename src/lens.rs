@@ -18,6 +18,9 @@
 //! | `urn:iki:ui:lens:report:{graph}` | data | `{graph}`'s SHACL validation report, Turtle: `urn:shacl:validate` over `{graph}` (as Turtle, read through `urn:sparql:construct`) against `urn:iki:ui:lens:shapes:{graph}` (a host's binding), every read under the CALLER's capability; a lens joins it to the data by naming it in `graphs` (ledger #3521) |
 //! | `urn:iki:ui:lens:shapes:{graph}` | data (a host's) | the SHACL shapes `{graph}` is held to, Turtle |
 //! | `urn:iki:ui:lens:inferred:{graph}` | data | what OWL 2 RL derives from `{graph}` and `{graph}` does not assert: `urn:reason:inferred` over it, Turtle, under the CALLER's capability (ledger #3521) |
+//! | `urn:iki:ui:lens:name:{lens}:action:extend`, `:action:connect` | data / Sink | configured by the lens's `actions` map: a fixed graph, generated forms, the caller's narrow graph-write capability, SHACL pre-flight when shapes exist ([`actions`]) |
+//! | `urn:iki:ui:lens:name:operations` | composition descriptor | capability-scoped operations over a request-local personal `dropped` set; its view is an ordinary screen of linked values and generated forms ([`actions::Dropped`]) |
+//! | `urn:iki:ui:lens:operation:{iri}` | Sink | validates submitted form values through `urn:kernel:validate` before invoking `{iri}` under the caller's capability |
 //! | `urn:iki:ui:home` | data (a host's) | the home mapping, a JSON prefix table `[{"prefix", "href"}]`, longest prefix wins |
 //! | `urn:iki:ui:home:resource:{iri}` | data | where `{iri}` links: its home by the table, else its own view ([`crate::view::href`]) |
 //!
@@ -88,6 +91,8 @@
 //! bound is the most nodes it constructs; past it, a constructed model is shown whole or not at
 //! all, so nothing of it is shown and the view says so. The example is `contact-dashboard`, a
 //! small dashboard of counts over the contact graph.
+
+pub mod actions;
 
 use std::collections::BTreeMap;
 
@@ -266,6 +271,9 @@ pub struct Lens {
     /// Its facets: each a checkbox per allowed value, bound into the query as a term.
     #[serde(default)]
     pub facets: Vec<Facet>,
+    /// Named vocabulary gestures (`extend` and `connect`), each fixing its target graph.
+    #[serde(default)]
+    pub actions: BTreeMap<String, actions::Action>,
 }
 
 /// A facet (ledger #3531): a query parameter `name` whose value, one of `values`, is bound to
@@ -406,6 +414,12 @@ impl Lens {
                 format!("{lens}: its bound {} is not in 1..={MAX_BOUND}", l.bound),
             ));
         }
+        for (name, action) in &l.actions {
+            if !matches!(name.as_str(), "extend" | "connect") {
+                return Err(refuse("action", format!("{lens}: unknown gesture {name}")));
+            }
+            actions::graph_term(&action.graph)?;
+        }
         if l.facets.len() > MAX_FACETS {
             return Err(refuse(
                 "lens",
@@ -417,7 +431,7 @@ impl Lens {
                 || !variable_name(f.variable())
                 || f.variable() == l.focus
                 || RESERVED.contains(&f.name.as_str())
-                || f.name == "page"
+                || matches!(f.name.as_str(), "page" | "selected" | "target" | "dropped")
                 || f.values.is_empty()
                 || f.values.len() > MAX_VALUES
             {
@@ -1679,8 +1693,21 @@ pub async fn lensed(
     resource: &str,
     chosen: &Selection,
 ) -> Result<Node, Error> {
+    if name == "operations" {
+        return actions::operations(inv, resource, chosen).await;
+    }
     let lens = read_lens(inv, name).await?;
-    let chosen = lens.select(chosen.iter().map(|(k, v)| (k.as_str(), v.as_str())))?;
+    let selection: Selection = chosen
+        .iter()
+        .filter(|(k, _)| matches!(k.as_str(), "selected" | "target"))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let chosen = lens.select(
+        chosen
+            .iter()
+            .filter(|(k, _)| !matches!(k.as_str(), "selected" | "target"))
+            .map(|(k, v)| (k.as_str(), v.as_str())),
+    )?;
     let choices = lenses_of(inv, resource).await?;
     let home = match optional(inv, HOME_TABLE).await? {
         Some(b) => Home::parse(&b)?,
@@ -1714,6 +1741,7 @@ pub async fn lensed(
     for (k, v) in chosen.iter().filter(|(k, _)| k.as_str() != "page") {
         request = request.with_arg(k.clone(), ArgRef::Inline(v.clone().into_bytes()));
     }
+    let mut candidates = std::collections::BTreeSet::new();
     let body = match inv.issue(request).await {
         Ok(r) if construct => match frame(&r.bytes, lens.bound, &home)? {
             Framed::Model(n) => n,
@@ -1745,6 +1773,16 @@ pub async fn lensed(
                     Rows::default(),
                 )
             };
+            for row in &rows.rows {
+                for (key, value) in row {
+                    if key != &lens.focus
+                        && value.contains(':')
+                        && actions::graph_term(value).is_ok()
+                    {
+                        candidates.insert(value.clone());
+                    }
+                }
+            }
             // The focus is the resource the view is about, said in the heading, not a column.
             rows.vars.retain(|v| *v != lens.focus);
             let fill = Fill {
@@ -1807,6 +1845,9 @@ pub async fn lensed(
     let view = json!({"kind": "group", "properties": {"label": lens.legend}, "children": children});
     let mut view: Node = serde_json::from_value(view).map_err(|e| refuse("lens", e))?;
     view.children.push(body);
+    view.children.extend(
+        actions::controls(inv, name, &lens, &home, &selection, resource, &candidates).await?,
+    );
     model::validate(&view)?;
     Ok(view)
 }
@@ -2093,6 +2134,16 @@ pub fn fold(inv: &Invocation<'_>, screen: &str) -> Result<String, Error> {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
     }
+    for key in ["selected", "target", "dropped"] {
+        if inv.request.args.contains_key(key) {
+            let value = inv.inline_str(key)?;
+            if value.is_empty() {
+                chosen.remove(key);
+            } else {
+                chosen.insert(key.into(), value.into());
+            }
+        }
+    }
     Ok(screen_name(&lens, &resource, &chosen))
 }
 
@@ -2157,7 +2208,8 @@ pub(crate) fn bind_screens(space: EndpointSpace) -> EndpointSpace {
                     parse_screen(&name).ok_or_else(|| Error::NotFound(name.clone()))??;
                 iri(&resource)?;
                 let n = lensed(inv, &lens, &resource, &chosen).await?;
-                crate::model_face(inv, &n)
+                let rep = crate::model_face(inv, &n)?;
+                Ok(if lens == "operations" { rep.with_expiry(ikigai_core::Expiry::Always) } else { rep })
             })
         })
         .with_description(
@@ -2457,7 +2509,8 @@ pub(crate) fn view_endpoint() -> AsyncFnEndpoint {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect();
             let n = lensed(inv, &name, &resource, &chosen).await?;
-            crate::model_face(inv, &n)
+            let rep = crate::model_face(inv, &n)?;
+            Ok(if name == "operations" { rep.with_expiry(ikigai_core::Expiry::Always) } else { rep })
         })
     })
     .with_description(

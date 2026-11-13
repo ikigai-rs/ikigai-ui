@@ -22,6 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "urn:iki:ui:shell.js",
         "urn:iki:ui:scene-renderer.js",
         ikigai_ui::TOKENS_CSS,
+        ikigai_ui::BASE_CSS,
     ] {
         let rep = common::source(&kernel, iri)?;
         let path = format!("/{}", iri.trim_start_matches("urn:iki:").replace(':', "/"));
@@ -122,6 +123,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 page.into_bytes(),
             ));
         }
+    }
+    // Stage 5: full generated gesture forms and pre-filled operations, from the same
+    // real-store fixtures as tests/lens_actions.rs. All are ordinary HTML controls.
+    let vocabulary = common::lens_actions::vocabulary(None);
+    let (operations, _) = common::lens_actions::operations_host();
+    for (name, host, screen) in [
+        (
+            "lens-gestures",
+            &vocabulary,
+            ikigai_ui::lens::screen_name(
+                "vocabulary",
+                common::lens_actions::GRAPH,
+                &std::collections::BTreeMap::from([
+                    ("selected".into(), "urn:test:Parent".into()),
+                    ("target".into(), "urn:other:Term".into()),
+                ]),
+            ),
+        ),
+        (
+            "lens-operations",
+            &operations,
+            ikigai_ui::lens::screen_name(
+                "operations",
+                "urn:viewer:personal",
+                &std::collections::BTreeMap::from([(
+                    "dropped".into(),
+                    common::lens_actions::dropped("2"),
+                )]),
+            ),
+        ),
+    ] {
+        let body = ikigai_ui::testkit::render::source(
+            host,
+            &format!("urn:iki:ui:html:screen:{screen}"),
+            &[],
+        )?;
+        let head = head.replace(
+            "</head>",
+            "<link rel=\"stylesheet\" href=\"/ui/base.css\"></head>",
+        );
+        files.push((
+            format!("/{name}.html"),
+            common::HTML.into(),
+            format!("{head}<main id=\"main\" tabindex=\"-1\"><h1>{name}</h1>{body}</main>{tail}")
+                .into_bytes(),
+        ));
     }
     // The SHACL-violation and asserted-vs-derived lenses (ledger #3521), so axe covers the danger
     // role's color and the role rules on list items and table rows; the violations' scene datum
