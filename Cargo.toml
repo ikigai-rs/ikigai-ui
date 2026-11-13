@@ -106,6 +106,8 @@ ikigai-jsonld = "0.4.0"
 # Lenses (ledger #3518): a lens's query runs on a real `urn:sparql:select`, over the contact
 # graph resolved through the kernel. 0.5.0 is the release on ikigai-core 0.3.0 and ikigai-rdf 0.5.
 ikigai-sparql = "0.5.0"
+# Gestures are exercised against the real graph-scoped write door.
+ikigai-store = "0.5.0"
 # Lenses 4 (ledger #3521): `shacl-violations` joins `urn:shacl:validate`'s report (ikigai-shacl,
 # above) to the data, and `asserted-vs-derived` sets the asserted graph beside
 # `urn:reason:inferred`, OWL 2 RL entailments only. 0.5.0 is the release on ikigai-core 0.3.0.
