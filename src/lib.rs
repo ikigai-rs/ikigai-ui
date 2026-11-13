@@ -767,6 +767,22 @@ pub fn space() -> EndpointSpace {
         )
         .bind(Exact::new(lens::PREPARE), lens::prepare_endpoint())
         .bind(
+            Exact::new("urn:iki:ui:lens:name:operations"),
+            lens::actions::operations_endpoint(),
+        )
+        .bind(
+            template("urn:iki:ui:lens:name:{lens}:action:extend"),
+            lens::actions::endpoint("extend"),
+        )
+        .bind(
+            template("urn:iki:ui:lens:name:{lens}:action:connect"),
+            lens::actions::endpoint("connect"),
+        )
+        .bind(
+            template(&format!("{}{{iri}}", lens::actions::OPERATION)),
+            lens::actions::operation_endpoint(),
+        )
+        .bind(
             template(&format!("{}{{iri}}", lens::RESOURCE)),
             lens::resource_endpoint(),
         )
