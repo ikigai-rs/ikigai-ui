@@ -115,8 +115,8 @@ async fn definition(inv: &Invocation<'_>, lens: &str, action: &str) -> Result<Ac
 
 async fn write(inv: &Invocation<'_>, lens: &str, action: &str) -> Result<Representation, Error> {
     for key in inv.request.args.keys() {
-        if !matches!(key.as_str(), "selected" | "target")
-            && !(key == "relation" && action == "connect")
+        if !(matches!(key.as_str(), "selected" | "target")
+            || key == "relation" && action == "connect")
         {
             return Err(refuse(
                 key,
