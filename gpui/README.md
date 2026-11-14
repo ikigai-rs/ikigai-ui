@@ -29,6 +29,32 @@ they link libxkbcommon-x11, which GitHub's stock Ubuntu runner lacks and the sha
 install (Verification, below); a build without them says so and exits rather than run headless. No webview, JavaScript runtime or HTML renderer is embedded in the
 native windows.
 
+### README images
+
+Run `scripts/gpui-screenshots.sh` from the repository root in a desktop terminal. It starts
+only the fixture demo, captures its gallery, elements and contact windows in light and dark,
+and writes six compressed `docs/screenshots/gpui-{gallery,elements,contact}-{light,dark}.png`
+files. Install `oxipng` first; on macOS it also needs Swift, `screencapture`, an unlocked
+session and Screen Recording permission for the terminal. On Linux/FreeBSD it needs
+`xdotool`, ImageMagick (`import`) and an X11 `DISPLAY`; Xwayland in a Wayland desktop works.
+The script builds the `wayland` and `x11` features and unsets `WAYLAND_DISPLAY`, so the demo
+opens X11 windows that the capture tool can read. It captures only windows belonging to the demo
+process, one window per launch at `--size=640x640` (points; 960 × 960 pixels at 150%, which fits a 1080-pixel screen with its top bar and title bar), so captures never overlap and come
+out the same shape everywhere. A tiling window manager resizes windows as they open: turn tiling
+off first (on Pop!_OS, Super+Y or the tiling toggle in the top bar). The size must also fit the
+screen's work area at the display's scale.
+
+CI never runs this script: its test platform draws no pixels, and these images need a real
+window session. A failed or empty capture leaves the previous image set intact. After a
+successful run, inspect all six images for rendered text and the correct theme, and put the
+native gallery beside the HTML gallery in the root README with light/dark `<picture>` sources
+and alt text describing the visible content. Record who ran it and where in the PR.
+
+The unattended macOS worker tried on 2026-11-14: the native demo built, but no windows were
+listed as on-screen, Screen Recording access was denied, and a window-specific capture said
+“could not create image from window.” No native images were produced or substituted. A desktop
+session with screen access is still needed to finish the README comparison.
+
 ### Linux
 
 What it needs at run time (any desktop has them): libxkbcommon and libxkbcommon-x11, libxcb,
