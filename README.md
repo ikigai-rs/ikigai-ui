@@ -12,11 +12,24 @@ behavior, and the same tests.
 </picture>
 
 The HTML gallery above is generated from the demo's fixtures (`scripts/screenshots.sh`; light or
-dark follows your GitHub theme). The native GPUI windows are captured by
-`scripts/gpui-screenshots.sh` on a machine with an unlocked screen, as
-`docs/screenshots/gpui-*.png`. Native images are still pending a capture from such a session;
-see [native capture requirements](gpui/README.md#readme-images) before running the script.
-Once captured, the light and dark native gallery belongs beside the HTML gallery here.
+dark follows your GitHub theme). The same fixtures in native GPUI windows, captured by
+`scripts/gpui-screenshots.sh` on a Linux desktop (X11 through Xwayland). Each picture shows the
+top of its window; the pages continue below, as the HTML pictures show in full.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/gpui-gallery-dark.png">
+  <img src="docs/screenshots/gpui-gallery-light.png" width="480" alt="The native gallery window, top part: Gallery and Contact links, then the gallery's Text section with the heading Quarterly report, the sentence Three items need review. with a literal b tag shown as text, a Saved. status line, and the start of the Input section.">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/gpui-elements-dark.png">
+  <img src="docs/screenshots/gpui-elements-light.png" width="480" alt="The native elements window, top part: Gallery and Contact links, the heading Custom elements, a rating reading Service: 4 out of 5, then a Field notes card with the sentence The weekly survey of the river gauges, with the readings each station sent, and the start of its links.">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/gpui-contact-dark.png">
+  <img src="docs/screenshots/gpui-contact-light.png" width="480" alt="The native contact window, top part: Gallery and Contact links, then a bordered Contact form generated from a resource contract: its description, a required name field showing Type here… with the hint Who is writing., and the start of the required email field.">
+</picture>
+
+See [native capture requirements](gpui/README.md#readme-images) before running the script.
 
 | name | what you get |
 |---|---|
