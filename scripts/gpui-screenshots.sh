@@ -86,7 +86,7 @@ capture() { # window id, file
 # One window per launch, so windows never overlap a capture or get tiled beside each other, at
 # one size on every machine: taller than wide, like the HTML pictures. The size is in points and
 # must fit the screen's work area (the window manager shrinks a window that does not).
-size=640x880
+size=640x640
 for theme in light dark; do
   for screen in "${screens[@]}"; do
     port=$((20000 + RANDOM % 20000))
