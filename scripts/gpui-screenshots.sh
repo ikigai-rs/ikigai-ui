@@ -10,8 +10,9 @@ screens=(gallery elements contact)
 platform=$(uname)
 features=()
 
-need() {
-  command -v "$1" >/dev/null || { echo "missing required tool: $1" >&2; exit 1; }
+missing=()
+need() { # collect every missing tool, so one run names them all
+  command -v "$1" >/dev/null || missing+=("$1")
 }
 need cargo
 need oxipng # Always compress and strip metadata, not just when a tool happens to be installed.
@@ -19,6 +20,10 @@ case "$platform" in
   Darwin)
     need swift
     need screencapture
+    if [[ ${#missing[@]} -gt 0 ]]; then
+      echo "missing required tools: ${missing[*]} (oxipng: brew install oxipng)" >&2
+      exit 1
+    fi
     if ! swift -e 'import CoreGraphics; import Darwin; exit(CGPreflightScreenCaptureAccess() ? 0 : 1)'; then
       echo "Screen Recording access required: allow this terminal in macOS System Settings, then restart it." >&2
       exit 1
@@ -27,8 +32,15 @@ case "$platform" in
   Linux|FreeBSD)
     need xdotool
     need import
+    if [[ ${#missing[@]} -gt 0 ]]; then
+      echo "missing required tools: ${missing[*]}" >&2
+      echo "on Debian or Ubuntu: sudo apt install xdotool imagemagick oxipng (or: cargo install oxipng --locked)" >&2
+      exit 1
+    fi
     [[ -n "${DISPLAY:-}" ]] || { echo "X11 DISPLAY required (Xwayland works); run from a desktop terminal." >&2; exit 1; }
-    features=(--features x11)
+    # Both window backends, as gpui/README.md builds the demo; with WAYLAND_DISPLAY unset below,
+    # GPUI picks X11, whose windows xdotool can find and import can capture.
+    features=(--features wayland,x11)
     # import captures X11 windows. Use that same backend even in a Wayland desktop session.
     unset WAYLAND_DISPLAY
     ;;

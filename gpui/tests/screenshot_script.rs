@@ -51,7 +51,7 @@ fn capture_driver_requires_a_backend_screen_access_and_images() {
     let result = run();
     let args = fs::read_to_string(dir.join("build-args")).unwrap();
     assert!(
-        args.contains("--features x11"),
+        args.contains("--features wayland,x11"),
         "Linux capture needs a window backend: {args}"
     );
     assert!(
