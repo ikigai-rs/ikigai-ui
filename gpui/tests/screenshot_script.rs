@@ -30,7 +30,7 @@ fn capture_driver_requires_a_backend_screen_access_and_images() {
     executable(
         &dir.join("target/debug"),
         "ikigai-ui-demo-native",
-        "exec /bin/sleep 60",
+        "echo \"$*\" >> demo-args; exec /bin/sleep 60",
     );
     // Some screenshot tools return success without producing an image (observed on macOS).
     executable(&bin, "import", ":");
@@ -67,6 +67,11 @@ fn capture_driver_requires_a_backend_screen_access_and_images() {
         result.status.success(),
         "{}",
         String::from_utf8_lossy(&result.stderr)
+    );
+    let launches = fs::read_to_string(dir.join("demo-args")).unwrap();
+    assert!(
+        launches.lines().all(|l| l.starts_with("--size=")),
+        "every capture launch sets the window size: {launches}"
     );
     for theme in ["light", "dark"] {
         for screen in ["gallery", "elements", "contact"] {

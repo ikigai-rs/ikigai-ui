@@ -37,8 +37,12 @@ and writes six compressed `docs/screenshots/gpui-{gallery,elements,contact}-{lig
 files. Install `oxipng` first; on macOS it also needs Swift, `screencapture`, an unlocked
 session and Screen Recording permission for the terminal. On Linux/FreeBSD it needs
 `xdotool`, ImageMagick (`import`) and an X11 `DISPLAY`; Xwayland in a Wayland desktop works.
-The script builds the `x11` feature and unsets `WAYLAND_DISPLAY` so the demo and capture tool
-use the same display backend. It captures only windows belonging to the demo process.
+The script builds the `wayland` and `x11` features and unsets `WAYLAND_DISPLAY`, so the demo
+opens X11 windows that the capture tool can read. It captures only windows belonging to the demo
+process, one window per launch at `--size=640x880` (points), so captures never overlap and come
+out the same shape everywhere. A tiling window manager resizes windows as they open: turn tiling
+off first (on Pop!_OS, Super+Y or the tiling toggle in the top bar). The size must also fit the
+screen's work area at the display's scale.
 
 CI never runs this script: its test platform draws no pixels, and these images need a real
 window session. A failed or empty capture leaves the previous image set intact. After a

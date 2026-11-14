@@ -22,11 +22,27 @@ fn main() {
     ]));
     let kernel = Arc::new(ikigai_ui_demo::kernel(root));
     let web_kernel = kernel.clone();
-    let addr = std::env::args()
-        .nth(1)
+    // `--size=WxH` (logical points, anywhere in the arguments) sets every window's size; the
+    // screenshot script uses it so a capture is the same shape on every machine.
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let mut window_size = (820.0_f32, 760.0_f32);
+    if let Some(at) = args.iter().position(|a| a.starts_with("--size=")) {
+        let flag = args.remove(at);
+        window_size = flag["--size=".len()..]
+            .split_once('x')
+            .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
+            .filter(|&(w, h): &(f32, f32)| w >= 200.0 && h >= 200.0)
+            .unwrap_or_else(|| {
+                eprintln!("{flag}: expected --size=WIDTHxHEIGHT in points, each at least 200");
+                std::process::exit(2)
+            });
+    }
+    let addr = args
+        .first()
+        .cloned()
         .unwrap_or_else(|| "127.0.0.1:8080".into());
     // The second argument is a theme, as the HTML chooser names them; `auto` by default.
-    let theme = match std::env::args().nth(2) {
+    let theme = match args.get(1).cloned() {
         None => Theme::Auto,
         Some(name) => Theme::parse(&name).unwrap_or_else(|| {
             eprintln!(
@@ -38,7 +54,7 @@ fn main() {
     };
     // Optional screen names after the address and theme let the same native host open
     // a lensed demo directly; the three familiar windows remain the default.
-    let mut screens: Vec<String> = std::env::args().skip(3).collect();
+    let mut screens: Vec<String> = args.iter().skip(2).cloned().collect();
     if screens.is_empty() {
         screens = ["gallery", "elements", "contact"]
             .map(String::from)
@@ -73,7 +89,7 @@ fn main() {
     Application::new().run(move |cx: &mut App| {
         for screen in screens {
             let worker = worker.clone();
-            let bounds = Bounds::centered(None, size(px(820.), px(760.)), cx);
+            let bounds = Bounds::centered(None, size(px(window_size.0), px(window_size.1)), cx);
             cx.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),

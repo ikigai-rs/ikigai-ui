@@ -83,31 +83,35 @@ capture() { # window id, file
   esac
 }
 
+# One window per launch, so windows never overlap a capture or get tiled beside each other, at
+# one size on every machine: taller than wide, like the HTML pictures. The size is in points and
+# must fit the screen's work area (the window manager shrinks a window that does not).
+size=640x880
 for theme in light dark; do
-  port=$((20000 + RANDOM % 20000))
-  target/debug/ikigai-ui-demo-native "127.0.0.1:$port" "$theme" &
-  demo=$!
-  ids=()
-  for _ in $(seq 1 60); do
-    ids=($(windows "$demo" || true))
-    [[ ${#ids[@]} -ge ${#screens[@]} ]] && break
-    kill -0 "$demo" 2>/dev/null || { echo "native demo exited before opening its windows" >&2; exit 1; }
-    sleep 0.5
-  done
-  if [[ ${#ids[@]} -ne ${#screens[@]} ]]; then
-    echo "found ${#ids[@]} window(s) of ${#screens[@]} for $theme; is there an unlocked screen?" >&2
-    exit 1
-  fi
-  sleep 3 # the worker's first load and the palette read
-  for i in "${!screens[@]}"; do
-    file="$staging/gpui-${screens[$i]}-$theme.png"
-    capture "${ids[$i]}" "$file"
+  for screen in "${screens[@]}"; do
+    port=$((20000 + RANDOM % 20000))
+    target/debug/ikigai-ui-demo-native "--size=$size" "127.0.0.1:$port" "$theme" "$screen" &
+    demo=$!
+    ids=()
+    for _ in $(seq 1 60); do
+      ids=($(windows "$demo" || true))
+      [[ ${#ids[@]} -ge 1 ]] && break
+      kill -0 "$demo" 2>/dev/null || { echo "native demo exited before opening its window" >&2; exit 1; }
+      sleep 0.5
+    done
+    if [[ ${#ids[@]} -lt 1 ]]; then
+      echo "found no window for $screen ($theme); is there an unlocked screen?" >&2
+      exit 1
+    fi
+    sleep 3 # the worker's first load and the palette read
+    file="$staging/gpui-$screen-$theme.png"
+    capture "${ids[0]}" "$file"
     # screencapture can exit successfully after saying it could not create an image.
-    [[ -s "$file" ]] || { echo "no image captured for ${screens[$i]} ($theme); check screen access" >&2; exit 1; }
+    [[ -s "$file" ]] || { echo "no image captured for $screen ($theme); check screen access" >&2; exit 1; }
     oxipng -q -o 4 --strip safe "$file"
+    kill "$demo"; wait "$demo" 2>/dev/null || true
+    demo=
   done
-  kill "$demo"; wait "$demo" 2>/dev/null || true
-  demo=
 done
 # Failed captures leave the previously committed set alone.
 for file in "$staging"/*.png; do
