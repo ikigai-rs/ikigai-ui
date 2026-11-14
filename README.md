@@ -13,7 +13,10 @@ behavior, and the same tests.
 
 The HTML gallery above is generated from the demo's fixtures (`scripts/screenshots.sh`; light or
 dark follows your GitHub theme). The native GPUI windows are captured by
-`scripts/gpui-screenshots.sh` on a machine with a screen, as `docs/screenshots/gpui-*.png`.
+`scripts/gpui-screenshots.sh` on a machine with an unlocked screen, as
+`docs/screenshots/gpui-*.png`. Native images are still pending a capture from such a session;
+see [native capture requirements](gpui/README.md#readme-images) before running the script.
+Once captured, the light and dark native gallery belongs beside the HTML gallery here.
 
 | name | what you get |
 |---|---|
