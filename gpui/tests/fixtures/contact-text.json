@@ -1,0 +1,18 @@
+[
+  "Contact",
+  "Send us a message. Generated from a model, not written by hand: a resource's contract, or an OpenAPI document (one projection of it); a SHACL shape or a JSON Schema would serve the same way.",
+  "name *",
+  "Who is writing.",
+  "email *",
+  "Where to answer you.",
+  "topic",
+  "○ question",
+  "○ feedback",
+  "○ support",
+  "What it is about.",
+  "message *",
+  "What you want to say.",
+  "Submit",
+  "",
+  "No messages yet."
+]
