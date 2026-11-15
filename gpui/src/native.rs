@@ -137,6 +137,8 @@ struct FormState {
 pub struct Screen {
     worker: Worker,
     snapshot: Option<Snapshot>,
+    #[cfg(test)]
+    rendered_text: std::cell::RefCell<Vec<gpui::TextLayout>>,
     loading: Option<Pending<Snapshot>>,
     message: String,
     inputs: BTreeMap<String, Entity<TextInput>>,
@@ -212,6 +214,8 @@ impl Screen {
         Self {
             worker,
             snapshot: None,
+            #[cfg(test)]
+            rendered_text: Default::default(),
             loading,
             message: "Loading…".into(),
             inputs: BTreeMap::new(),
@@ -780,12 +784,12 @@ impl Screen {
                 return body
                     .text_size(px((30 - level * 2) as f32))
                     .font_weight(gpui::FontWeight::BOLD)
-                    .child(text(node, "content").unwrap_or_default().to_string())
+                    .child(self.render_text(text(node, "content").unwrap_or_default().to_string()))
                     .into_any_element();
             }
             "text" | "status" => {
                 return body
-                    .child(text(node, "content").unwrap_or_default().to_string())
+                    .child(self.render_text(text(node, "content").unwrap_or_default().to_string()))
                     .into_any_element()
             }
             "field" => {
@@ -801,7 +805,11 @@ impl Screen {
                         .rounded_md()
                         .border_color(transparent_black())
                         .focus(move |s| s.border_color(colors.focus))
-                        .child(format!("{} {}", if checked { "☑" } else { "☐" }, label()))
+                        .child(self.render_text(format!(
+                            "{} {}",
+                            if checked { "☑" } else { "☐" },
+                            label()
+                        )))
                         .cursor_pointer()
                         .on_click(cx.listener(move |_, _, window, cx| {
                             window.focus(&focus);
@@ -828,7 +836,11 @@ impl Screen {
                         .child(
                             div()
                                 .id(gpui::SharedString::from(format!("label:{path}")))
-                                .child(format!("{}{}", label(), if required { " *" } else { "" }))
+                                .child(self.render_text(format!(
+                                    "{}{}",
+                                    label(),
+                                    if required { " *" } else { "" }
+                                )))
                                 .cursor_pointer()
                                 .on_click(move |_, window, _| window.focus(&focus)),
                         )
@@ -840,29 +852,32 @@ impl Screen {
                 // selection, edged by `line` with its label as the legend; the chosen option is
                 // filled (●) and the others empty (○), and the ring is the group's.
                 let focus = self.focus[path].clone();
-                let mut group = div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(div().font_weight(gpui::FontWeight::BOLD).child(label()));
+                let mut group = div().flex().flex_col().gap_1().child(
+                    div()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .child(self.render_text(label())),
+                );
                 for (i, option) in node.children.iter().enumerate() {
                     let selected = text(option, "value") == Some(self.choices[path].as_str());
                     let (click_node, click_path, click_focus) =
                         (node.clone(), path.to_string(), focus.clone());
-                    group = group.child(
-                        div()
-                            .id(gpui::SharedString::from(format!("{path}/{i}")))
-                            .flex()
-                            .gap_2()
-                            .min_h(px(24.))
-                            .cursor_pointer()
-                            .child(if selected { "●" } else { "○" })
-                            .child(text(option, "label").unwrap_or_default().to_string())
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                window.focus(&click_focus);
-                                this.choose(&click_node, &click_path, i, cx);
-                            })),
-                    );
+                    group =
+                        group.child(
+                            div()
+                                .id(gpui::SharedString::from(format!("{path}/{i}")))
+                                .flex()
+                                .gap_2()
+                                .min_h(px(24.))
+                                .cursor_pointer()
+                                .child(self.render_text(if selected { "●" } else { "○" }))
+                                .child(self.render_text(
+                                    text(option, "label").unwrap_or_default().to_string(),
+                                ))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    window.focus(&click_focus);
+                                    this.choose(&click_node, &click_path, i, cx);
+                                })),
+                        );
                 }
                 let (key_node, key_path) = (node.clone(), path.to_string());
                 body = body.child(
@@ -887,7 +902,7 @@ impl Screen {
                 );
             }
             "choice" => {
-                body = body.child(label());
+                body = body.child(self.render_text(label()));
                 for (i, option) in node.children.iter().enumerate() {
                     let value = text(option, "value").unwrap_or_default().to_string();
                     let selected = self.choices[path] == value;
@@ -909,11 +924,11 @@ impl Screen {
                         .border_color(edge)
                         .bg(ground)
                         .text_color(ink)
-                        .child(format!(
+                        .child(self.render_text(format!(
                             "{} {}",
                             if selected { "●" } else { "○" },
                             text(option, "label").unwrap_or_default()
-                        ));
+                        )));
                     body = body.child(
                         ring(option_view, &focus, i, colors)
                             .cursor_pointer()
@@ -942,11 +957,11 @@ impl Screen {
                     .rounded_md()
                     .bg(colors.accent)
                     .text_color(colors.accent_fg)
-                    .child(label());
+                    .child(self.render_text(label()));
                 let busy =
                     form.is_some_and(|(_, form_path)| self.forms[form_path].pending.is_some());
                 if busy {
-                    caption = caption.child(" (Submitting…)");
+                    caption = caption.child(self.render_text(" (Submitting…)"));
                 }
                 let mut button = ring(
                     caption,
@@ -985,7 +1000,7 @@ impl Screen {
                 let focus = self.focus[path].clone();
                 return body
                     .track_focus(&focus)
-                    .child(label())
+                    .child(self.render_text(label()))
                     .text_color(colors.accent)
                     .cursor_pointer()
                     .p(px(2.))
@@ -1004,13 +1019,13 @@ impl Screen {
                     }))
                     .into_any_element();
             }
-            "option" => return body.child(label()).into_any_element(),
+            "option" => return body.child(self.render_text(label())).into_any_element(),
             ikigai_ui::meter::IRI => {
                 let reading = match ikigai_ui::meter::Reading::parse(node) {
                     Ok(reading) => reading,
                     Err(error) => {
                         return body
-                            .child(format!("{}: {error}", label()))
+                            .child(self.render_text(format!("{}: {error}", label())))
                             .into_any_element()
                     }
                 };
@@ -1040,21 +1055,25 @@ impl Screen {
                         div()
                             .flex_1()
                             .min_w(px(200.))
-                            .child(reading.description(node)),
+                            .child(self.render_text(reading.description(node))),
                     )
                     .into_any_element();
             }
             _ => unreachable!("Snapshot rejects unsupported kinds"),
         }
         if let Some(description) = text(node, "description") {
-            body = body.child(description.to_string());
+            body = body.child(self.render_text(description.to_string()));
         }
         let error = form
             .and_then(|(_, path)| self.forms[path].feedback.fields.get(text(node, "name")?))
             .map(String::as_str)
             .or_else(|| text(node, "error"));
         if let Some(error) = error {
-            body = body.child(div().text_color(colors.danger).child(error.to_string()));
+            body = body.child(
+                div()
+                    .text_color(colors.danger)
+                    .child(self.render_text(error.to_string())),
+            );
         }
         body.into_any_element()
     }
@@ -1085,7 +1104,7 @@ impl Screen {
                 .w(px(width as f32))
                 .h(px(height as f32))
                 .bg(colors.bg)
-                .child("Drawing the scene…")
+                .child(self.render_text("Drawing the scene…"))
                 .into_any_element(),
         };
         let key_path = path.to_string();
@@ -1103,9 +1122,11 @@ impl Screen {
         }))
         .on_click(move |_, window, _| window.focus(&click_focus));
         body = body
-            .child(text(node, "label").unwrap_or_default().to_string())
+            .child(self.render_text(text(node, "label").unwrap_or_default().to_string()))
             .child(canvas)
-            .child("Arrows orbit, + and - zoom, N and Shift+N select a node, Escape clears.");
+            .child(self.render_text(
+                "Arrows orbit, + and - zoom, N and Shift+N select a node, Escape clears.",
+            ));
         if let Some(replacement) = node.replacement.as_deref() {
             body = body.child(self.walk(replacement, &format!("{path}/replacement"), form, cx));
         }
@@ -1135,8 +1156,8 @@ impl Screen {
                 .gap_2()
                 .p_1()
                 .font_weight(gpui::FontWeight::BOLD)
-                .child(if open { "▾" } else { "▸" })
-                .child(summary),
+                .child(self.render_text(if open { "▾" } else { "▸" }))
+                .child(self.render_text(summary)),
             &focus,
             gpui::SharedString::from(format!("{path}:summary")),
             colors,
@@ -1154,7 +1175,7 @@ impl Screen {
         if open {
             let mut inner = div().flex().flex_col().gap_2().pl_6();
             if let Some(text) = text(node, "body") {
-                inner = inner.child(text.to_string());
+                inner = inner.child(self.render_text(text.to_string()));
             }
             for (i, child) in node.children.iter().enumerate() {
                 inner = inner.child(self.walk(child, &format!("{path}/{i}"), form, cx));
@@ -1186,14 +1207,24 @@ impl Screen {
                     .child(self.walk(child, &format!("{path}/{i}"), form, cx)),
             );
         }
-        node_body(path)
-            .child(text(node, "label").unwrap_or_default().to_string())
-            .child(columns)
-            .into_any_element()
+        node_body(path).child(columns).into_any_element()
     }
 
-    /// A form, group, list, nav or table: its label, then its children, a list's as items and a
-    /// table's as rows of cells.
+    /// Keep handles to the actual GPUI text layouts in window tests, so assertions inspect
+    /// the text emitted by the renderer rather than reimplementing the model walk.
+    fn render_text(&self, text: impl Into<gpui::SharedString>) -> gpui::StyledText {
+        let element = gpui::StyledText::new(text);
+        #[cfg(test)]
+        self.rendered_text
+            .borrow_mut()
+            .push(element.layout().clone());
+        element
+    }
+
+    /// Containers follow the HTML face: form headings and table captions are visible;
+    /// group, list and nav labels name their regions without an extra text line.
+    /// GPUI 0.2.2 has no accessibility-name API; the names remain in the snapshot until
+    /// the toolkit can expose them (see README's accessibility-tree limitation).
     fn container(
         &self,
         node: &Node,
@@ -1203,11 +1234,13 @@ impl Screen {
     ) -> gpui::AnyElement {
         let colors = self.colors;
         let mut body = node_body(path);
-        body = body.child(if node.kind == "table" {
-            text(node, "caption").unwrap_or_default().to_string()
-        } else {
-            text(node, "label").unwrap_or_default().to_string()
-        });
+        if let Some(caption) = match node.kind.as_str() {
+            "table" => text(node, "caption"),
+            "form" => text(node, "label"),
+            _ => None,
+        } {
+            body = body.child(self.render_text(caption.to_string()));
+        }
         if node.kind == "form" {
             body = body.p_4().border_1().border_color(colors.line).rounded_md();
         }
@@ -1217,7 +1250,7 @@ impl Screen {
             form
         };
         if let Some(description) = text(node, "description") {
-            body = body.child(description.to_string());
+            body = body.child(self.render_text(description.to_string()));
         }
         for (i, child) in node.children.iter().enumerate() {
             if node.kind == "table" {
@@ -1244,7 +1277,11 @@ impl Screen {
             } else {
                 let element = self.walk(child, &format!("{path}/{i}"), form, cx);
                 if node.kind == "list" {
-                    let item = div().flex().gap_2().child("•").child(element);
+                    let item = div()
+                        .flex()
+                        .gap_2()
+                        .child(self.render_text("•"))
+                        .child(element);
                     body = body.child(role(item, child, &colors));
                 } else {
                     body = body.child(element);
@@ -1253,7 +1290,7 @@ impl Screen {
         }
         if node.kind == "form" {
             let state = &self.forms[path];
-            body = body.child(state.feedback.message.clone());
+            body = body.child(self.render_text(state.feedback.message.clone()));
         }
         body.into_any_element()
     }
@@ -1327,6 +1364,8 @@ fn frame_image(
 
 impl Render for Screen {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(test)]
+        self.rendered_text.borrow_mut().clear();
         if std::mem::take(&mut self.refocus)
             && !self.tab_order.iter().any(|(_, f)| f.is_focused(window))
         {
@@ -1433,6 +1472,98 @@ mod tests {
 
     fn painted(palette: &ikigai_ui::palette::Palette) -> Colors {
         Colors::new(&Tokens::compiled(palette))
+    }
+
+    #[gpui::test]
+    fn fixture_labels_are_visible_once(cx: &mut TestAppContext) {
+        for (name, expected) in [
+            (
+                "gallery",
+                vec![
+                    "Text",
+                    "Input",
+                    "Navigation",
+                    "Email *",
+                    "Name",
+                    "Save",
+                    "Totals",
+                ],
+            ),
+            ("elements", vec!["Service: 4 out of 5", "Field notes"]),
+            ("contact", vec!["Contact", "name *", "email *", "Submit"]),
+        ] {
+            let (screen, cx) = cx.add_window_view(|window, cx| {
+                Screen::new(demo_worker(None), name, Theme::Light, window, cx)
+            });
+            settle(&screen, cx);
+            screen.read_with(cx, |s, _| {
+                let runs: Vec<_> = s
+                    .rendered_text
+                    .borrow()
+                    .iter()
+                    .map(|layout| layout.text())
+                    .collect();
+                let fixture = match name {
+                    "gallery" => include_str!("../tests/fixtures/gallery-text.json"),
+                    "elements" => include_str!("../tests/fixtures/elements-text.json"),
+                    "contact" => include_str!("../tests/fixtures/contact-text.json"),
+                    _ => unreachable!(),
+                };
+                let expected_runs: Vec<String> = serde_json::from_str(fixture).unwrap();
+                assert_eq!(runs, expected_runs, "{name}: static GPUI text layouts");
+                for label in expected {
+                    assert_eq!(
+                        runs.iter().filter(|run| run.as_str() == label).count(),
+                        1,
+                        "{name}: {label:?} must appear once in rendered text: {runs:?}"
+                    );
+                }
+                if name == "elements" {
+                    assert!(!runs.iter().any(|run| run == "Service"), "{runs:?}");
+                }
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn column_regions_keep_names_in_the_model_and_control_labels_on_screen(
+        cx: &mut TestAppContext,
+    ) {
+        let (screen, cx) = cx.add_window_view(|window, cx| {
+            Screen::new(demo_worker(None), "gallery", Theme::Light, window, cx)
+        });
+        settle(&screen, cx);
+        let snapshot = Snapshot::from_face(br#"{
+            "kind":"group", "properties":{"label":"Settings"},
+            "hint":{"urn:iki:ui:hint:group:columns":"columns"},
+            "children":[
+                {"kind":"heading","properties":{"content":"Settings","level":2}},
+                {"kind":"field","properties":{"label":"Enabled","name":"enabled","input":"checkbox"}},
+                {"kind":"choice","properties":{"label":"Mode","name":"mode"},"children":[
+                    {"kind":"option","properties":{"label":"Auto","value":"auto"}}
+                ]}
+            ]
+        }"#).unwrap();
+        assert!(ikigai_ui::model::is_columns(snapshot.root()));
+        screen.update(cx, |s, cx| {
+            s.install(snapshot.root(), "/", cx);
+            s.snapshot = Some(snapshot);
+            cx.notify();
+        });
+        cx.run_until_parked();
+        screen.read_with(cx, |s, _| {
+            assert_eq!(
+                text(s.snapshot.as_ref().unwrap().root(), "label"),
+                Some("Settings")
+            );
+            let runs: Vec<_> = s
+                .rendered_text
+                .borrow()
+                .iter()
+                .map(|layout| layout.text())
+                .collect();
+            assert_eq!(runs, ["Settings", "☐ Enabled", "Mode", "○ Auto"]);
+        });
     }
 
     #[gpui::test]
