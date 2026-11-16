@@ -1,0 +1,18 @@
+    Updating git repository `https://github.com/zed-industries/zed`
+    Updating git repository `https://github.com/zed-industries/oo7`
+    Updating git repository `https://github.com/zed-industries/scap`
+    Updating git repository `https://github.com/zed-industries/xim-rs.git`
+    Updating crates.io index
+    Updating git repository `https://github.com/gfx-rs/wgpu`
+    Updating git repository `https://github.com/zed-industries/font-kit`
+error: failed to select a version for `gpui`.
+    ... required by package `ikigai-ui-gpui v0.1.0 (/Users/agent/work/ikigai-ui/item-3779/gpui)`
+    ... which satisfies path dependency `ikigai-ui-gpui` (locked to 0.1.0) of package `ikigai-reader v0.1.0 (/Users/agent/work/ikigai-ui/item-3779/apps/reader)`
+versions that meet the requirements `*` are: 0.46.0
+
+package `ikigai-ui-gpui` depends on `gpui` with feature `test-support` but `gpui` does not have that feature.
+help: available features: default, fontdb, memmap-fonts, rustybuzz, system-fonts, text, unicode-bidi, unicode-script, unicode-vo
+
+
+failed to select a version for `gpui` which could resolve this conflict
+EXIT 101

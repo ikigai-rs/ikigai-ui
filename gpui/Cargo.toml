@@ -35,8 +35,8 @@ futures = "0.3"
 # The window code, on every target GPUI has a window platform for. Each target's own table below
 # names that target's backends; this one adds nothing to `gpui`'s features but the shaders.
 [target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
-gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders"] }
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["runtime_shaders"] }
 unicode-segmentation = "1.12"
 # The demo's HTML door, beside its windows: one kernel, one store.
 ikigai-ui-demo = { path = "../demo" }
@@ -58,22 +58,22 @@ libc = "=0.2.189"
 # ★ `font-kit` is GPUI's macOS text system. It is a DEFAULT feature, so turning defaults off
 # above dropped it, and GPUI then installs `NoopTextSystem`: every window drew its boxes and no
 # text at all (headings, labels, button captions), while the test platform's snapshots passed.
-gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders", "font-kit"] }
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["runtime_shaders", "font-kit"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # ★ The Windows window platform needs no feature (its text system is DirectWrite, always on);
 # `windows-manifest` embeds GPUI's application manifest (per-monitor DPI awareness, the common
 # controls GPUI's dialogs use), which GPUI's own binaries carry and GPUI's defaults turn on.
-gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false, features = ["windows-manifest"] }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders"] }
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["windows-manifest"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["runtime_shaders"] }
 
 # GPUI test-support turns on `wayland` and `x11`, so it links libxkbcommon-x11, which the stock
 # Linux runner lacks (README, "Verification"). The window tests run on macOS; they pass on Linux
 # too (lawnboy, ledger #3526) once the shared CI can install that library.
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false, features = ["test-support"] }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders", "test-support"] }
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["test-support"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["runtime_shaders", "test-support"] }
 
 [dev-dependencies]
 ikigai-ui-demo = { path = "../demo" }

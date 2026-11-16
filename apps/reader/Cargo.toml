@@ -36,16 +36,16 @@ pulldown-cmark = { version = "0.12", default-features = false }
 # FreeBSD take theirs through the `wayland` and `x11` features above.
 [target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
 ikigai-ui-gpui = { path = "../../gpui" }
-gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders"] }
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["runtime_shaders"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders", "font-kit"] }
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["runtime_shaders", "font-kit"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false, features = ["windows-manifest"] }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders"] }
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["windows-manifest"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["runtime_shaders"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 age = { version = "0.11.1", default-features = false }
@@ -54,8 +54,8 @@ ikigai-vocab = "0.3"
 
 # GPUI's test platform, for the window test (macOS only, as ikigai-ui-gpui's are).
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false, features = ["test-support"] }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders", "test-support"] }
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["test-support"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", default-features = false, features = ["runtime_shaders", "test-support"] }
 
 [[bin]]
 name = "ikigai-reader"

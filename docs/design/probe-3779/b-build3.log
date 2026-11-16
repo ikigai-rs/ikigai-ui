@@ -1,0 +1,137 @@
+    Updating crates.io index
+    Updating git repository `https://github.com/zed-industries/zed`
+    Updating git repository `https://github.com/zed-industries/scap`
+    Updating git repository `https://github.com/zed-industries/oo7`
+    Updating git repository `https://github.com/zed-industries/xim-rs.git`
+    Updating git repository `https://github.com/gfx-rs/wgpu`
+    Updating git repository `https://github.com/zed-industries/font-kit`
+      Adding bench_metrics v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+    Removing bit-set v0.10.0
+    Removing bit-vec v0.9.1
+    Removing cocoa v0.25.0
+    Removing cocoa-foundation v0.1.2
+      Adding collections v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+    Removing core-graphics v0.23.2
+    Removing core-graphics-helmer-fork v0.24.0
+      Adding derive_refineable v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+    Updating dirs v5.0.1 -> v6.0.0
+    Updating dirs-sys v0.4.1 -> v0.5.0
+    Removing dispatch v0.2.0
+    Updating glow v0.17.0 -> v0.18.0
+      Adding gpui v0.2.2 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+    Removing gpui-pre v0.3.13
+    Removing gpui-pre-apple v0.3.13
+    Removing gpui-pre-bench-metrics v0.3.13
+    Removing gpui-pre-collections v0.3.13
+    Removing gpui-pre-derive-refineable v0.3.13
+    Removing gpui-pre-http-client v0.3.13
+    Removing gpui-pre-ios v0.3.13
+    Removing gpui-pre-linux v0.3.13
+    Removing gpui-pre-macos v0.3.13
+    Removing gpui-pre-macros v0.3.13
+    Removing gpui-pre-platform v0.3.13
+    Removing gpui-pre-refineable v0.3.13
+    Removing gpui-pre-scheduler v0.3.13
+    Removing gpui-pre-shared-string v0.3.13
+    Removing gpui-pre-sum-tree v0.3.13
+    Removing gpui-pre-util v0.3.13
+    Removing gpui-pre-web v0.3.13
+    Removing gpui-pre-wgpu v0.3.13
+    Removing gpui-pre-windows v0.3.13
+    Removing gpui-pre-ztracing v0.3.13
+    Removing gpui-pre-ztracing-macro v0.3.13
+      Adding gpui_apple v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding gpui_ios v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding gpui_linux v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding gpui_macos v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding gpui_macros v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding gpui_platform v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding gpui_shared_string v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding gpui_util v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding gpui_web v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding gpui_wgpu v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding gpui_windows v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding http_client v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding macro_rules_attribute v0.2.3
+      Adding macro_rules_attribute-proc_macro v0.2.3
+    Removing naga v30.0.2
+      Adding naga v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+    Removing naga-types v30.0.2
+      Adding naga-types v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+    Removing objc-foundation v0.1.1
+    Removing objc_exception v0.1.2
+    Removing objc_id v0.1.1
+    Removing oo7 v0.6.0
+      Adding oo7 v0.6.0 (https://github.com/zed-industries/oo7?rev=731c1215edb6905876c6137ab300428c7b8d7c13#731c1215) (requires Rust 1.92)
+      Adding pastey v0.2.3
+    Updating redox_users v0.4.6 -> v0.5.3
+      Adding refineable v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding scheduler v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+    Removing screencapturekit v0.2.8
+    Removing screencapturekit-sys v0.2.8
+      Adding sum_tree v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+ Downgrading taffy v0.15.1 -> v0.15.0 (available: v0.15.1)
+    Removing tao-core-video-sys v0.2.0
+ Downgrading unicode-properties v0.1.5 -> v0.1.3
+    Removing wgpu v30.0.2
+      Adding wgpu v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+    Removing wgpu-core v30.0.2
+      Adding wgpu-core v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+    Removing wgpu-core-deps-apple v30.0.2
+      Adding wgpu-core-deps-apple v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+    Removing wgpu-core-deps-emscripten v30.0.2
+      Adding wgpu-core-deps-emscripten v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+      Adding wgpu-core-deps-linux-android-bsd v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+    Removing wgpu-core-deps-wasm v30.0.2
+      Adding wgpu-core-deps-wasm v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+      Adding wgpu-core-deps-windows v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+    Removing wgpu-core-deps-windows-linux-android v30.0.2
+    Removing wgpu-hal v30.0.2
+      Adding wgpu-hal v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+    Removing wgpu-naga-bridge v30.0.2
+      Adding wgpu-naga-bridge v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+      Adding wgpu-sync v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+    Removing wgpu-types v30.0.2
+      Adding wgpu-types v30.0.0 (https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d)
+    Removing xim-ctext v0.3.0
+      Adding xim-ctext v0.3.0 (https://github.com/zed-industries/xim-rs.git?rev=16f35a2c881b815a2b6cdfd6687988e84f8447d8#16f35a2c)
+    Removing xim-parser v0.2.2
+      Adding xim-parser v0.2.1 (https://github.com/zed-industries/xim-rs.git?rev=16f35a2c881b815a2b6cdfd6687988e84f8447d8#16f35a2c)
+    Removing zed-font-kit v0.14.1-zed
+      Adding zed-font-kit v0.14.1-zed (https://github.com/zed-industries/font-kit?rev=94b0f28166665e8fd2f53ff6d268a14955c82269#94b0f281)
+    Removing zed-scap v0.0.8-zed
+      Adding zed-scap v0.0.8-zed (https://github.com/zed-industries/scap?rev=b5c86ec58dd4b6b7732bf6ac8be03d6b1f190a82#b5c86ec5)
+    Removing zed-xim v0.4.0-zed
+      Adding zed-xim v0.4.0-zed (https://github.com/zed-industries/xim-rs.git?rev=16f35a2c881b815a2b6cdfd6687988e84f8447d8#16f35a2c)
+      Adding ztracing v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+      Adding ztracing_macro v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+note: pass `--verbose` to see 17 unchanged dependencies behind latest
+ Downloading crates ...
+  Downloaded unicode-properties v0.1.3
+  Downloaded taffy v0.15.0
+   Compiling ztracing v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling unicode-properties v0.1.3
+   Compiling ztracing_macro v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling dirs-sys v0.5.0
+   Compiling gpui_util v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling derive_refineable v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling zed-font-kit v0.14.1-zed (https://github.com/zed-industries/font-kit?rev=94b0f28166665e8fd2f53ff6d268a14955c82269#94b0f281)
+   Compiling gpui v0.2.2 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling scheduler v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling gpui_shared_string v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling http_client v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling gpui_apple v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling gpui_macros v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling taffy v0.15.0
+   Compiling dirs v6.0.0
+   Compiling collections v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling rustybuzz v0.20.1
+   Compiling refineable v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling sum_tree v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling usvg v0.46.0
+   Compiling resvg v0.46.0
+   Compiling gpui_macos v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling gpui_platform v0.1.0 (https://github.com/zed-industries/zed?rev=125ca8672e928b19a62c2e4b761fb29fe2a34ae3#125ca867)
+   Compiling ikigai-ui-gpui v0.1.0 (/Users/agent/work/ikigai-ui/item-3779/gpui)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.53s
+EXIT 0
