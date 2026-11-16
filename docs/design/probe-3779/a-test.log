@@ -1,0 +1,186 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/debug/deps/ikigai_ui_gpui-2824a02b12e6e78a)
+
+running 31 tests
+test native::input::tests::recolor_paints_only_the_selected_bytes ... ok
+test native::tests::a_scene_takes_focus_and_its_selection_is_announced ... FAILED
+test native::tests::a_page_link_loads_any_screen_the_kernel_names_and_refuses_the_rest ... FAILED
+test native::tests::fixture_labels_are_visible_once ... FAILED
+test native::tests::column_regions_keep_names_in_the_model_and_control_labels_on_screen ... FAILED
+test native::tests::gallery_walks_every_native_kind_and_boolean_fields_toggle ... FAILED
+test native::tests::each_theme_paints_its_palettes_ground_and_text ... FAILED
+test native::tests::a_hosts_palette_override_reaches_the_native_face ... FAILED
+test native::tests::contact_inputs_submit_and_keep_values_after_field_refusal ... FAILED
+test native::tests::a_late_old_load_cannot_replace_the_newer_snapshot ... FAILED
+test native::tests::a_radio_choice_is_one_focusable_group_whose_arrows_move_the_selection ... FAILED
+test native::tests::auto_follows_the_window_appearance_and_explicit_themes_hold ... FAILED
+test native::tests::a_disclosure_opens_and_closes_in_the_window_and_its_body_joins_the_tab_order ... FAILED
+test native::input::tests::edits_do_not_hit_test_unicode_with_an_old_ascii_layout ... ok
+test theme::tests::auto_follows_the_appearance_and_explicit_themes_do_not ... ok
+test native::input::tests::ime_selection_replaces_the_direction_of_a_backward_selection ... ok
+test theme::tests::every_compiled_palette_parses_to_its_own_values ... ok
+test theme::tests::a_palette_below_the_floor_is_refused_as_the_html_face_refuses_it ... ok
+test theme::tests::a_palette_missing_a_token_is_refused ... ok
+test native::tests::meters_draw_natively_in_each_palette_without_taking_keyboard_focus ... FAILED
+test native::tests::meters_draw_their_text_expansion_when_native_support_is_disabled ... FAILED
+test native::tests::list_items_and_table_rows_keep_their_roles_on_the_native_face ... FAILED
+test native::tests::with_the_native_disclosure_off_the_window_draws_its_expansion_always_open ... FAILED
+test native::tests::without_the_claim_the_radio_choice_keeps_its_options ... FAILED
+test native::tests::window_accepts_native_text_during_a_five_second_composition ... FAILED
+test native::tests::structured_lenses_draw_and_board_get_forms_page_and_bind_facets ... FAILED
+test native::tests::operations_prefill_native_forms_and_keep_refusals_at_the_gesture ... FAILED
+test native::tests::every_gpui_see_check_with_a_probe_holds ... FAILED
+test native::tests::a_lensed_views_chooser_is_a_native_radio_group ... FAILED
+test native::tests::a_constructed_dashboard_is_an_ordinary_native_screen ... FAILED
+test native::input::tests::grapheme_deletion_and_large_multiline_paste_keep_valid_ranges ... ok
+
+failures:
+
+---- native::tests::a_scene_takes_focus_and_its_selection_is_announced stdout ----
+
+thread 'native::tests::a_scene_takes_focus_and_its_selection_is_announced' (39231699) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::a_page_link_loads_any_screen_the_kernel_names_and_refuses_the_rest stdout ----
+
+thread 'native::tests::a_page_link_loads_any_screen_the_kernel_names_and_refuses_the_rest' (39231697) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::fixture_labels_are_visible_once stdout ----
+
+thread 'native::tests::fixture_labels_are_visible_once' (39231705) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::column_regions_keep_names_in_the_model_and_control_labels_on_screen stdout ----
+
+thread 'native::tests::column_regions_keep_names_in_the_model_and_control_labels_on_screen' (39231701) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::gallery_walks_every_native_kind_and_boolean_fields_toggle stdout ----
+
+thread 'native::tests::gallery_walks_every_native_kind_and_boolean_fields_toggle' (39231706) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::each_theme_paints_its_palettes_ground_and_text stdout ----
+
+thread 'native::tests::each_theme_paints_its_palettes_ground_and_text' (39231703) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::a_hosts_palette_override_reaches_the_native_face stdout ----
+
+thread 'native::tests::a_hosts_palette_override_reaches_the_native_face' (39231694) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::contact_inputs_submit_and_keep_values_after_field_refusal stdout ----
+
+thread 'native::tests::contact_inputs_submit_and_keep_values_after_field_refusal' (39231702) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::a_late_old_load_cannot_replace_the_newer_snapshot stdout ----
+
+thread 'native::tests::a_late_old_load_cannot_replace_the_newer_snapshot' (39231695) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- native::tests::a_radio_choice_is_one_focusable_group_whose_arrows_move_the_selection stdout ----
+
+thread 'native::tests::a_radio_choice_is_one_focusable_group_whose_arrows_move_the_selection' (39231698) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::auto_follows_the_window_appearance_and_explicit_themes_hold stdout ----
+
+thread 'native::tests::auto_follows_the_window_appearance_and_explicit_themes_hold' (39231700) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::a_disclosure_opens_and_closes_in_the_window_and_its_body_joins_the_tab_order stdout ----
+
+thread 'native::tests::a_disclosure_opens_and_closes_in_the_window_and_its_body_joins_the_tab_order' (39231693) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::meters_draw_natively_in_each_palette_without_taking_keyboard_focus stdout ----
+
+thread 'native::tests::meters_draw_natively_in_each_palette_without_taking_keyboard_focus' (39231708) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::meters_draw_their_text_expansion_when_native_support_is_disabled stdout ----
+
+thread 'native::tests::meters_draw_their_text_expansion_when_native_support_is_disabled' (39231709) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::list_items_and_table_rows_keep_their_roles_on_the_native_face stdout ----
+
+thread 'native::tests::list_items_and_table_rows_keep_their_roles_on_the_native_face' (39231707) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::with_the_native_disclosure_off_the_window_draws_its_expansion_always_open stdout ----
+
+thread 'native::tests::with_the_native_disclosure_off_the_window_draws_its_expansion_always_open' (39231713) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::without_the_claim_the_radio_choice_keeps_its_options stdout ----
+
+thread 'native::tests::without_the_claim_the_radio_choice_keeps_its_options' (39231714) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::window_accepts_native_text_during_a_five_second_composition stdout ----
+
+thread 'native::tests::window_accepts_native_text_during_a_five_second_composition' (39231712) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::structured_lenses_draw_and_board_get_forms_page_and_bind_facets stdout ----
+
+thread 'native::tests::structured_lenses_draw_and_board_get_forms_page_and_bind_facets' (39231711) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::operations_prefill_native_forms_and_keep_refusals_at_the_gesture stdout ----
+
+thread 'native::tests::operations_prefill_native_forms_and_keep_refusals_at_the_gesture' (39231710) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::every_gpui_see_check_with_a_probe_holds stdout ----
+
+thread 'native::tests::every_gpui_see_check_with_a_probe_holds' (39231704) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::a_lensed_views_chooser_is_a_native_radio_group stdout ----
+
+thread 'native::tests::a_lensed_views_chooser_is_a_native_radio_group' (39231696) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+---- native::tests::a_constructed_dashboard_is_an_ordinary_native_screen stdout ----
+
+thread 'native::tests::a_constructed_dashboard_is_an_ordinary_native_screen' (39231692) panicked at /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/keymap/binding.rs:47:10:
+called `Result::unwrap()` on an `Err` value: InvalidKeystrokeError { keystroke: "secondary-a" }
+
+
+failures:
+    native::tests::a_constructed_dashboard_is_an_ordinary_native_screen
+    native::tests::a_disclosure_opens_and_closes_in_the_window_and_its_body_joins_the_tab_order
+    native::tests::a_hosts_palette_override_reaches_the_native_face
+    native::tests::a_late_old_load_cannot_replace_the_newer_snapshot
+    native::tests::a_lensed_views_chooser_is_a_native_radio_group
+    native::tests::a_page_link_loads_any_screen_the_kernel_names_and_refuses_the_rest
+    native::tests::a_radio_choice_is_one_focusable_group_whose_arrows_move_the_selection
+    native::tests::a_scene_takes_focus_and_its_selection_is_announced
+    native::tests::auto_follows_the_window_appearance_and_explicit_themes_hold
+    native::tests::column_regions_keep_names_in_the_model_and_control_labels_on_screen
+    native::tests::contact_inputs_submit_and_keep_values_after_field_refusal
+    native::tests::each_theme_paints_its_palettes_ground_and_text
+    native::tests::every_gpui_see_check_with_a_probe_holds
+    native::tests::fixture_labels_are_visible_once
+    native::tests::gallery_walks_every_native_kind_and_boolean_fields_toggle
+    native::tests::list_items_and_table_rows_keep_their_roles_on_the_native_face
+    native::tests::meters_draw_natively_in_each_palette_without_taking_keyboard_focus
+    native::tests::meters_draw_their_text_expansion_when_native_support_is_disabled
+    native::tests::operations_prefill_native_forms_and_keep_refusals_at_the_gesture
+    native::tests::structured_lenses_draw_and_board_get_forms_page_and_bind_facets
+    native::tests::window_accepts_native_text_during_a_five_second_composition
+    native::tests::with_the_native_disclosure_off_the_window_draws_its_expansion_always_open
+    native::tests::without_the_claim_the_radio_choice_keeps_its_options
+
+test result: FAILED. 8 passed; 23 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `-p ikigai-ui-gpui --lib`
+EXIT 101

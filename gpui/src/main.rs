@@ -7,7 +7,7 @@
     target_os = "windows"
 ))]
 fn main() {
-    use gpui::{px, size, App, AppContext, Application, Bounds, WindowBounds, WindowOptions};
+    use gpui::{px, size, App, AppContext, Bounds, WindowBounds, WindowOptions};
     use ikigai_core::{Capability, Fallback, Scope};
     use ikigai_ui_gpui::{descriptor_space, native::Screen, theme::Theme, worker::Worker};
     use std::sync::Arc;
@@ -86,7 +86,7 @@ fn main() {
     });
     let capability = Capability::root().attenuate([ikigai_ui_demo::CONTACT_WRITE]);
     let worker = Worker::new(kernel, capability, Scope::empty());
-    Application::new().run(move |cx: &mut App| {
+    gpui_platform::application().run(move |cx: &mut App| {
         for screen in screens {
             let worker = worker.clone();
             let bounds = Bounds::centered(None, size(px(window_size.0), px(window_size.1)), cx);
@@ -100,7 +100,7 @@ fn main() {
             .expect("native demo window");
         }
         cx.activate(true);
-        cx.on_window_closed(|cx| {
+        cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
                 cx.quit();
             }

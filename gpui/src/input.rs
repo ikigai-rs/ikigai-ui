@@ -136,7 +136,7 @@ impl TextInput {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        window.focus(&self.focus_handle);
+        window.focus(&self.focus_handle, cx);
         self.is_selecting = true;
 
         if event.modifiers.shift {
@@ -490,13 +490,6 @@ struct PrepaintState {
     selection: Vec<PaintQuad>,
 }
 
-impl IntoElement for TextElement {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
 
 impl Element for TextElement {
     type RequestLayoutState = ();
@@ -673,7 +666,7 @@ impl Element for TextElement {
                 bounds.left(),
                 bounds.top() + window.line_height() * row as f32,
             );
-            let _ = line.shaped.paint(origin, window.line_height(), window, cx);
+            let _ = line.shaped.paint(origin, window.line_height(), gpui::TextAlign::Left, None, window, cx);
         }
         if focus_handle.is_focused(window) {
             if let Some(cursor) = prepaint.cursor.take() {
@@ -746,10 +739,10 @@ pub(super) fn bind_keys(cx: &mut App) {
         KeyBinding::new("right", Right, Some("TextInput")),
         KeyBinding::new("shift-left", SelectLeft, Some("TextInput")),
         KeyBinding::new("shift-right", SelectRight, Some("TextInput")),
-        KeyBinding::new("secondary-a", SelectAll, Some("TextInput")),
-        KeyBinding::new("secondary-v", Paste, Some("TextInput")),
-        KeyBinding::new("secondary-c", Copy, Some("TextInput")),
-        KeyBinding::new("secondary-x", Cut, Some("TextInput")),
+        KeyBinding::new(if cfg!(target_os = "macos") { "cmd-a" } else { "ctrl-a" }, SelectAll, Some("TextInput")),
+        KeyBinding::new(if cfg!(target_os = "macos") { "cmd-v" } else { "ctrl-v" }, Paste, Some("TextInput")),
+        KeyBinding::new(if cfg!(target_os = "macos") { "cmd-c" } else { "ctrl-c" }, Copy, Some("TextInput")),
+        KeyBinding::new(if cfg!(target_os = "macos") { "cmd-x" } else { "ctrl-x" }, Cut, Some("TextInput")),
         KeyBinding::new("home", Home, Some("TextInput")),
         KeyBinding::new("end", End, Some("TextInput")),
     ]);

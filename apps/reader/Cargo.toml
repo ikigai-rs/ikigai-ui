@@ -36,13 +36,16 @@ pulldown-cmark = { version = "0.12", default-features = false }
 # FreeBSD take theirs through the `wayland` and `x11` features above.
 [target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
 ikigai-ui-gpui = { path = "../../gpui" }
-gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders"] }
+gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "font-kit"] }
+gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders", "font-kit"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "windows-manifest"] }
+gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false, features = ["windows-manifest"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 age = { version = "0.11.1", default-features = false }
@@ -51,7 +54,8 @@ ikigai-vocab = "0.3"
 
 # GPUI's test platform, for the window test (macOS only, as ikigai-ui-gpui's are).
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "test-support"] }
+gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false, features = ["test-support"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders", "test-support"] }
 
 [[bin]]
 name = "ikigai-reader"

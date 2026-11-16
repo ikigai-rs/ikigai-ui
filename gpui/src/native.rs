@@ -210,7 +210,7 @@ impl Screen {
         .detach();
         let loading = Some(worker.load(screen));
         let root_focus = cx.focus_handle();
-        window.focus(&root_focus);
+        window.focus(&root_focus, cx);
         Self {
             worker,
             snapshot: None,
@@ -812,7 +812,7 @@ impl Screen {
                         )))
                         .cursor_pointer()
                         .on_click(cx.listener(move |_, _, window, cx| {
-                            window.focus(&focus);
+                            window.focus(&focus, cx);
                             input.update(cx, |input, cx| {
                                 input.content = if checked { "false" } else { "true" }.into();
                                 cx.notify();
@@ -842,7 +842,7 @@ impl Screen {
                                     if required { " *" } else { "" }
                                 )))
                                 .cursor_pointer()
-                                .on_click(move |_, window, _| window.focus(&focus)),
+                                .on_click(move |_, window, cx| window.focus(&focus, cx)),
                         )
                         .child(input);
                 }
@@ -874,7 +874,7 @@ impl Screen {
                                     text(option, "label").unwrap_or_default().to_string(),
                                 ))
                                 .on_click(cx.listener(move |this, _, window, cx| {
-                                    window.focus(&click_focus);
+                                    window.focus(&click_focus, cx);
                                     this.choose(&click_node, &click_path, i, cx);
                                 })),
                         );
@@ -943,7 +943,7 @@ impl Screen {
                                 },
                             ))
                             .on_click(cx.listener(move |this, _, window, cx| {
-                                window.focus(&focus);
+                                window.focus(&focus, cx);
                                 this.choices.insert(path.clone(), value.clone());
                                 cx.notify();
                             })),
@@ -1120,7 +1120,7 @@ impl Screen {
                 cx.stop_propagation();
             }
         }))
-        .on_click(move |_, window, _| window.focus(&click_focus));
+        .on_click(move |_, window, cx| window.focus(&click_focus, cx));
         body = body
             .child(self.render_text(text(node, "label").unwrap_or_default().to_string()))
             .child(canvas)
@@ -1369,7 +1369,7 @@ impl Render for Screen {
         if std::mem::take(&mut self.refocus)
             && !self.tab_order.iter().any(|(_, f)| f.is_focused(window))
         {
-            window.focus(&self.root_focus);
+            window.focus(&self.root_focus, cx);
         }
         let mut body = div()
             .id("screen")
@@ -1396,7 +1396,7 @@ impl Render for Screen {
                         (None, true) => len - 1,
                         (None, false) => 0,
                     };
-                    window.focus(&order[next]);
+                    window.focus(&order[next], cx);
                     cx.stop_propagation();
                 }
             }))
@@ -1701,7 +1701,7 @@ mod tests {
             cx.notify();
             s.focus["/"].clone()
         });
-        cx.update(|window, _| window.focus(&focus));
+        cx.update(|window, cx| window.focus(&focus, cx));
         cx.simulate_keystrokes("space");
         screen.update(cx, |s, cx| {
             let mut values = BTreeMap::new();
@@ -1766,11 +1766,11 @@ mod tests {
         let closed = order(cx);
         assert!(closed.contains(&"//5".to_string()) && !closed.contains(&"//5/0".to_string()));
         // Tab from the summary wraps past the hidden link.
-        cx.update(|window, _| window.focus(&summary));
+        cx.update(|window, cx| window.focus(&summary, cx));
         cx.simulate_keystrokes("tab");
         cx.update(|window, _| assert!(!link.is_focused(window)));
         // Space on the summary opens it; the model is untouched (the state is the window's).
-        cx.update(|window, _| window.focus(&summary));
+        cx.update(|window, cx| window.focus(&summary, cx));
         cx.simulate_keystrokes("space");
         screen.update(cx, |s, _| {
             assert!(s.open["//5"]);
@@ -1781,7 +1781,7 @@ mod tests {
         cx.simulate_keystrokes("tab");
         cx.update(|window, _| assert!(link.is_focused(window)));
         // Enter on the summary closes it again.
-        cx.update(|window, _| window.focus(&summary));
+        cx.update(|window, cx| window.focus(&summary, cx));
         cx.simulate_keystrokes("enter");
         screen.update(cx, |s, _| assert!(!s.open["//5"]));
         assert!(!order(cx).contains(&"//5/0".to_string()));
@@ -1903,7 +1903,7 @@ mod tests {
             screen.snapshot = Some(snapshot);
             screen.inputs["/"].clone()
         });
-        cx.update(|window, cx| window.focus(&input.focus_handle(cx)));
+        cx.update(|window, cx| window.focus(&input.focus_handle(cx), cx));
         cx.run_until_parked();
         let before = Instant::now();
         cx.simulate_input("Still responsive 🦀");
@@ -2049,16 +2049,16 @@ mod tests {
             (message_path.as_str(), "Hello from GPUI"),
         ] {
             let input = screen.update(cx, |s, _| s.inputs[path].clone());
-            cx.update(|window, cx| window.focus(&input.focus_handle(cx)));
+            cx.update(|window, cx| window.focus(&input.focus_handle(cx), cx));
             cx.simulate_input(value);
         }
         cx.simulate_keystrokes("enter");
         cx.simulate_input("Second line 🦀");
         let choice_focus = screen.update(cx, |s, _| s.focus[&format!("{choice_path}/1")].clone());
-        cx.update(|window, _| window.focus(&choice_focus));
+        cx.update(|window, cx| window.focus(&choice_focus, cx));
         cx.simulate_keystrokes("space");
         let submit_focus = screen.update(cx, |s, _| s.focus[&submit_path].clone());
-        cx.update(|window, _| window.focus(&submit_focus));
+        cx.update(|window, cx| window.focus(&submit_focus, cx));
         cx.simulate_keystrokes("enter");
         loop {
             if screen.update(cx, |s, cx| {
@@ -2084,10 +2084,10 @@ mod tests {
         });
         assert!(store.lock().unwrap().is_empty());
         let input = screen.update(cx, |s, _| s.inputs[&email_path].clone());
-        cx.update(|window, cx| window.focus(&input.focus_handle(cx)));
+        cx.update(|window, cx| window.focus(&input.focus_handle(cx), cx));
         cx.simulate_keystrokes("cmd-a");
         cx.simulate_input("ada@example.org");
-        cx.update(|window, _| window.focus(&submit_focus));
+        cx.update(|window, cx| window.focus(&submit_focus, cx));
         cx.simulate_keystrokes("space");
         loop {
             if screen.update(cx, |s, cx| {
@@ -2107,7 +2107,7 @@ mod tests {
         );
         // Tab traversal reaches the first field and then the email field.
         let first = screen.update(cx, |s, _| s.inputs[&name_path].clone());
-        cx.update(|window, cx| window.focus(&first.focus_handle(cx)));
+        cx.update(|window, cx| window.focus(&first.focus_handle(cx), cx));
         cx.simulate_keystrokes("tab");
         cx.update(|window, cx| assert!(input.focus_handle(cx).is_focused(window)));
         cx.update(|_, cx| assert!(screen.read(cx).forms[&form_path].feedback.fields.is_empty()));
@@ -2159,7 +2159,7 @@ mod tests {
                 s.scenes[&path].scene.clone().unwrap(),
             )
         });
-        cx.update(|window, _| window.focus(&focus));
+        cx.update(|window, cx| window.focus(&focus, cx));
         cx.simulate_keystrokes("n");
         screen.update(cx, |s, _| {
             assert_eq!(s.scenes[&path].view.selected, Some(0));
@@ -2379,7 +2379,7 @@ mod tests {
                             match focus {
                                 None => Err("not a shown stop in the tab order".into()),
                                 Some(focus) => {
-                                    cx.update(|window, _| window.focus(&focus));
+                                    cx.update(|window, cx| window.focus(&focus, cx));
                                     if cx.update(|window, _| focus.is_focused(window)) {
                                         Ok(())
                                     } else {
@@ -2402,7 +2402,7 @@ mod tests {
                             match before {
                                 None => Err("no open state".to_string()),
                                 Some(before) => {
-                                    cx.update(|window, _| window.focus(&focus));
+                                    cx.update(|window, cx| window.focus(&focus, cx));
                                     cx.simulate_keystrokes(if before { "enter" } else { "space" });
                                     let mid = screen.update(cx, |s, _| s.open[&path]);
                                     cx.simulate_keystrokes(if before { "space" } else { "enter" });
@@ -2475,7 +2475,7 @@ mod tests {
         });
         assert_eq!(tab_paths(&screen, cx), ["//0", "//1/0", "//1/1"]);
         let group = screen.update(cx, |s, _| s.focus["//0"].clone());
-        cx.update(|window, _| window.focus(&group));
+        cx.update(|window, cx| window.focus(&group, cx));
         let chosen = |cx: &mut gpui::VisualTestContext| {
             screen.update(cx, |s, _| (s.choices["//0"].clone(), s.message.clone()))
         };
@@ -2594,7 +2594,7 @@ mod tests {
         });
         cx.run_until_parked();
         let group = screen.update(cx, |s, _| s.focus[&path].clone());
-        cx.update(|window, _| window.focus(&group));
+        cx.update(|window, cx| window.focus(&group, cx));
         cx.simulate_keystrokes("down");
         screen.update(cx, |s, _| {
             assert_eq!(s.choices[&path], "contact-dashboard");

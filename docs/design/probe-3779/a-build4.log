@@ -1,0 +1,5 @@
+   Compiling ikigai-ui-gpui v0.1.0 (/Users/agent/work/ikigai-ui/item-3779/gpui)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.88s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+EXIT 0

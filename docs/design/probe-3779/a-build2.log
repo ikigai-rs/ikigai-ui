@@ -1,0 +1,392 @@
+   Compiling ikigai-ui-gpui v0.1.0 (/Users/agent/work/ikigai-ui/item-3779/gpui)
+error[E0521]: borrowed data escapes outside of method
+   --> gpui/src/native.rs:837:29
+    |
+773 |           cx: &mut Context<Self>,
+    |           --  - let's call the lifetime of this reference `'1`
+    |           |
+    |           `cx` is a reference that is only valid in the method body
+...
+837 | /                             div()
+838 | |                                 .id(gpui::SharedString::from(format!("label:{path}")))
+839 | |                                 .child(self.render_text(format!(
+840 | |                                     "{}{}",
+...   |
+844 | |                                 .cursor_pointer()
+845 | |                                 .on_click(move |_, window, _| window.focus(&focus, cx)),
+    | |                                                                                       ^
+    | |                                                                                       |
+    | |_______________________________________________________________________________________`cx` escapes the method body here
+    |                                                                                         argument requires that `'1` must outlive `'static`
+
+error[E0521]: borrowed data escapes outside of method
+   --> gpui/src/native.rs:837:29
+    |
+773 |           cx: &mut Context<Self>,
+    |           --
+    |           |
+    |           `cx` is a reference that is only valid in the method body
+    |           has type `&mut gpui::Context<'2, Screen>`
+...
+837 | /                             div()
+838 | |                                 .id(gpui::SharedString::from(format!("label:{path}")))
+839 | |                                 .child(self.render_text(format!(
+840 | |                                     "{}{}",
+...   |
+844 | |                                 .cursor_pointer()
+845 | |                                 .on_click(move |_, window, _| window.focus(&focus, cx)),
+    | |                                                                                       ^
+    | |                                                                                       |
+    | |_______________________________________________________________________________________`cx` escapes the method body here
+    |                                                                                         argument requires that `'2` must outlive `'static`
+    |
+    = note: requirement occurs because of a mutable reference to `gpui::Context<'_, Screen>`
+    = note: mutable references are invariant over their type parameter
+    = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+
+error[E0596]: cannot borrow `*cx` as mutable, as `Fn` closures cannot mutate their captured variables
+   --> gpui/src/native.rs:845:84
+    |
+845 | ...                   .on_click(move |_, window, _| window.focus(&focus, cx)),
+    |                        --------------------------------------------------^^--
+    |                        |        |                                        |
+    |                        |        |                                        cannot borrow as mutable
+    |                        |        in this closure
+    |                        expects `Fn` instead of `FnMut`
+
+error[E0521]: borrowed data escapes outside of method
+    --> gpui/src/native.rs:1112:22
+     |
+1088 |           cx: &mut Context<Self>,
+     |           --  - let's call the lifetime of this reference `'1`
+     |           |
+     |           `cx` is a reference that is only valid in the method body
+...
+1112 |           let canvas = ring(
+     |  ______________________^
+1113 | |             picture,
+1114 | |             &focus,
+1115 | |             gpui::SharedString::from(format!("{path}:canvas")),
+...    |
+1122 | |         }))
+1123 | |         .on_click(move |_, window, _| window.focus(&click_focus, cx));
+     | |                                                                     ^
+     | |                                                                     |
+     | |_____________________________________________________________________`cx` escapes the method body here
+     |                                                                       argument requires that `'1` must outlive `'static`
+
+error[E0521]: borrowed data escapes outside of method
+    --> gpui/src/native.rs:1112:22
+     |
+1088 |           cx: &mut Context<Self>,
+     |           --
+     |           |
+     |           `cx` is a reference that is only valid in the method body
+     |           has type `&mut gpui::Context<'2, Screen>`
+...
+1112 |           let canvas = ring(
+     |  ______________________^
+1113 | |             picture,
+1114 | |             &focus,
+1115 | |             gpui::SharedString::from(format!("{path}:canvas")),
+...    |
+1122 | |         }))
+1123 | |         .on_click(move |_, window, _| window.focus(&click_focus, cx));
+     | |                                                                     ^
+     | |                                                                     |
+     | |_____________________________________________________________________`cx` escapes the method body here
+     |                                                                       argument requires that `'2` must outlive `'static`
+     |
+     = note: requirement occurs because of a mutable reference to `gpui::Context<'_, Screen>`
+     = note: mutable references are invariant over their type parameter
+     = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+
+error[E0596]: cannot borrow `*cx` as mutable, as `Fn` closures cannot mutate their captured variables
+    --> gpui/src/native.rs:1123:66
+     |
+1123 |         .on_click(move |_, window, _| window.focus(&click_focus, cx));
+     |          --------------------------------------------------------^^--
+     |          |        |                                              |
+     |          |        |                                              cannot borrow as mutable
+     |          |        in this closure
+     |          expects `Fn` instead of `FnMut`
+
+error[E0382]: borrow of moved value: `cx`
+    --> gpui/src/native.rs:1131:92
+     |
+1088 |         cx: &mut Context<Self>,
+     |         -- move occurs because `cx` has type `&mut gpui::Context<'_, Screen>`, which does not implement the `Copy` trait
+...
+1123 |         .on_click(move |_, window, _| window.focus(&click_focus, cx));
+     |                   -------------------                            -- variable moved due to use in closure
+     |                   |
+     |                   value moved into closure here
+...
+1131 |             body = body.child(self.walk(replacement, &format!("{path}/replacement"), form, cx));
+     |                                                                                            ^^ value borrowed here after move
+
+Some errors have detailed explanations: E0382, E0521, E0596.
+For more information about an error, try `rustc --explain E0382`.
+error: could not compile `ikigai-ui-gpui` (lib) due to 7 previous errors
+warning: build failed, waiting for other jobs to finish...
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:1704:52
+     |
+1704 |         cx.update(|window, _| window.focus(&focus, cx));
+     |                                      -----         ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                      |
+     |                                      arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:1769:54
+     |
+1769 |         cx.update(|window, _| window.focus(&summary, cx));
+     |                                      -----           ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                      |
+     |                                      arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:1773:54
+     |
+1773 |         cx.update(|window, _| window.focus(&summary, cx));
+     |                                      -----           ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                      |
+     |                                      arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:1784:54
+     |
+1784 |         cx.update(|window, _| window.focus(&summary, cx));
+     |                                      -----           ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                      |
+     |                                      arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:2058:59
+     |
+2058 |         cx.update(|window, _| window.focus(&choice_focus, cx));
+     |                                      -----                ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                      |
+     |                                      arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:2061:59
+     |
+2061 |         cx.update(|window, _| window.focus(&submit_focus, cx));
+     |                                      -----                ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                      |
+     |                                      arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:2090:59
+     |
+2090 |         cx.update(|window, _| window.focus(&submit_focus, cx));
+     |                                      -----                ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                      |
+     |                                      arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:2162:52
+     |
+2162 |         cx.update(|window, _| window.focus(&focus, cx));
+     |                                      -----         ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                      |
+     |                                      arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:2382:80
+     |
+2382 | ...                   cx.update(|window, _| window.focus(&focus, cx));
+     |                                                    -----         ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                                    |
+     |                                                    arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:2405:80
+     |
+2405 | ...                   cx.update(|window, _| window.focus(&focus, cx));
+     |                                                    -----         ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                                    |
+     |                                                    arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:2478:52
+     |
+2478 |         cx.update(|window, _| window.focus(&group, cx));
+     |                                      -----         ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                      |
+     |                                      arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0308]: mismatched types
+    --> gpui/src/native.rs:2597:52
+     |
+2597 |         cx.update(|window, _| window.focus(&group, cx));
+     |                                      -----         ^^ expected `&mut App`, found `&mut VisualTestContext`
+     |                                      |
+     |                                      arguments to this method are incorrect
+     |
+     = note: expected mutable reference `&mut App`
+                found mutable reference `&mut VisualTestContext`
+note: method defined here
+    --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/window.rs:2723:12
+     |
+2723 |     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
+     |            ^^^^^
+
+error[E0521]: borrowed data escapes outside of method
+   --> gpui/src/native.rs:837:29
+    |
+773 |           cx: &mut Context<Self>,
+    |           --
+    |           |
+    |           `cx` is a reference that is only valid in the method body
+    |           has type `&mut gpui::Context<'2, native::Screen>`
+...
+837 | /                             div()
+838 | |                                 .id(gpui::SharedString::from(format!("label:{path}")))
+839 | |                                 .child(self.render_text(format!(
+840 | |                                     "{}{}",
+...   |
+844 | |                                 .cursor_pointer()
+845 | |                                 .on_click(move |_, window, _| window.focus(&focus, cx)),
+    | |                                                                                       ^
+    | |                                                                                       |
+    | |_______________________________________________________________________________________`cx` escapes the method body here
+    |                                                                                         argument requires that `'2` must outlive `'static`
+    |
+    = note: requirement occurs because of a mutable reference to `gpui::Context<'_, native::Screen>`
+    = note: mutable references are invariant over their type parameter
+    = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+
+error[E0521]: borrowed data escapes outside of method
+    --> gpui/src/native.rs:1112:22
+     |
+1088 |           cx: &mut Context<Self>,
+     |           --
+     |           |
+     |           `cx` is a reference that is only valid in the method body
+     |           has type `&mut gpui::Context<'2, native::Screen>`
+...
+1112 |           let canvas = ring(
+     |  ______________________^
+1113 | |             picture,
+1114 | |             &focus,
+1115 | |             gpui::SharedString::from(format!("{path}:canvas")),
+...    |
+1122 | |         }))
+1123 | |         .on_click(move |_, window, _| window.focus(&click_focus, cx));
+     | |                                                                     ^
+     | |                                                                     |
+     | |_____________________________________________________________________`cx` escapes the method body here
+     |                                                                       argument requires that `'2` must outlive `'static`
+     |
+     = note: requirement occurs because of a mutable reference to `gpui::Context<'_, native::Screen>`
+     = note: mutable references are invariant over their type parameter
+     = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+
+error[E0382]: borrow of moved value: `cx`
+    --> gpui/src/native.rs:1131:92
+     |
+1088 |         cx: &mut Context<Self>,
+     |         -- move occurs because `cx` has type `&mut gpui::Context<'_, native::Screen>`, which does not implement the `Copy` trait
+...
+1123 |         .on_click(move |_, window, _| window.focus(&click_focus, cx));
+     |                   -------------------                            -- variable moved due to use in closure
+     |                   |
+     |                   value moved into closure here
+...
+1131 |             body = body.child(self.walk(replacement, &format!("{path}/replacement"), form, cx));
+     |                                                                                            ^^ value borrowed here after move
+
+Some errors have detailed explanations: E0308, E0382, E0521, E0596.
+For more information about an error, try `rustc --explain E0308`.
+error: could not compile `ikigai-ui-gpui` (lib test) due to 19 previous errors
+EXIT 101

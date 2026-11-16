@@ -20,8 +20,8 @@ scene = ["dep:wgpu", "dep:pollster", "dep:image"]
 # pins both. Not default only because they link libxkbcommon-x11, which GitHub's stock Ubuntu
 # runner lacks and the shared CI cannot yet install (README, "Linux"); once it can, they move
 # into a Linux `gpui` dependency line and stop being features. Elsewhere they change nothing.
-wayland = ["gpui/wayland", "gpui/font-kit"]
-x11 = ["gpui/x11", "gpui/font-kit"]
+wayland = ["gpui_platform/wayland"]
+x11 = ["gpui_platform/x11"]
 
 [dependencies]
 ikigai-ui = { path = ".." }
@@ -35,7 +35,8 @@ futures = "0.3"
 # The window code, on every target GPUI has a window platform for. Each target's own table below
 # names that target's backends; this one adds nothing to `gpui`'s features but the shaders.
 [target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
-gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders"] }
+gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders"] }
 unicode-segmentation = "1.12"
 # The demo's HTML door, beside its windows: one kernel, one store.
 ikigai-ui-demo = { path = "../demo" }
@@ -57,19 +58,22 @@ libc = "=0.2.189"
 # ★ `font-kit` is GPUI's macOS text system. It is a DEFAULT feature, so turning defaults off
 # above dropped it, and GPUI then installs `NoopTextSystem`: every window drew its boxes and no
 # text at all (headings, labels, button captions), while the test platform's snapshots passed.
-gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "font-kit"] }
+gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders", "font-kit"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # ★ The Windows window platform needs no feature (its text system is DirectWrite, always on);
 # `windows-manifest` embeds GPUI's application manifest (per-monitor DPI awareness, the common
 # controls GPUI's dialogs use), which GPUI's own binaries carry and GPUI's defaults turn on.
-gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "windows-manifest"] }
+gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false, features = ["windows-manifest"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders"] }
 
 # GPUI test-support turns on `wayland` and `x11`, so it links libxkbcommon-x11, which the stock
 # Linux runner lacks (README, "Verification"). The window tests run on macOS; they pass on Linux
 # too (lawnboy, ledger #3526) once the shared CI can install that library.
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-gpui = { version = "=0.2.2", default-features = false, features = ["runtime_shaders", "test-support"] }
+gpui = { package = "gpui-pre", version = "=0.3.13", default-features = false, features = ["test-support"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", default-features = false, features = ["runtime_shaders", "test-support"] }
 
 [dev-dependencies]
 ikigai-ui-demo = { path = "../demo" }

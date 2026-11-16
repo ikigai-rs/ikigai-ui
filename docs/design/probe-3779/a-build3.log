@@ -1,0 +1,32 @@
+   Compiling ikigai-ui-gpui v0.1.0 (/Users/agent/work/ikigai-ui/item-3779/gpui)
+error[E0599]: no associated function or constant named `new` found for struct `gpui::Application` in the current scope
+   --> gpui/src/main.rs:89:18
+    |
+ 89 |     Application::new().run(move |cx: &mut App| {
+    |                  ^^^ associated function or constant not found in `gpui::Application`
+    |
+note: if you're trying to build a new `gpui::Application` consider using one of the following associated functions:
+      gpui::Application::with_platform
+      gpui::Application::new_inaccessible
+   --> /Users/agent/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.13/src/app.rs:242:5
+    |
+242 |     pub fn with_platform(platform: Rc<dyn Platform>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+259 |     pub fn new_inaccessible(platform: Rc<dyn Platform>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0593]: closure is expected to take 2 arguments, but it takes 1 argument
+   --> gpui/src/main.rs:103:12
+    |
+103 |         cx.on_window_closed(|cx| {
+    |            ^^^^^^^^^^^^^^^^ ---- takes 1 argument
+    |            |
+    |            expected closure that takes 2 arguments
+
+Some errors have detailed explanations: E0593, E0599.
+For more information about an error, try `rustc --explain E0593`.
+error: could not compile `ikigai-ui-gpui` (bin "ikigai-ui-demo-native") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ikigai-ui-gpui` (bin "ikigai-ui-demo-native" test) due to 2 previous errors
+EXIT 101
