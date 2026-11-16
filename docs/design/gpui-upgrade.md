@@ -234,7 +234,7 @@ native face" preview for designers, and that is not a goal anyone has set.
 **Option A: `gpui-pre`, exact pins, moved on purpose.**
 
 Order of work:
-1. **Port** (≈1 day, no new behaviour): the probe's diff, plus `apps/reader/src/main.rs`, plus
+1. **Port** (≈1 day, no new behavior): the probe's diff, plus `apps/reader/src/main.rs`, plus
    `tests/text_system.rs` rewritten for `gpui_platform`, plus dropping `libc` if the Linux graph
    confirms it. Done when CI is green on macOS (window tests) and Linux/Windows build. Update
    ACCESSIBILITY.md's "GPUI 0.2.2".
