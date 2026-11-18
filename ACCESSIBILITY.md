@@ -50,6 +50,10 @@ is the host's to keep accessible.
   `disabled`: it stays in the tab order, announces as unavailable, is described by the refusal
   note, and the shell blocks its activation (a click, Enter, Space, a form submit it would make,
   any request htmx would send for it). Markup in a refusal is text. Quiet elements never announce.
+- **Reconnecting** (ledger #3810). While a GET is retried through a `502`, `503`, `504` or no
+  answer, `#status` says "Reconnecting…" once, politely (no `role="alert"`), not once per
+  attempt, and focus does not move. On success it is cleared; after the limit it is replaced by
+  the error note's sentence, announced the same way as any refusal's.
 - **Live views** (D9). A refetch never announces, leaves no note, and keeps focus where it was,
   inside the view or not. A refused live stream is said once in the status region; an accepted
   one says nothing.
@@ -186,6 +190,7 @@ request and every push to main. A historical run CI does not repeat is Blocked, 
 | In-place notes and the one live region | Pass | `tests/shell.rs`; `axe/shell-smoke.mjs` in Chromium. |
 | Focus after a swap, a poll and a lazy load | Pass | `axe/shell-smoke.mjs` in Chromium (five checks). Scripted focus; not a person's keyboard pass. |
 | A 403 leaves its control focusable, `aria-disabled` and inert (PR 68) | Pass | `axe/shell-smoke.mjs`, "a 403 leaves its control focusable, aria-disabled, and inert; markup in a refusal is text". |
+| A GET rides out a 502, 503, 504 or no answer; "Reconnecting…" said once, politely, focus kept; POST never resent | Pass | `axe/shell-smoke.mjs` (seven retry checks, ledger #3810). Scripted in Chromium; not what a screen reader says. |
 | Live views refetch quietly, keep focus; a refused stream said once | Pass | `axe/shell-smoke.mjs` (ten live-view checks). |
 | Theme chooser: label, choices in words, keyboard, no-script Apply, kept in this browser | Pass | `tests/pages.rs` (snapshots in each theme), `tests/chooser.rs`, `axe/shell-smoke.mjs` (four chooser checks). |
 | Automated checker: axe, WCAG 2.0, 2.1 and 2.2 A and AA rules | Pass | `axe/check.mjs`: 31 pages (every demo page in every theme, the gallery, elements and lens pages) x 3 media settings, 0 failures, under the door default CSP. Includes axe's target-size rule (SC 2.5.8). axe finds only what rules can find. |

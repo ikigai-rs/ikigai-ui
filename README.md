@@ -36,7 +36,7 @@ See [native capture requirements](gpui/README.md#readme-images) before running t
 | `urn:iki:ui:htmx` | htmx 2.0.4, vendored and SHA-256 pinned; the shell loads it with `integrity=` and configures it once (`allowEval:false`, `allowScriptTags:false`) |
 | `urn:iki:ui:tokens.css` | one token set (gonk's names, with `--line` for component borders and `--rule` for decorative lines) in light, dark and high contrast; `auto` follows the system, `prefers-contrast: more` picks high contrast, `data-theme` overrides; every pair contrast-tested (WCAG 2.2 AA, AAA for high contrast) |
 | `urn:iki:ui:base.css` | an opt-in base stylesheet for a family with no look of its own (`Pages::stylesheet("/ui/base.css")`): system type, the header, groups as cards, fields, buttons, tables, lists, figures and the disclosure, every color a token, so it follows the theme; the demo uses it, gonk keeps its own |
-| `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint, and live views refetched from the door's push stream |
+| `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a GET retried through a 502, 503, 504 or no answer before it fails, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint, and live views refetched from the door's push stream |
 | `urn:iki:ui:template:shell` | the page shell: landmarks, a skip link, the status region, the theme chooser in the header, no inline script or style |
 | `urn:iki:ui:theme-chooser:{theme}` | the theme chooser, `{theme}` selected: a GET form with a "Theme" label, a native select of Auto (system), Light, Dark and High contrast, and an Apply button for a page with no script |
 | `urn:iki:ui:chooser:{family}:{theme}` | what the shell puts in a family's header, for ANY family: the family's `urn:iki:ui:chooser-override:{family}:{theme}` if one is bound, else the theme chooser |
@@ -138,6 +138,26 @@ auto clears it), applied before first paint over the server's `auto`. It is neve
 server, except as `theme=` in the URL when the form is submitted with no script. A GET form's
 `theme=` replaces the page's own query string, so a page whose query matters wants the script,
 or its own chooser.
+
+**Riding out a restart.** A GET the shell script sends through htmx that gets a `502`, `503` or
+`504`, or no answer at all, is sent again rather than shown as a failure: exponential backoff
+with full jitter (each wait a random part of base × 2ⁿ, capped at 30 s), never sooner than the
+answer's `Retry-After` (seconds or an HTTP date), until the limit has passed since the first
+failure; then the last failure is shown as any other. While a request is being retried,
+`#status` says "Reconnecting…" once, politely, without moving focus, and is cleared when it
+succeeds. A `500`, any `4xx` and any other answer is shown at once. A `POST`, `PUT`, `PATCH` or
+`DELETE` is never sent again: resending a write safely needs an idempotency key the page does
+not have. Elements inside `[data-ui-quiet]` (and live views) are left alone, as they retry on
+their own. Two attributes on `<html>`, both in milliseconds and read at each failure, are part
+of the shell's contract:
+
+| Attribute | Default | Meaning |
+|---|---|---|
+| `data-ui-retry-limit` | `90000` | how long after the first failure the page stops retrying and shows the error; `0` turns retrying off |
+| `data-ui-retry-base` | `1000` | the first wait's ceiling, doubled on each retry up to 30 s |
+
+Set them so that a host's pages and any faces it frames give up at the same moment (the
+`ikigai` command line's `connect.retry.*`).
 
 **Live views.** Name the push stream on the family (`Pages::new(…).push("/_ikigai/push")`, the
 cli door's path), and a view that says what it shows refetches itself on a cut:

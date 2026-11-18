@@ -214,6 +214,142 @@ await check("a failure outside #main is an alert in #status; a quiet one says no
   await page.locator('#status p[role="alert"]').waitFor();
 });
 
+// Riding out a restart (ledger #3810): a GET that gets a 502, 503 or 504, or no answer, is sent
+// again with backoff before anything is shown. `flaky` answers each request to /_flaky/* from
+// `answers` in turn (the last one repeats), records when each came and with what method, and
+// `abort` stands for no answer. The page's timing is set on <html> (data-ui-retry-base,
+// data-ui-retry-limit) and Math.random is pinned to the top of its range, so each backoff wait is
+// its full ceiling and the timing below is deterministic.
+async function flaky(page, answers, { base = 100, limit } = {}) {
+  const seen = [];
+  await page.route("**/_flaky/**", (route) => {
+    const req = route.request();
+    seen.push({ at: Date.now(), method: req.method() });
+    const a = answers[Math.min(seen.length - 1, answers.length - 1)];
+    if (a === "abort") return route.abort("connectionrefused");
+    const [code, headers = {}] = Array.isArray(a) ? a : [a];
+    const body = code === 200 ? '<p id="flaky-ok">back</p>' : `refused: needs urn:cap:example:${code}`;
+    return route.fulfill({
+      status: code,
+      contentType: code === 200 ? "text/html; charset=utf-8" : "text/plain",
+      headers: { "content-security-policy": CSP, ...headers },
+      body,
+    });
+  });
+  await page.goto(home);
+  await page.evaluate(([base, limit]) => {
+    Math.random = () => 0.999999;
+    if (base != null) document.documentElement.setAttribute("data-ui-retry-base", String(base));
+    if (limit !== undefined) document.documentElement.setAttribute("data-ui-retry-limit", String(limit));
+    // Every #status change that brings "Reconnecting…" in.
+    window.__reconnecting = 0;
+    new MutationObserver((records) => {
+      for (const r of records)
+        for (const n of r.addedNodes) if (n.textContent === "Reconnecting…") window.__reconnecting += 1;
+    }).observe(document.getElementById("status"), { childList: true, subtree: true });
+  }, [base, limit]);
+  return seen;
+}
+const flakyButton = (verb = "get") =>
+  `<button id="flaky" hx-${verb}="/_flaky/x" hx-target="#flaky-out">Flaky</button><div id="flaky-out"></div>`;
+const noteOf = (page) => page.locator("#flaky + p.ui-note");
+
+await check("a GET that gets 503s then a 200 swaps the answer with no note, saying Reconnecting once", async (page) => {
+  const seen = await flaky(page, [503, 502, 504, 200]);
+  await add(page, flakyButton());
+  await page.focus("#flaky");
+  await page.click("#flaky");
+  await page.waitForFunction(() => document.getElementById("status").textContent === "Reconnecting…");
+  if ((await page.locator('#status [role="alert"]').count()) !== 0) return "Reconnecting is an alert";
+  await page.locator("#flaky-out #flaky-ok").waitFor({ timeout: 5000 });
+  await page.waitForTimeout(100);
+  if (seen.length !== 4) return `${seen.length} requests, not 4`;
+  if ((await page.locator("p.ui-note").count()) !== 0) return "a note was shown";
+  if ((await page.getAttribute("#flaky", "aria-describedby")) !== null) return "the control is described by a note";
+  const said = await page.textContent("#status");
+  if (said !== "") return `#status still says ${JSON.stringify(said)}`;
+  const times = await page.evaluate(() => window.__reconnecting);
+  if (times !== 1) return `Reconnecting was said ${times} times, not once`;
+  const where = await page.evaluate(() => document.activeElement && document.activeElement.id);
+  if (where !== "flaky") return `focus moved to ${JSON.stringify(where)}`;
+});
+
+await check("a GET with no answer is retried too", async (page) => {
+  const seen = await flaky(page, ["abort", 200]);
+  await add(page, flakyButton());
+  await page.click("#flaky");
+  await page.locator("#flaky-out #flaky-ok").waitFor({ timeout: 5000 });
+  if (seen.length !== 2) return `${seen.length} requests, not 2`;
+  if ((await page.locator("p.ui-note").count()) !== 0) return "a note was shown";
+});
+
+await check("a Retry-After: 2 is waited out", async (page) => {
+  // base 50: without the header the retry would come within 50 ms.
+  const seen = await flaky(page, [[503, { "retry-after": "2" }], 200], { base: 50 });
+  await add(page, flakyButton());
+  await page.click("#flaky");
+  await page.locator("#flaky-out #flaky-ok").waitFor({ timeout: 6000 });
+  if (seen.length !== 2) return `${seen.length} requests, not 2`;
+  const gap = seen[1].at - seen[0].at;
+  if (gap < 1950) return `the retry came ${gap} ms after the 503, before its Retry-After: 2`;
+});
+
+await check("after the retry limit the note shows as today", async (page) => {
+  const seen = await flaky(page, [503], { base: 100, limit: 700 });
+  await add(page, flakyButton());
+  await page.click("#flaky");
+  await noteOf(page).waitFor({ timeout: 5000 });
+  const took = Date.now() - seen[0].at;
+  if (seen.length < 3) return `gave up after ${seen.length} requests`;
+  if (took < 650) return `gave up ${took} ms after the first failure, before the 700 ms limit`;
+  const region = await oneRegion(page, "#flaky + p.ui-note", "#flaky", "Flaky: refused: needs urn:cap:example:503");
+  if (region) return region;
+  const count = seen.length;
+  await page.waitForTimeout(500);
+  if (seen.length !== count) return "requests went on after giving up";
+});
+
+await check("a 500 shows the note at once and is not resent", async (page) => {
+  const seen = await flaky(page, [500], { base: 50 });
+  await add(page, flakyButton());
+  await page.click("#flaky");
+  await noteOf(page).waitFor({ timeout: 1000 });
+  await page.waitForTimeout(500);
+  if (seen.length !== 1) return `${seen.length} requests for one 500`;
+  if ((await page.evaluate(() => window.__reconnecting)) !== 0) return "a 500 said Reconnecting";
+});
+
+await check("a POST that gets a 503 is not resent", async (page) => {
+  const seen = await flaky(page, [503, 200], { base: 50 });
+  await add(page, flakyButton("post"));
+  await page.click("#flaky");
+  await noteOf(page).waitFor({ timeout: 1000 });
+  await page.waitForTimeout(500);
+  if (seen.length !== 1 || seen[0].method !== "POST") return `requests: ${JSON.stringify(seen)}`;
+  if ((await page.evaluate(() => window.__reconnecting)) !== 0) return "a POST said Reconnecting";
+});
+
+await check("data-ui-retry-base and data-ui-retry-limit set the timing", async (page) => {
+  // The defaults (base 1000): with Math.random pinned high, the first retry comes about 1 s on.
+  const slow = await flaky(page, [503, 200], { base: null });
+  await add(page, flakyButton());
+  await page.click("#flaky");
+  await page.locator("#flaky-out #flaky-ok").waitFor({ timeout: 5000 });
+  const defaultGap = slow[1].at - slow[0].at;
+  if (defaultGap < 950) return `with the default base the retry came after ${defaultGap} ms`;
+  await page.unrouteAll();
+  // base 300, limit 1000: retries at about 300 and 900 ms (300 + 600), then the limit.
+  const seen = await flaky(page, [503], { base: 300, limit: 1000 });
+  await add(page, flakyButton());
+  await page.click("#flaky");
+  await noteOf(page).waitFor({ timeout: 5000 });
+  const took = Date.now() - seen[0].at;
+  const gaps = seen.slice(1).map((s, i) => s.at - seen[i].at);
+  if (gaps[0] < 280 || gaps[0] > 700) return `the first wait was ${gaps[0]} ms with base 300`;
+  if (gaps[1] < 560) return `the second wait was ${gaps[1]} ms, not doubled`;
+  if (took < 950 || took > 2500) return `gave up after ${took} ms with limit 1000`;
+});
+
 await check("a swap into #main moves focus to its heading", async (page) => {
   await page.goto(home);
   await add(page, '<a id="nav" href="/about-auto.html" hx-get="/about-auto.html" hx-select="main > *" hx-target="#main">About</a>', "header");
