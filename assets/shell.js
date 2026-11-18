@@ -4,7 +4,8 @@
 // paint. It touches only <html> while it runs; everything else waits for htmx's events, which
 // bubble to `document`.
 //
-// It does five things htmx does not:
+// It does five things htmx does not (2 includes riding out a restart: a GET that gets a 502,
+// 503 or 504 or no answer is sent again, with backoff, before it is shown; see 2a):
 // 1. The theme (D12). `theme=` in the URL wins and is remembered; with none, a remembered choice
 //    replaces the server's `auto`. A chooser is a real <select name="theme" data-ui-theme> in a
 //    GET form (the shell renders one in every header), so it works with no script; with one, a
@@ -254,22 +255,153 @@
     var elt = e.detail && e.detail.elt;
     if (elt && elt.tagName !== "FORM" && inert(elt)) e.preventDefault();
   });
+  // ---- 2a. riding out a restart (ledger #3810) ----------------------------------------------
+  // A GET that gets a 502, 503 or 504, or no answer at all, is the host restarting or briefly
+  // down, so it is sent again rather than shown as a failure: exponential backoff with full
+  // jitter (each wait a random part of base x 2^n, capped at 30 s), never sooner than the
+  // answer's Retry-After, until the limit has passed since the first failure. Then the last
+  // failure is shown as any other. #status says "Reconnecting…" once, politely, while any
+  // request is being retried, and is cleared when the last one succeeds. Only a GET is resent:
+  // resending a write safely needs an idempotency key the page does not have. Quiet elements
+  // retry on their own and are left alone. The limit and base are read from <html>
+  // (data-ui-retry-limit, data-ui-retry-base, in milliseconds) at each failure, so a host can
+  // make its pages and the faces it frames give up at the same moment.
+  var RETRY_LIMIT = 90000;
+  var RETRY_BASE = 1000;
+  var RETRY_CAP = 30000;
+  var RECONNECTING = "Reconnecting\u2026";
+  function setting(name, fallback) {
+    var raw = root.getAttribute(name);
+    if (raw === null || !/^\s*\d+\s*$/.test(raw)) return fallback;
+    return parseInt(raw, 10);
+  }
+  // Retry-After in seconds or as an HTTP date, in milliseconds from now; 0 when absent.
+  function retryAfter(xhr) {
+    var raw = null;
+    try {
+      raw = xhr && xhr.getResponseHeader ? xhr.getResponseHeader("Retry-After") : null;
+    } catch (err) {
+      raw = null;
+    }
+    if (!raw) return 0;
+    raw = raw.trim();
+    if (/^\d+$/.test(raw)) return parseInt(raw, 10) * 1000;
+    var at = Date.parse(raw);
+    return isNaN(at) ? 0 : Math.max(0, at - Date.now());
+  }
+  function temporary(code) {
+    return code === 0 || code === 502 || code === 503 || code === 504;
+  }
+  function isGet(detail) {
+    var rc = detail && detail.requestConfig;
+    return !!rc && String(rc.verb || "").toLowerCase() === "get";
+  }
+  // One session per element being retried: { elt, first, attempt, timer }.
+  var sessions = [];
+  var bySession = new WeakMap(); // xhr -> the session that sent it
+  var resending = null; // the session whose request htmx is issuing right now
+  var reconnectNote = null;
+  function sessionOf(elt) {
+    for (var i = 0; i < sessions.length; i += 1) if (sessions[i].elt === elt) return sessions[i];
+    return null;
+  }
+  function reconnectShown() {
+    var area = document.getElementById("status");
+    return !!reconnectNote && !!area && area.contains(reconnectNote);
+  }
+  function endSession(s) {
+    if (s.timer) window.clearTimeout(s.timer);
+    s.timer = null;
+    sessions = sessions.filter(function (x) { return x !== s; });
+    if (!sessions.length) {
+      // Cleared only if it is still what #status says: anything said since stays.
+      if (reconnectShown()) status("", false);
+      reconnectNote = null;
+    }
+  }
+  // true when the failure will be retried; false when it is to be shown now.
+  function retry(detail, code) {
+    var elt = detail && detail.elt;
+    if (!elt || quiet(elt) || !temporary(code) || !isGet(detail)) return false;
+    var xhr = detail.xhr;
+    var s = (xhr && bySession.get(xhr)) || null;
+    if (s && sessions.indexOf(s) < 0) s = null; // superseded: this failure starts afresh
+    if (!s) {
+      var old = sessionOf(elt);
+      if (old) endSession(old);
+      s = { elt: elt, first: Date.now(), attempt: 0, timer: null };
+      sessions.push(s);
+    }
+    var limit = setting("data-ui-retry-limit", RETRY_LIMIT);
+    var base = setting("data-ui-retry-base", RETRY_BASE);
+    var remaining = limit - (Date.now() - s.first);
+    var floor = retryAfter(xhr);
+    if (remaining <= 0 || floor > remaining || !document.contains(elt)) {
+      endSession(s);
+      return false;
+    }
+    var ceiling = Math.min(RETRY_CAP, base * Math.pow(2, s.attempt));
+    var wait = Math.min(remaining, Math.max(floor, Math.random() * ceiling));
+    s.attempt += 1;
+    if (!reconnectShown()) {
+      status(RECONNECTING, false);
+      var area = document.getElementById("status");
+      reconnectNote = area ? area.firstElementChild : null;
+    }
+    var etc = detail.etc || {};
+    var rc = detail.requestConfig;
+    var target = detail.target && document.contains(detail.target) ? detail.target : undefined;
+    s.timer = window.setTimeout(function () {
+      s.timer = null;
+      if (!document.contains(s.elt)) return endSession(s);
+      resending = s;
+      try {
+        window.htmx.ajax("GET", rc.path, {
+          source: s.elt,
+          event: rc.triggeringEvent,
+          target: target,
+          swap: etc.swapOverride,
+          select: etc.select,
+          headers: etc.headers,
+          values: etc.values,
+        });
+      } catch (err) {
+        endSession(s);
+      } finally {
+        resending = null;
+      }
+    }, wait);
+    return true;
+  }
   document.addEventListener("htmx:responseError", function (e) {
     var xhr = e.detail && e.detail.xhr;
+    var code = xhr && xhr.status;
+    if (retry(e.detail, code)) return;
     var text = ((xhr && xhr.responseText) || "").trim().slice(0, 500);
-    fail(e.detail, text || "The server refused that.", xhr && xhr.status);
+    fail(e.detail, text || "The server refused that.", code);
   });
   document.addEventListener("htmx:sendError", function (e) {
+    if (retry(e.detail, 0)) return;
     fail(e.detail, "The server did not answer.", 0);
   });
   document.addEventListener("htmx:beforeRequest", function (e) {
     var d = e.detail || {};
-    if (!quiet(d.elt)) status("", false);
+    if (resending && d.elt === resending.elt) {
+      // The same request again: what #status says stays.
+      if (d.xhr) bySession.set(d.xhr, resending);
+    } else {
+      // A new request from an element being retried supersedes the retry.
+      var old = d.elt && sessionOf(d.elt);
+      if (old) endSession(old);
+      if (!quiet(d.elt) && !(sessions.length && reconnectShown())) status("", false);
+    }
     if (d.target && d.target.setAttribute) d.target.setAttribute("aria-busy", "true");
   });
   document.addEventListener("htmx:afterRequest", function (e) {
     var d = e.detail || {};
     if (d.target && d.target.removeAttribute) d.target.removeAttribute("aria-busy");
+    var s = d.xhr && bySession.get(d.xhr);
+    if (s && d.successful && sessions.indexOf(s) >= 0) endSession(s);
   });
 
   // ---- 4. focus after a swap ------------------------------------------------------------------
