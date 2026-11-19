@@ -1481,9 +1481,7 @@ impl Pages {
         if lenses {
             // Before the family's own pages, so a lensed page name is never a host fragment.
             doors = doors.bind(
-                LensPage {
-                    prefix: format!("{base}page:"),
-                },
+                lens::lensed_door(&format!("{base}page:")),
                 lens_page_endpoint(family.clone()),
             );
         }
@@ -1563,27 +1561,6 @@ fn page_name_ok(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b':' | b'.' | b'_' | b'~' | b'-'))
 }
 
-/// `{base}page:lens:{…}`: a family's lensed pages ([`Pages::lenses`]).
-struct LensPage {
-    prefix: String,
-}
-
-impl ikigai_core::Grammar for LensPage {
-    fn match_iri(&self, iri: &Iri) -> Option<Bindings> {
-        let name = iri.as_str().strip_prefix(self.prefix.as_str())?;
-        let (lens, _, resource) = lens::parse_screen(name)?.ok()?;
-        let mut b = Bindings::new();
-        b.insert("name", name);
-        b.insert("lens", lens.as_str());
-        b.insert("iri", resource.as_str());
-        Some(b)
-    }
-
-    fn pattern(&self) -> String {
-        format!("{}lens:{{lens}}:resource:{{iri}}", self.prefix)
-    }
-}
-
 fn lens_page_endpoint(family: String) -> AsyncFnEndpoint {
     let id = format!("ui-page-lens-{family}");
     let composer =
@@ -1623,11 +1600,8 @@ fn lens_page_endpoint(family: String) -> AsyncFnEndpoint {
         let composer = composer.clone();
         let family = family.clone();
         Box::pin(async move {
-            let name = inv
-                .bindings
-                .get("name")
-                .ok_or_else(|| Error::MissingArgument("name".to_string()))?;
-            let screen = lens::page_screen(inv, name)?;
+            let name = lens::lensed_name(inv)?;
+            let screen = lens::page_screen(inv, &name)?;
             let theme = inv
                 .inline_str("theme")
                 .ok()
