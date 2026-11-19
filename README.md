@@ -36,7 +36,7 @@ See [native capture requirements](gpui/README.md#readme-images) before running t
 | `urn:iki:ui:htmx` | htmx 2.0.4, vendored and SHA-256 pinned; the shell loads it with `integrity=` and configures it once (`allowEval:false`, `allowScriptTags:false`) |
 | `urn:iki:ui:tokens.css` | one token set (gonk's names, with `--line` for component borders and `--rule` for decorative lines) in light, dark and high contrast; `auto` follows the system, `prefers-contrast: more` picks high contrast, `data-theme` overrides; every pair contrast-tested (WCAG 2.2 AA, AAA for high contrast) |
 | `urn:iki:ui:base.css` | an opt-in base stylesheet for a family with no look of its own (`Pages::stylesheet("/ui/base.css")`): system type, the header, groups as cards, fields, buttons, tables, lists, figures and the disclosure, every color a token, so it follows the theme; the demo uses it, gonk keeps its own |
-| `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a GET retried through a 502, 503, 504 or no answer before it fails, a 403 disables its control, one status region, focus after a swap, the theme applied before first paint, and live views refetched from the door's push stream |
+| `urn:iki:ui:shell.js` | the one first-party script: refusals shown as text where they happened, a GET retried through a 502, 503, 504 or no answer before it fails, a 403 disables its control, `data-ui-write` controls disabled once the session's write lapses, one status region, focus after a swap, the theme applied before first paint, and live views refetched from the door's push stream |
 | `urn:iki:ui:template:shell` | the page shell: landmarks, a skip link, the status region, the theme chooser in the header, no inline script or style |
 | `urn:iki:ui:theme-chooser:{theme}` | the theme chooser, `{theme}` selected: a GET form with a "Theme" label, a native select of Auto (system), Light, Dark and High contrast, and an Apply button for a page with no script |
 | `urn:iki:ui:chooser:{family}:{theme}` | what the shell puts in a family's header, for ANY family: the family's `urn:iki:ui:chooser-override:{family}:{theme}` if one is bound, else the theme chooser |
@@ -158,6 +158,26 @@ of the shell's contract:
 
 Set them so that a host's pages and any faces it frames give up at the same moment (the
 `ikigai` command line's `connect.retry.*`).
+
+**Write that lapses.** Name the host's session answer on the family
+(`Pages::new(…).session("/auth/session")`, gonk's path) and mark every control that needs
+write with `data-ui-write`, on the control itself or on a form or region around it:
+
+```html
+<form data-ui-write hx-post="/item/5/comment">…</form>
+```
+
+The shell script reads the answer once the page has loaded. When its `writeSeconds` reaches 0,
+counted down in the page, the marked controls are disabled the same way a `403` disables one:
+`aria-disabled`, so each keeps its name and its tab stop, a text field turns read-only,
+activating or submitting does nothing, and they are grayed out. A visible note after each marked
+element, which its controls point at with `aria-describedby`, says "Writing has lapsed for this
+session. Sign in again to write; you can still read." `#status` says it once, politely. A session
+that never could write (`writeSeconds` 0 at once with an empty `restore`) is told "This session
+cannot write: its sign-in only reads. Sign in with write access to make changes." Controls
+swapped in later are marked as they arrive. A family with no session URL, or an answer without
+a numeric `writeSeconds`, sees no change, so gonk's pages and any face that uses the shell
+disable write at the same moment.
 
 **Live views.** Name the push stream on the family (`Pages::new(…).push("/_ikigai/push")`, the
 cli door's path), and a view that says what it shows refetches itself on a cut:

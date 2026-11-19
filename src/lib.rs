@@ -1299,6 +1299,8 @@ pub fn pages(family: &str, base: &str) -> Result<Alias, PagesError> {
 ///   stylesheet, so the host's rules win a tie;
 /// - [`push`](Self::push): `<meta name="ikigai-ui-push" content="…">`, the door's push stream
 ///   (D9), which the shell script reads (below);
+/// - [`session`](Self::session): `<meta name="ikigai-ui-session" content="…">`, the host's
+///   session answer, whose `writeSeconds` the shell script reads (below);
 /// - each [`script`](Self::script): `<script src="…" defer></script>`, after htmx, so it runs
 ///   with htmx loaded and the shell script's handlers in place.
 ///
@@ -1322,6 +1324,16 @@ pub fn pages(family: &str, base: &str) -> Result<Alias, PagesError> {
 /// the element with the same id. The subscription follows the page: after every swap the
 /// script re-reads the declared paths and reopens the stream when they changed. With no push
 /// URL, or no element that declares a path, no stream is opened.
+///
+/// **Write that lapses (ledger #3822).** With a session URL (gonk's is `/auth/session`), the
+/// shell script reads it once the page has loaded: JSON whose `writeSeconds` is the write left
+/// and whose `restore` lists what a fresh sign-in would give back. When `writeSeconds` reaches
+/// 0, every element marked `data-ui-write` (a control, or a form or region holding controls)
+/// is disabled, keeping its name and its tab stop (`aria-disabled`), with a visible note beside
+/// it, which its controls point at with `aria-describedby`, saying that write has lapsed and to
+/// sign in again; `#status` says it once. A session that never could write (`writeSeconds` 0
+/// at once, `restore` empty) is told so instead. An answer with no numeric `writeSeconds`, or a
+/// family with no session URL, changes nothing.
 ///
 /// ```
 /// # use std::sync::Arc;
@@ -1367,6 +1379,7 @@ pub struct Pages {
     stylesheets: Vec<String>,
     scripts: Vec<String>,
     push: Option<String>,
+    session: Option<String>,
     chooser: bool,
     lenses: bool,
 }
@@ -1380,6 +1393,7 @@ impl Pages {
             stylesheets: Vec::new(),
             scripts: Vec::new(),
             push: None,
+            session: None,
             chooser: true,
             lenses: false,
         }
@@ -1419,6 +1433,14 @@ impl Pages {
         self
     }
 
+    /// The host's session answer (ledger #3822), JSON with `writeSeconds`, for the shell
+    /// script's disabling of `data-ui-write` controls once write lapses. A later call replaces an
+    /// earlier one.
+    pub fn session(mut self, url: impl Into<String>) -> Self {
+        self.session = Some(url.into());
+        self
+    }
+
     /// Whether the shell puts the theme chooser in the family's headers: on unless turned off.
     /// Off binds `urn:iki:ui:chooser-override:{family}:{theme}` to nothing, so it holds wherever
     /// the host puts this family beside [`space`].
@@ -1437,6 +1459,7 @@ impl Pages {
             stylesheets,
             scripts,
             push,
+            session,
             chooser,
             lenses,
         } = self;
@@ -1469,6 +1492,12 @@ impl Pages {
             head.push_str(&format!(
                 "\n<meta name=\"ikigai-ui-push\" content=\"{}\">",
                 url("push", push)?
+            ));
+        }
+        if let Some(session) = &session {
+            head.push_str(&format!(
+                "\n<meta name=\"ikigai-ui-session\" content=\"{}\">",
+                url("session", session)?
             ));
         }
         for script in &scripts {

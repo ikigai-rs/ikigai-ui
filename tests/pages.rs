@@ -245,6 +245,31 @@ fn a_head_url_is_checked_and_escaped() {
 }
 
 #[test]
+fn a_session_url_is_named_in_the_head_after_the_push_stream() {
+    // Ledger #3822: the shell script reads `writeSeconds` from the URL this meta names.
+    let base = || {
+        ikigai_ui::Pages::new("app", "urn:app:")
+            .push("/_ikigai/push")
+            .session("/auth/session")
+    };
+    let kernel = ikigai_core::Kernel::new(Arc::new(ikigai_core::Fallback::new(vec![Arc::new(
+        base().build().unwrap(),
+    )
+        as Arc<dyn ikigai_core::Space>])));
+    assert_eq!(
+        text(&kernel, "urn:iki:ui:head:app", &[]),
+        "\n<meta name=\"ikigai-ui-push\" content=\"/_ikigai/push\">\
+\n<meta name=\"ikigai-ui-session\" content=\"/auth/session\">"
+    );
+    for bad in ["javascript:alert(1)", "//evil.example/s", "auth/session"] {
+        assert!(base().session(bad).build().is_err(), "session {bad}");
+    }
+    // A family with none names none: its pages see no change.
+    let page = text(&host(None), "urn:demo:page:about", &[]);
+    assert!(!page.contains("ikigai-ui-session"), "{page}");
+}
+
+#[test]
 fn a_family_and_a_base_are_checked() {
     assert!(ikigai_ui::pages("Demo", "urn:demo:").is_err());
     assert!(ikigai_ui::pages("", "urn:demo:").is_err());
