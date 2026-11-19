@@ -2024,20 +2024,30 @@ pub fn page_screen(inv: &Invocation<'_>, name: &str) -> Result<String, Error> {
 /// the lens's legend and the resource (its name when the lens cannot be read).
 pub const TITLE: &str = "urn:iki:ui:lens:title:";
 
-struct LensTitle;
+/// The door of a lensed name, `{prefix}lens:{lens}[:facets:{…}]:resource:{iri}`, as a core
+/// template: `{prefix}lens:{lens}:resource:{iri}`. A grammar of our own would be
+/// `ik:matchKind "custom"`, which core's declarations refuse to rebuild, so a host that writes
+/// its arrangement out and builds it again (`urn:iki:host:arrangement`) could not (ledger
+/// #3814). The template matches every lensed name: on one with facets, `{lens}` captures
+/// `{lens}:facets:{…}` too. So the endpoint never reads `lens` alone; it joins the captures
+/// back into the name with [`lensed_name`] and reads that with [`parse_screen`].
+pub(crate) fn lensed_door(prefix: &str) -> ikigai_core::UriTemplate {
+    ikigai_core::UriTemplate::parse(format!("{prefix}lens:{{lens}}:resource:{{iri}}"))
+        .expect("a lensed template")
+}
 
-impl ikigai_core::Grammar for LensTitle {
-    fn match_iri(&self, iri: &Iri) -> Option<ikigai_core::Bindings> {
-        let name = iri.as_str().strip_prefix(TITLE)?;
-        let (lens, _, resource) = parse_screen(name)?.ok()?;
-        let mut b = ikigai_core::Bindings::new();
-        b.insert("lens", lens.as_str());
-        b.insert("iri", resource.as_str());
-        Some(b)
-    }
-
-    fn pattern(&self) -> String {
-        format!("{TITLE}lens:{{lens}}:resource:{{iri}}")
+/// The lensed screen name (`lens:{lens}[:facets:{…}]:resource:{iri}`) a [`lensed_door`]
+/// matched, joined from its captures exactly as it came. `NotFound` for one [`parse_screen`]
+/// does not read as a lensed name (`lens:a:b:resource:x`, say), and its refusal for one whose
+/// facets are malformed.
+pub(crate) fn lensed_name(inv: &Invocation<'_>) -> Result<String, Error> {
+    let lens = inv.bindings.get("lens").unwrap_or_default();
+    let resource = inv.bindings.get("iri").unwrap_or_default();
+    let name = format!("lens:{lens}:resource:{resource}");
+    match parse_screen(&name) {
+        Some(Ok(_)) => Ok(name),
+        Some(Err(e)) => Err(e),
+        None => Err(Error::NotFound(name)),
     }
 }
 
@@ -2147,37 +2157,15 @@ pub fn fold(inv: &Invocation<'_>, screen: &str) -> Result<String, Error> {
     Ok(screen_name(&lens, &resource, &chosen))
 }
 
-/// `urn:iki:ui:screen:name:lens:{lens}[:facets:{…}]:resource:{iri}`: the lensed view as a
-/// screen, so the html face renders it.
-struct LensScreen;
-
-impl ikigai_core::Grammar for LensScreen {
-    fn match_iri(&self, iri: &Iri) -> Option<ikigai_core::Bindings> {
-        let name = iri.as_str().strip_prefix(crate::screen::SCREEN_PREFIX)?;
-        let (lens, _, resource) = parse_screen(name)?.ok()?;
-        let mut b = ikigai_core::Bindings::new();
-        b.insert("name", name);
-        b.insert("lens", lens.as_str());
-        b.insert("iri", resource.as_str());
-        Some(b)
-    }
-
-    fn pattern(&self) -> String {
-        format!(
-            "{}lens:{{lens}}:resource:{{iri}}",
-            crate::screen::SCREEN_PREFIX
-        )
-    }
-}
-
 /// The lensed screens, in [`crate::space`].
 pub(crate) fn bind_screens(space: EndpointSpace) -> EndpointSpace {
     space.bind(
-        LensTitle,
+        lensed_door(TITLE),
         AsyncFnEndpoint::new("ui-lens-title", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
             Box::pin(async move {
-                let lens = inv.bindings.get("lens").unwrap_or_default().to_string();
-                let resource = inv.bindings.get("iri").unwrap_or_default().to_string();
+                let name = lensed_name(inv)?;
+                let (lens, _, resource) =
+                    parse_screen(&name).ok_or_else(|| Error::NotFound(name.clone()))??;
                 let legend = match read_lens(inv, &lens).await {
                     Ok(l) => l.legend,
                     Err(_) => lens,
@@ -2200,10 +2188,10 @@ pub(crate) fn bind_screens(space: EndpointSpace) -> EndpointSpace {
         ),
     )
     .bind(
-        LensScreen,
+        lensed_door(crate::screen::SCREEN_PREFIX),
         AsyncFnEndpoint::new("ui-screen-lens", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
             Box::pin(async move {
-                let name = inv.bindings.get("name").unwrap_or_default().to_string();
+                let name = lensed_name(inv)?;
                 let (lens, chosen, resource) =
                     parse_screen(&name).ok_or_else(|| Error::NotFound(name.clone()))??;
                 iri(&resource)?;
