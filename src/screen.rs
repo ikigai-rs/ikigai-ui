@@ -65,10 +65,12 @@
 //! budget is its bound.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use ikigai_core::{
-    ArgRef, ArgSpec, AsyncFnEndpoint, Bindings, Description, DynamicSpace, EndpointSpace, Error,
-    Grammar, Invocation, InvokeFuture, Iri, ReprType, Representation, Request, Verb,
+    ArgRef, ArgSpec, AsyncFnEndpoint, Bindings, Description, DynamicSpace, Endpoint, EndpointSpace,
+    Error, FnEndpoint, Grammar, Invocation, InvokeFuture, Iri, ReprType, Representation, Request,
+    Resolution, Resolved, Scope, Space, SpaceEntry, Topology, Verb,
 };
 
 use crate::model::{self, Children, Node, Type, Value};
@@ -435,17 +437,114 @@ pub fn prefix_space_name(table: &str) -> Option<String> {
 /// table (`refresh`, or `drive` to follow its edits, behind ikigai-core's `declare` feature) and
 /// injects the space with `Kernel::issue_in` around the requests that read screens.
 ///
+/// The space is a [`PrefixSpace`]: the [`DynamicSpace`] itself (it derefs to it), plus the one
+/// door a compile asks to learn the table is in force.
+///
 /// # Panics
 ///
 /// When `table` is not a `urn:` IRI of `[a-z0-9-]` segments: it is a name in the host's code.
-pub fn prefix_space(table: &str) -> DynamicSpace {
+pub fn prefix_space(table: &str) -> PrefixSpace {
     let name = prefix_space_name(table)
         .unwrap_or_else(|| panic!("`{table}` is not urn: and segments of [a-z0-9-]"));
-    ikigai_fn::prefix_space(&name, Iri::parse(table).expect("a urn: IRI"))
+    let space = ikigai_fn::prefix_space(&name, Iri::parse(table).expect("a urn: IRI"));
+    let id = space.id().expect("a dynamic space is named");
+    let in_force_iri =
+        Iri::parse(format!("{}{IN_FORCE}", id.as_str())).expect("a space name plus `:in-force`");
+    PrefixSpace {
+        space,
+        id,
+        in_force_iri,
+        in_force: Arc::new(in_force_endpoint()),
+    }
 }
 
-fn space_id(table: &str) -> Option<String> {
-    prefix_space_name(table).map(|name| format!("urn:iki:space:dynamic:{name}"))
+/// What a prefix space's own door is named after its space: `{space}:in-force`.
+const IN_FORCE: &str = ":in-force";
+
+/// A prefix table's corridor ([`prefix_space`]): its [`DynamicSpace`], and one door of its own,
+/// `{space}:in-force` ([`in_force_iri`](Self::in_force_iri)), ahead of it.
+///
+/// A screen's `compile` asks the door (`Exists`) whether its table is in force rather than
+/// reading the scope (ledger #3870): the name resolves only where this space is in the chain.
+/// The dynamic space's own `{space}:status` would answer the same question, but its answer is
+/// live state, uncacheable, and joined into a compiled screen it would leave every prefixed
+/// screen uncacheable. This door's answer is a constant, cacheable: whether it resolves is
+/// a fact of the scope, which is part of every cache key.
+pub struct PrefixSpace {
+    space: DynamicSpace,
+    id: Iri,
+    in_force_iri: Iri,
+    in_force: Arc<dyn Endpoint>,
+}
+
+impl PrefixSpace {
+    /// The name of the door that answers where the table is in force: `{space}:in-force`.
+    pub fn in_force_iri(&self) -> &Iri {
+        &self.in_force_iri
+    }
+}
+
+impl std::ops::Deref for PrefixSpace {
+    type Target = DynamicSpace;
+
+    fn deref(&self) -> &DynamicSpace {
+        &self.space
+    }
+}
+
+impl Space for PrefixSpace {
+    fn resolve(&self, request: &Request, scope: &Scope) -> Resolution {
+        if request.target == self.in_force_iri {
+            return Resolution::Hit(
+                Resolved::new(Arc::clone(&self.in_force), Bindings::new())
+                    .with_answered_by(self.id.clone()),
+            );
+        }
+        self.space.resolve(request, scope)
+    }
+
+    fn entries(&self) -> Option<Vec<SpaceEntry>> {
+        let mut entries = vec![SpaceEntry::new(
+            self.in_force_iri.as_str(),
+            self.in_force.name(),
+        )];
+        entries.extend(self.space.entries().unwrap_or_default());
+        Some(entries)
+    }
+
+    fn id(&self) -> Option<Iri> {
+        Some(self.id.clone())
+    }
+
+    fn topology(&self) -> Topology {
+        self.space.topology()
+    }
+}
+
+/// The door `{space}:in-force` answers with: `true`, cacheable, for `Source` and `Exists`.
+fn in_force_endpoint() -> FnEndpoint {
+    FnEndpoint::new("ui-prefixes-in-force", |_inv: &Invocation<'_>| {
+        Ok(Representation::new(
+            ReprType::new("text/plain").with_param("charset", "utf-8"),
+            b"true".to_vec(),
+        )
+        .cacheable())
+    })
+    .with_description(
+        Description::new("ui-prefixes-in-force")
+            .title("A prefix table is in force")
+            .summary(
+                "Answers `true` wherever its prefix table's corridor is in the scope, and is \
+                 unresolved everywhere else. A constant, cacheable.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Exists)
+            .output("text/plain;charset=utf-8"),
+    )
+}
+
+fn in_force_iri(table: &str) -> Option<String> {
+    prefix_space_name(table).map(|name| format!("urn:iki:space:dynamic:{name}{IN_FORCE}"))
 }
 
 /// The screen a written reference names, when it names one through `…screen:name:{screen}`.
@@ -611,7 +710,7 @@ pub async fn compile(
     open: &[String],
 ) -> Result<Node, Error> {
     if let Some((line, table)) = &outline.prefixes {
-        let id = space_id(table).ok_or_else(|| {
+        let door = in_force_iri(table).ok_or_else(|| {
             at_unit(
                 screen,
                 outline.unit,
@@ -619,11 +718,17 @@ pub async fn compile(
                 format!("`{table}` is not a prefix table's name (urn: and segments of [a-z0-9-])"),
             )
         })?;
-        let in_force = inv
-            .scope()
-            .spaces()
-            .iter()
-            .any(|s| s.id().is_some_and(|i| i.as_str() == id));
+        // Ask, don't look (ledger #3870): the corridor's own door resolves only where the
+        // table's space is in the scope, and answers cacheably (see `PrefixSpace`). In force
+        // only when the answer's body is `true`: an Exists may answer Ok with `false` (a host's
+        // fallback that answers Exists for every name, say). Unresolved is not in force too;
+        // any other error is the caller's.
+        let door = Iri::parse(door).expect("a space name plus `:in-force`");
+        let in_force = match inv.issue(Request::new(Verb::Exists, door)).await {
+            Ok(answer) => answer.bytes.trim_ascii() == b"true",
+            Err(Error::Unresolved(_)) => false,
+            Err(other) => return Err(other),
+        };
         if !in_force {
             return Err(at_unit(
                 screen,

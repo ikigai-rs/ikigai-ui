@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use futures::executor::block_on;
 use ikigai_core::{
-    Capability, Description, EndpointSpace, Error, Exact, Fallback, FnEndpoint, Invocation, Iri,
-    Kernel, ReprType, Representation, Request, Scope, Space, UriTemplate, Verb,
+    ArgRef, Capability, Description, EndpointSpace, Error, Exact, Fallback, FnEndpoint, Invocation,
+    Iri, Kernel, ReprType, Representation, Request, Scope, Space, UriTemplate, Verb,
 };
 use ikigai_ui::model::{self, Node, Value};
 use ikigai_ui::screen;
@@ -19,6 +19,11 @@ type Sources = Arc<Mutex<BTreeMap<String, String>>>;
 
 /// A host: ikigai-ui, a source per screen from `sources` (counting reads), then the screens.
 fn host(sources: Sources, reads: Arc<AtomicUsize>) -> Kernel {
+    host_with(sources, reads, Vec::new())
+}
+
+/// [`host`], with `after` searched after the screens.
+fn host_with(sources: Sources, reads: Arc<AtomicUsize>, after: Vec<Arc<dyn Space>>) -> Kernel {
     let endpoint = FnEndpoint::new("test-screen-source", move |inv: &Invocation<'_>| {
         reads.fetch_add(1, Ordering::SeqCst);
         let name = inv.bindings.get("screen").unwrap_or_default();
@@ -39,11 +44,13 @@ fn host(sources: Sources, reads: Arc<AtomicUsize>) -> Kernel {
         UriTemplate::parse("urn:iki:ui:screen:name:{screen}:source").unwrap(),
         endpoint,
     );
-    Kernel::new(Arc::new(Fallback::new(vec![
+    let mut spaces: Vec<Arc<dyn Space>> = vec![
         Arc::new(ikigai_ui::space()),
         Arc::new(sources),
         Arc::new(screen::screens()),
-    ])))
+    ];
+    spaces.extend(after);
+    Kernel::new(Arc::new(Fallback::new(spaces)))
 }
 
 fn with(sources: &[(&str, &str)]) -> (Kernel, Sources, Arc<AtomicUsize>) {
@@ -491,4 +498,77 @@ fn the_default_prefix_table_passes_prefix_check() {
         Some("ui-prefixes:iki:uidemo:prefixes")
     );
     assert_eq!(screen::prefix_space_name("http://x/p"), None);
+}
+
+/// A prefixed screen compiled in its corridor: its second read is the first's (ledger #3870).
+/// `compile` asks the corridor's `{space}:in-force` door whether the table is in force; the
+/// door answers a cacheable `true`, so the report shows that ask left the compiled screen
+/// cacheable (the space's `:status` door, live state, would not).
+#[test]
+fn a_prefixed_screen_compiled_in_its_corridor_is_cached() {
+    let short = "@prefixes urn:iki:ui:prefixes\ngroup label=Short\n  ui:example:kind:status content=Saved\n";
+    let (kernel, _, reads) = with(&[("short", short)]);
+    let corridor = default_corridor(&kernel);
+    let first = read_in(&kernel, "short", corridor.clone()).unwrap();
+    let second = read_in(&kernel, "short", corridor.clone()).unwrap();
+    assert_eq!(first, second);
+    let report = Request::new(Verb::Source, Iri::parse("urn:kernel:uncached").unwrap()).with_arg(
+        "target",
+        ArgRef::Inline(request("short").target.as_str().as_bytes().to_vec()),
+    );
+    let report = block_on(kernel.issue_in(report, &Capability::root(), corridor.clone())).unwrap();
+    let report = String::from_utf8(report.bytes).unwrap();
+    eprintln!("urn:kernel:uncached for the compiled screen in its corridor:\n{report}");
+    assert!(report.contains("not computed uncached"), "{report}");
+    assert!(kernel.is_cached_in(&request("short"), &Capability::root(), &corridor));
+    assert_eq!(reads.load(Ordering::SeqCst), 1, "the source was read once");
+}
+
+/// An `Exists` that answers `Ok` with the body `false` is not "in force" (ledger #3870, round
+/// 2): a host whose fallback answers `Exists` for the in-force door's name, saying no, still
+/// gets the clear refusal outside the corridor, and the corridor still applies the table.
+#[test]
+fn an_exists_answering_false_for_the_in_force_door_still_refuses() {
+    let door = format!(
+        "urn:iki:space:dynamic:{}:in-force",
+        screen::prefix_space_name(screen::PREFIXES).unwrap()
+    );
+    let no = FnEndpoint::new("test-exists-no", |_inv: &Invocation<'_>| {
+        Ok(Representation::new(
+            ReprType::new("text/plain").with_param("charset", "utf-8"),
+            b"false".to_vec(),
+        )
+        .cacheable())
+    })
+    .with_description(
+        Description::new("test-exists-no")
+            .verb(Verb::Source)
+            .verb(Verb::Exists),
+    );
+    let fallback: Arc<dyn Space> = Arc::new(EndpointSpace::new().bind(Exact::new(&door), no));
+    let short = "@prefixes urn:iki:ui:prefixes\ngroup label=Short\n  ui:example:kind:status content=Saved\n";
+    let sources: Sources = Arc::new(Mutex::new(BTreeMap::from([(
+        "short".to_string(),
+        short.to_string(),
+    )])));
+    let kernel = host_with(sources, Arc::new(AtomicUsize::new(0)), vec![fallback]);
+    // The fallback does answer Exists on the door, Ok with `false`.
+    let asked = block_on(kernel.issue(
+        Request::new(Verb::Exists, Iri::parse(door.as_str()).unwrap()),
+        &Capability::root(),
+    ))
+    .unwrap();
+    assert_eq!(asked.bytes, b"false");
+    let detail = refused(read(&kernel, "short"));
+    assert!(
+        detail.contains("line 1: the prefix table `urn:iki:ui:prefixes` is not in force"),
+        "{detail}"
+    );
+    let corridor = default_corridor(&kernel);
+    let mut status = example("status");
+    status.properties.insert("content".into(), text("Saved"));
+    assert_eq!(
+        read_in(&kernel, "short", corridor).unwrap().children[0],
+        status
+    );
 }
