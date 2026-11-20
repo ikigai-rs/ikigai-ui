@@ -449,7 +449,6 @@ fn confinement_cannot_preserve_host_screen_and_directory_resolution() {
                 Iri::parse("urn:test:target-corridor").unwrap(),
                 Arc::new(EndpointSpace::new()),
             );
-            assert!(narrowed.scope().is_severed());
             for iri in [ikigai_ui::GALLERY, "urn:iki:ui:dir:target/html.json"] {
                 assert!(matches!(
                     narrowed

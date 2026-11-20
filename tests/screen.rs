@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use futures::executor::block_on;
 use ikigai_core::{
-    Capability, Description, EndpointSpace, Error, Exact, Fallback, FnEndpoint, Invocation, Iri,
-    Kernel, ReprType, Representation, Request, Scope, Space, UriTemplate, Verb,
+    ArgRef, Capability, Description, EndpointSpace, Error, Exact, Fallback, FnEndpoint, Invocation,
+    Iri, Kernel, ReprType, Representation, Request, Scope, Space, UriTemplate, Verb,
 };
 use ikigai_ui::model::{self, Node, Value};
 use ikigai_ui::screen;
@@ -491,4 +491,27 @@ fn the_default_prefix_table_passes_prefix_check() {
         Some("ui-prefixes:iki:uidemo:prefixes")
     );
     assert_eq!(screen::prefix_space_name("http://x/p"), None);
+}
+
+/// A prefixed screen compiled in its corridor: its second read is the first's (ledger #3870).
+/// `compile` asks the corridor's status door whether the table is in force; the door is live
+/// state, so the report says whether that ask left the compiled screen uncacheable.
+#[test]
+fn a_prefixed_screen_compiled_in_its_corridor_is_cached() {
+    let short = "@prefixes urn:iki:ui:prefixes\ngroup label=Short\n  ui:example:kind:status content=Saved\n";
+    let (kernel, _, reads) = with(&[("short", short)]);
+    let corridor = default_corridor(&kernel);
+    let first = read_in(&kernel, "short", corridor.clone()).unwrap();
+    let second = read_in(&kernel, "short", corridor.clone()).unwrap();
+    assert_eq!(first, second);
+    let report = Request::new(Verb::Source, Iri::parse("urn:kernel:uncached").unwrap()).with_arg(
+        "target",
+        ArgRef::Inline(request("short").target.as_str().as_bytes().to_vec()),
+    );
+    let report = block_on(kernel.issue_in(report, &Capability::root(), corridor.clone())).unwrap();
+    let report = String::from_utf8(report.bytes).unwrap();
+    eprintln!("urn:kernel:uncached for the compiled screen in its corridor:\n{report}");
+    assert!(report.contains("not computed uncached"), "{report}");
+    assert!(kernel.is_cached_in(&request("short"), &Capability::root(), &corridor));
+    assert_eq!(reads.load(Ordering::SeqCst), 1, "the source was read once");
 }
