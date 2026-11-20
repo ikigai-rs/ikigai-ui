@@ -896,10 +896,11 @@ async function writeOff(page, sent, sentence) {
   const said = await page.evaluate(() => window.__said);
   if (JSON.stringify(said) !== JSON.stringify([sentence])) return `#status said ${JSON.stringify(said)}, not the sentence once`;
   if ((await page.locator('#status [role="alert"]').count()) !== 0) return "the #status sentence is an alert";
-  await page.click("#w-del");
+  // force: Playwright waits for an aria-disabled control to be enabled; a person can still press it.
+  await page.click("#w-del", { force: true });
   await page.focus("#w-text");
   await page.keyboard.press("Enter");
-  await page.click("#w-send");
+  await page.click("#w-send", { force: true });
   await page.waitForTimeout(300);
   if (sent.length) return `write requests were sent: ${JSON.stringify(sent)}`;
   // A read still works.
