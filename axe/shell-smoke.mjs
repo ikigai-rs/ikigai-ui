@@ -822,6 +822,133 @@ await check("a page back from the back-forward cache misses no cut made while it
 }, bfcache);
 await bfcache.close();
 
+// Write that lapses (ledger #3822). The home page is served with <meta name="ikigai-ui-session">
+// naming `/_session`, which answers `answer` (JSON) or `code`, and with three controls: a form
+// and a button marked data-ui-write, and a GET button that is not. Every request to /_write/* is
+// recorded with its method.
+const WRITE_LAPSED = "Writing has lapsed for this session. Sign in again to write; you can still read.";
+const WRITE_NEVER = "This session cannot write: its sign-in only reads. Sign in with write access to make changes.";
+const writeControls =
+  '<form id="w-form" data-ui-write hx-post="/_write/form" hx-target="#w-out">' +
+  '<label for="w-text">Comment</label> <input id="w-text" name="text"> <button id="w-send">Send</button></form>' +
+  '<button id="w-del" type="button" data-ui-write hx-post="/_write/del" hx-target="#w-out">Delete</button>' +
+  '<button id="w-read" type="button" hx-get="/_write/read" hx-target="#w-out">Read</button>' +
+  '<div id="w-out"></div>';
+async function writePage(page, { answer, code = 200, meta = true } = {}) {
+  const sent = [];
+  await page.route("**/home-auto.html", async (route) => {
+    const response = await route.fetch();
+    let body = await response.text();
+    if (meta) body = body.replace("</head>", '<meta name="ikigai-ui-session" content="/_session">\n</head>');
+    body = body.replace("</main>", writeControls + "\n</main>");
+    await route.fulfill({ response, body });
+  });
+  await page.route("**/_session", (route) =>
+    route.fulfill({
+      status: code,
+      contentType: code === 200 ? "application/json" : "text/plain",
+      headers: { "content-security-policy": CSP },
+      body: code === 200 ? JSON.stringify(answer) : "no session",
+    }),
+  );
+  await page.route("**/_write/**", (route) => {
+    sent.push(route.request().method());
+    return route.fulfill({
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      headers: { "content-security-policy": CSP },
+      body: `<p id="w-done-${sent.length}">done</p>`,
+    });
+  });
+  await page.addInitScript(() => {
+    // Init scripts accumulate across writePage calls on one page: the first one listens.
+    if (window.__said) return;
+    window.__said = [];
+    document.addEventListener("DOMContentLoaded", () => {
+      new MutationObserver((records) => {
+        for (const r of records) for (const n of r.addedNodes) if (n.textContent) window.__said.push(n.textContent);
+      }).observe(document.getElementById("status"), { childList: true, subtree: true });
+    });
+  });
+  await page.goto(home);
+  return sent;
+}
+// What a disabled write control looks like to assistive technology, and that it does nothing.
+async function writeOff(page, sent, sentence) {
+  for (const [sel, name] of [["#w-del", "Delete"], ["#w-send", "Send"], ["#w-text", "Comment"]]) {
+    const c = page.locator(sel);
+    if ((await c.getAttribute("aria-disabled")) !== "true") return `${sel} is not aria-disabled`;
+    if ((await page.getByRole(sel === "#w-text" ? "textbox" : "button", { name, exact: true }).count()) !== 1)
+      return `${sel} lost its accessible name ${name}`;
+    const why = await page.evaluate((sel) => {
+      const c = document.querySelector(sel);
+      return (c.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean)
+        .map((id) => document.getElementById(id))
+        .filter((n) => n && n.matches("p.ui-note") && n.checkVisibility())
+        .map((n) => n.textContent);
+    }, sel);
+    if (JSON.stringify(why) !== JSON.stringify([sentence])) return `${sel} is described by ${JSON.stringify(why)}`;
+  }
+  if (!(await page.locator("#w-text").evaluate((i) => i.readOnly))) return "the text field is still editable";
+  if ((await page.locator("#w-read").getAttribute("aria-disabled")) !== null) return "the read control was disabled";
+  if ((await page.locator("p.ui-note").count()) !== 2) return `${await page.locator("p.ui-note").count()} notes, not one per marked element`;
+  await page.waitForTimeout(100);
+  const said = await page.evaluate(() => window.__said);
+  if (JSON.stringify(said) !== JSON.stringify([sentence])) return `#status said ${JSON.stringify(said)}, not the sentence once`;
+  if ((await page.locator('#status [role="alert"]').count()) !== 0) return "the #status sentence is an alert";
+  // force: Playwright waits for an aria-disabled control to be enabled; a person can still press it.
+  await page.click("#w-del", { force: true });
+  await page.focus("#w-text");
+  await page.keyboard.press("Enter");
+  await page.click("#w-send", { force: true });
+  await page.waitForTimeout(300);
+  if (sent.length) return `write requests were sent: ${JSON.stringify(sent)}`;
+  // A read still works.
+  await page.click("#w-read");
+  await page.locator("#w-out p").waitFor({ timeout: 2000 });
+  if (JSON.stringify(sent) !== '["GET"]') return `requests: ${JSON.stringify(sent)}`;
+  return null;
+}
+
+await check("write controls are disabled the moment writeSeconds reaches 0, said once", async (page) => {
+  const sent = await writePage(page, { answer: { writeSeconds: 2, restore: [] } });
+  const loaded = Date.now();
+  if ((await page.locator("#w-del").getAttribute("aria-disabled")) !== null) return "disabled before write lapsed";
+  await page.waitForFunction(() => document.getElementById("w-del").getAttribute("aria-disabled") === "true", null, { timeout: 5000 });
+  const took = Date.now() - loaded;
+  if (took < 1500) return `disabled ${took} ms after load, before writeSeconds 2 ran out`;
+  return writeOff(page, sent, WRITE_LAPSED);
+});
+
+await check("writeSeconds 0 with something to restore is lapsed, with nothing it never could", async (page) => {
+  let sent = await writePage(page, { answer: { writeSeconds: 0, restore: ["urn:cap:gonk:write"] } });
+  await page.waitForFunction(() => document.getElementById("w-del").getAttribute("aria-disabled") === "true", null, { timeout: 3000 });
+  const lapsed = await writeOff(page, sent, WRITE_LAPSED);
+  if (lapsed) return `lapsed: ${lapsed}`;
+  await page.unrouteAll();
+  sent = await writePage(page, { answer: { writeSeconds: 0, restore: [] } });
+  await page.waitForFunction(() => document.getElementById("w-del").getAttribute("aria-disabled") === "true", null, { timeout: 3000 });
+  const never = await writeOff(page, sent, WRITE_NEVER);
+  if (never) return `never: ${never}`;
+});
+
+await check("a host that does not report writeSeconds sees no change", async (page) => {
+  for (const [what, opts] of [
+    ["no writeSeconds", { answer: { seconds: 0, restore: [] } }],
+    ["a 404", { code: 404 }],
+    ["no session meta", { meta: false, answer: { writeSeconds: 0, restore: [] } }],
+  ]) {
+    await page.unrouteAll();
+    const sent = await writePage(page, opts);
+    await page.waitForTimeout(500);
+    if ((await page.locator("[aria-disabled]").count()) !== 0) return `${what}: a control was disabled`;
+    if ((await page.locator("p.ui-note").count()) !== 0) return `${what}: a note was shown`;
+    await page.click("#w-del");
+    await page.locator("#w-out p").waitFor({ timeout: 2000 });
+    if (JSON.stringify(sent) !== '["POST"]') return `${what}: requests ${JSON.stringify(sent)}`;
+  }
+});
+
 await browser.close();
 await site.close();
 console.log(`${failures} failure(s)`);

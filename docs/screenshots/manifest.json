@@ -1,40 +1,40 @@
 {
   "lens-board-page-2-light.webp": {
-    "inputs": "f15aea6bfe085222dbf898a6806d2c28d13eb40c5b16066d3c8bd02c300a0b80"
+    "inputs": "d79b6d134769c3ba531e047db19de27d18456ec8f0fbb8c1621faf32c4060b44"
   },
   "lens-board-page-2-dark.webp": {
-    "inputs": "f15aea6bfe085222dbf898a6806d2c28d13eb40c5b16066d3c8bd02c300a0b80"
+    "inputs": "d79b6d134769c3ba531e047db19de27d18456ec8f0fbb8c1621faf32c4060b44"
   },
   "gallery-light.webp": {
-    "inputs": "daa846b4baac751b1eb3fdc1042e1139262451a49695fbc1c4c23dc5efe0ec26"
+    "inputs": "73882fad6283460609156ccfbd022189d3369a6c982887a2ff545c1058f98f4c"
   },
   "gallery-dark.webp": {
-    "inputs": "daa846b4baac751b1eb3fdc1042e1139262451a49695fbc1c4c23dc5efe0ec26"
+    "inputs": "73882fad6283460609156ccfbd022189d3369a6c982887a2ff545c1058f98f4c"
   },
   "elements-light.webp": {
-    "inputs": "2750244e2440814c4120fcbfca9c8e1d2dd2af342d8ee12a04639d25219fd815"
+    "inputs": "90f3f9ac1eec0ec977b41c7ff9b747c4c3430a8298caaa5dfb0467c83e224e3d"
   },
   "elements-dark.webp": {
-    "inputs": "2750244e2440814c4120fcbfca9c8e1d2dd2af342d8ee12a04639d25219fd815"
+    "inputs": "90f3f9ac1eec0ec977b41c7ff9b747c4c3430a8298caaa5dfb0467c83e224e3d"
   },
   "contact-refusal-light.webp": {
-    "inputs": "0963463b66033413e951ef0cf07df227136c01cbaf74d1547555c5d560c3c979"
+    "inputs": "2cba47a62883fb4065fb62b7f3c12363af2b2d571685fdc8d285cb21177b3929"
   },
   "contact-refusal-dark.webp": {
-    "inputs": "0963463b66033413e951ef0cf07df227136c01cbaf74d1547555c5d560c3c979"
+    "inputs": "2cba47a62883fb4065fb62b7f3c12363af2b2d571685fdc8d285cb21177b3929"
   },
   "support-light.webp": {
-    "inputs": "322bbe12854b4dac7c73b7c834f149fa5e165828b2e53b5b5e177e640a27e904"
+    "inputs": "2c8f7acc64b1123cd1f64e755c12e7946e2ce3f5af90995f341f968f14c1738d"
   },
   "support-dark.webp": {
-    "inputs": "322bbe12854b4dac7c73b7c834f149fa5e165828b2e53b5b5e177e640a27e904"
+    "inputs": "2c8f7acc64b1123cd1f64e755c12e7946e2ce3f5af90995f341f968f14c1738d"
   },
   "scene-light.webp": {
-    "inputs": "daa846b4baac751b1eb3fdc1042e1139262451a49695fbc1c4c23dc5efe0ec26",
+    "inputs": "73882fad6283460609156ccfbd022189d3369a6c982887a2ff545c1058f98f4c",
     "webgpu": false
   },
   "scene-dark.webp": {
-    "inputs": "daa846b4baac751b1eb3fdc1042e1139262451a49695fbc1c4c23dc5efe0ec26",
+    "inputs": "73882fad6283460609156ccfbd022189d3369a6c982887a2ff545c1058f98f4c",
     "webgpu": false
   }
 }

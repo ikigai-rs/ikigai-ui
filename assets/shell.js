@@ -4,7 +4,7 @@
 // paint. It touches only <html> while it runs; everything else waits for htmx's events, which
 // bubble to `document`.
 //
-// It does five things htmx does not (2 includes riding out a restart: a GET that gets a 502,
+// It does six things htmx does not (2 includes riding out a restart: a GET that gets a 502,
 // 503 or 504 or no answer is sent again, with backoff, before it is shown; see 2a):
 // 1. The theme (D12). `theme=` in the URL wins and is remembered; with none, a remembered choice
 //    replaces the server's `auto`. A chooser is a real <select name="theme" data-ui-theme> in a
@@ -50,6 +50,8 @@
 //    pagehide, so a cut made while it sat in the cache was heard by nobody. A stream the door
 //    refuses (a 400 past its subscription bound) is said once in #status; a stream that is
 //    only reconnecting says nothing. Nothing from the stream is parsed as markup.
+// 6. Write that lapses (ledger #3822). With the host's session answer named in <head>, a control
+//    marked data-ui-write is disabled, with a note saying why, once its `writeSeconds` is 0.
 (function () {
   "use strict";
   var KEY = "ikigai-ui:theme";
@@ -603,5 +605,117 @@
   });
   window.addEventListener("pageshow", function (e) {
     if (e.persisted) subscribe();
+  });
+
+  // ---- 6. write that lapses (ledger #3822) ------------------------------------------------------
+  // With the host's session answer named in <head> (<meta name="ikigai-ui-session"
+  // content="/auth/session">, which ikigai_ui::Pages::session writes), the shell reads it once
+  // the page has loaded. Its `writeSeconds` is the write left; at 0 every control that needs
+  // write, marked with data-ui-write (on the control, or on a form or region around it), is
+  // disabled: aria-disabled, so it keeps its name and its place in the tab order, read-only
+  // when it is a text field, and described by a visible note beside the marked element that
+  // says why and how to reopen it. Activating it, or submitting a marked form, does nothing (as
+  // for a 403, 2). A session that never could write (0 at once, with nothing in `restore`) is
+  // told so instead. #status says the sentence once, politely. Content swapped in later is
+  // marked as it arrives. An answer with no numeric `writeSeconds`, a failed read, or no meta
+  // changes nothing. The countdown is held as a deadline, so a page that slept past it lapses
+  // as soon as it is shown again.
+  var WRITE_LAPSED = "Writing has lapsed for this session. Sign in again to write; you can still read.";
+  var WRITE_NEVER = "This session cannot write: its sign-in only reads. Sign in with write access to make changes.";
+  var writeOff = null; // the sentence once write is off
+  var writeDeadline = 0;
+  var writeTimer = null;
+  var writeNoteSeq = 0;
+  function writeControls(el) {
+    if (el.matches(CONTROL)) return [el];
+    return Array.prototype.slice.call(el.querySelectorAll(CONTROL));
+  }
+  function markWrite(scope) {
+    if (!writeOff || !scope || !scope.querySelectorAll) return 0;
+    var marked = Array.prototype.slice.call(scope.querySelectorAll("[data-ui-write]"));
+    if (scope.matches && scope.matches("[data-ui-write]")) marked.unshift(scope);
+    var count = 0;
+    marked.forEach(function (el) {
+      if (el.hasAttribute("data-ui-write-off")) return;
+      // A marked element inside another marked one is covered by the outer one's note.
+      if (el.parentElement && el.parentElement.closest("[data-ui-write]")) return;
+      el.setAttribute("data-ui-write-off", "");
+      var p = document.createElement("p");
+      p.className = "ui-note";
+      writeNoteSeq += 1;
+      p.id = "ui-write-note-" + writeNoteSeq;
+      p.textContent = writeOff;
+      el.insertAdjacentElement("afterend", p);
+      writeControls(el).forEach(function (c) {
+        c.setAttribute("aria-disabled", "true");
+        if (c.matches("textarea, input:not([type]), input[type=text], input[type=email], input[type=search], input[type=url], input[type=tel], input[type=number], input[type=password], input[type=date], input[type=time], input[type=datetime-local], input[type=month], input[type=week]")) {
+          c.readOnly = true;
+        }
+        var ids = (c.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+        ids.push(p.id);
+        c.setAttribute("aria-describedby", ids.join(" "));
+        described.push({ control: c, note: p });
+      });
+      count += 1;
+    });
+    return count;
+  }
+  function lapse(sentence) {
+    if (writeOff) return;
+    writeOff = sentence;
+    if (writeTimer) window.clearTimeout(writeTimer);
+    writeTimer = null;
+    // Once, politely; the notes beside the controls are on screen, so it is for assistive
+    // technology. A page with nothing marked has nothing that changed, and says nothing.
+    if (markWrite(document)) status(sentence, false, true);
+  }
+  function writeCheck() {
+    if (writeOff || !writeDeadline) return;
+    if (writeTimer) window.clearTimeout(writeTimer);
+    writeTimer = null;
+    var left = writeDeadline - Date.now();
+    if (left <= 0) return lapse(WRITE_LAPSED);
+    // setTimeout holds at most 2^31 - 1 ms; a longer wait is taken in steps.
+    writeTimer = window.setTimeout(writeCheck, Math.min(left, 2147483647));
+  }
+  function writeAnswer(a) {
+    if (!a || typeof a !== "object") return;
+    var seconds = a.writeSeconds;
+    if (typeof seconds !== "number" || !isFinite(seconds) || seconds < 0) return;
+    if (seconds > 0) {
+      writeDeadline = Date.now() + seconds * 1000;
+      return writeCheck();
+    }
+    // 0 from the start: lapsed when a fresh sign-in would restore something, else never could.
+    lapse(Array.isArray(a.restore) && a.restore.length ? WRITE_LAPSED : WRITE_NEVER);
+  }
+  function readSession() {
+    var meta = document.querySelector('meta[name="ikigai-ui-session"]');
+    var url = meta && meta.getAttribute("content");
+    if (!url || !window.fetch) return;
+    window.fetch(url, { credentials: "same-origin", headers: { Accept: "application/json" } })
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(writeAnswer, function () {
+        // No answer, or not JSON: the host reports nothing, so nothing changes.
+      });
+  }
+  document.addEventListener("DOMContentLoaded", readSession);
+  document.addEventListener("htmx:load", function (e) {
+    markWrite(e.target);
+  });
+  // A timer does not run while a machine sleeps: the deadline is checked when the page is seen.
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") writeCheck();
+  });
+  window.addEventListener("pageshow", writeCheck);
+  // A marked form, or a request from inside a marked region, is not sent once write is off.
+  document.addEventListener("submit", function (e) {
+    if (writeOff && e.target && e.target.closest && e.target.closest("[data-ui-write]")) block(e);
+  }, true);
+  document.addEventListener("htmx:confirm", function (e) {
+    var elt = e.detail && e.detail.elt;
+    if (writeOff && elt && elt.closest && elt.closest("[data-ui-write]")) e.preventDefault();
   });
 })();
