@@ -719,11 +719,13 @@ pub async fn compile(
             )
         })?;
         // Ask, don't look (ledger #3870): the corridor's own door resolves only where the
-        // table's space is in the scope, and answers cacheably (see `PrefixSpace`). Only
-        // Unresolved means not in force; any other error is the caller's.
+        // table's space is in the scope, and answers cacheably (see `PrefixSpace`). In force
+        // only when the answer's body is `true`: an Exists may answer Ok with `false` (a host's
+        // fallback that answers Exists for every name, say). Unresolved is not in force too;
+        // any other error is the caller's.
         let door = Iri::parse(door).expect("a space name plus `:in-force`");
         let in_force = match inv.issue(Request::new(Verb::Exists, door)).await {
-            Ok(_) => true,
+            Ok(answer) => answer.bytes.trim_ascii() == b"true",
             Err(Error::Unresolved(_)) => false,
             Err(other) => return Err(other),
         };
