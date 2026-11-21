@@ -2708,7 +2708,7 @@ fn knowledge_examples(mut space: EndpointSpace) -> EndpointSpace {
         ("passage-b", r#"["passage"]"#),
         ("passage-c", r#"["passage"]"#),
         ("entity", r#"["entity-card", "entity-neighborhood"]"#),
-        ("disagreement", r#"["disagreement-list"]"#),
+        ("disagreements", r#"["disagreement-list"]"#),
     ] {
         space = space.bind(
             Exact::new(format!("{INSTANCE}{KNOWLEDGE_EXAMPLE}{resource}")),

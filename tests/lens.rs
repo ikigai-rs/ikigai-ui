@@ -1596,8 +1596,9 @@ fn knowledge_lenses_show_cited_evidence() {
     let graph = read("entity-neighborhood", "entity");
     assert!(of(&graph, "scene")[0].replacement.is_some());
 
-    let disagreement = read("disagreement-list", "disagreement");
+    let disagreement = read("disagreement-list", "disagreements");
     let table = of(&disagreement, "table")[0];
+    assert_eq!(table.children.len(), 3);
     let cells = &table.children[1].children;
     assert_eq!(cells.len(), 2);
     assert_eq!(said(&cells[0]), "“Ferries run daily.” | Authority rank: 1");
@@ -1605,6 +1606,12 @@ fn knowledge_lenses_show_cited_evidence() {
         said(&cells[1]),
         "“Ferries run on weekdays.” | Authority rank: 3"
     );
+    assert_eq!(
+        said(&table.children[2].children[0]),
+        "“Daily service from Pier 2.” | Authority rank: 2"
+    );
+    let single = read("disagreement-list", "disagreement-a");
+    assert_eq!(of(&single, "table")[0].children.len(), 2);
 }
 
 #[test]

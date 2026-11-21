@@ -195,7 +195,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("answer", "abstain"),
         ("passage", "passage-a"),
         ("entity-card", "entity"),
-        ("disagreement-list", "disagreement"),
+        ("disagreement-list", "disagreements"),
     ] {
         for theme in ["light", "dark"] {
             let page = ikigai_ui::testkit::render::source(

@@ -456,7 +456,9 @@ The disagreement table places the two passages and their ranks side by side.
 
 Hosts can bind their own definitions at `urn:iki:ui:lens:name:{name}` ahead of
 `lens::examples()` and set `graphs` to their own graph resources. The queries
-under [`assets/lens`](assets/lens) describe the fixture contract. Replace the
+under [`assets/lens`](assets/lens) describe the fixture contract. The
+`urn:iki:ui:fixture:knowledge:` namespace defines the fixture relationships for
+answers, citations, facts, neighbors, disagreements, and authority ranks. Replace the
 query at `urn:iki:ui:lens:name:{name}:query` to map a different vocabulary to
 the same renderer columns. In the fixtures, `oa:hasSource` identifies the
 immutable document revision, which carries the normalized text in `rdf:value`.

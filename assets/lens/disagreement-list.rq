@@ -3,7 +3,13 @@ PREFIX oa: <http://www.w3.org/ns/oa#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?focus ?left ?right ?leftSource ?leftDocument ?leftQuote ?leftRank
               ?rightSource ?rightDocument ?rightQuote ?rightRank WHERE {
-  ?focus k:left ?left ; k:right ?right .
+  {
+    ?focus k:disagreement ?pair .
+    ?pair k:left ?left ; k:right ?right .
+  } UNION {
+    ?focus k:left ?left ; k:right ?right .
+    BIND(?focus AS ?pair)
+  }
   ?left a oa:Annotation ; oa:hasTarget ?leftTarget .
   ?leftTarget oa:hasSource ?leftSource ; oa:hasSelector ?leftSelector .
   ?leftSelector a oa:TextQuoteSelector ; oa:exact ?leftQuote .
@@ -20,4 +26,4 @@ SELECT ?focus ?left ?right ?leftSource ?leftDocument ?leftQuote ?leftRank
   BIND(COALESCE(STR(?rightNumber), "unranked") AS ?rightRank)
   BIND(COALESCE(?rightTitle, STR(?rightSource)) AS ?rightDocument)
 }
-ORDER BY ?left ?right ?leftSource ?rightSource ?leftQuote ?rightQuote ?leftRank ?rightRank
+ORDER BY ?pair ?left ?right ?leftSource ?rightSource ?leftQuote ?rightQuote ?leftRank ?rightRank

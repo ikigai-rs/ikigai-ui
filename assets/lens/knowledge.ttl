@@ -9,21 +9,23 @@ ex:claim-a rdf:value "The ferry runs daily." ; k:citation ex:passage-a, ex:passa
 ex:claim-b rdf:value "The ferry leaves from Pier 2." ; k:citation ex:passage-c .
 ex:abstain a k:Answer ; k:abstainReason "No cited source establishes the winter timetable." .
 
-ex:passage-a a oa:Annotation ; oa:hasTarget [
-  oa:hasSource ex:timetable-v2 ;
-  oa:hasSelector [ a oa:TextQuoteSelector ; oa:exact "Ferries run daily." ],
-    [ a oa:TextPositionSelector ; oa:start 11 ; oa:end 29 ]
-] .
-ex:passage-b a oa:Annotation ; oa:hasTarget [
-  oa:hasSource ex:bulletin-v1 ;
-  oa:hasSelector [ a oa:TextQuoteSelector ; oa:exact "Ferries run on weekdays." ],
-    [ a oa:TextPositionSelector ; oa:start 0 ; oa:end 24 ]
-] .
-ex:passage-c a oa:Annotation ; oa:hasTarget [
-  oa:hasSource ex:guide-v3 ;
-  oa:hasSelector [ a oa:TextQuoteSelector ; oa:exact "Daily service from Pier 2." ],
-    [ a oa:TextPositionSelector ; oa:start 0 ; oa:end 26 ]
-] .
+ex:passage-a a oa:Annotation ; oa:hasTarget ex:passage-a-target .
+ex:passage-a-target a oa:SpecificResource ; oa:hasSource ex:timetable-v2 ;
+  oa:hasSelector ex:passage-a-quote, ex:passage-a-position .
+ex:passage-a-quote a oa:TextQuoteSelector ; oa:exact "Ferries run daily." .
+ex:passage-a-position a oa:TextPositionSelector ; oa:start 11 ; oa:end 29 .
+
+ex:passage-b a oa:Annotation ; oa:hasTarget ex:passage-b-target .
+ex:passage-b-target a oa:SpecificResource ; oa:hasSource ex:bulletin-v1 ;
+  oa:hasSelector ex:passage-b-quote, ex:passage-b-position .
+ex:passage-b-quote a oa:TextQuoteSelector ; oa:exact "Ferries run on weekdays." .
+ex:passage-b-position a oa:TextPositionSelector ; oa:start 0 ; oa:end 24 .
+
+ex:passage-c a oa:Annotation ; oa:hasTarget ex:passage-c-target .
+ex:passage-c-target a oa:SpecificResource ; oa:hasSource ex:guide-v3 ;
+  oa:hasSelector ex:passage-c-quote, ex:passage-c-position .
+ex:passage-c-quote a oa:TextQuoteSelector ; oa:exact "Daily service from Pier 2." .
+ex:passage-c-position a oa:TextPositionSelector ; oa:start 0 ; oa:end 26 .
 
 ex:entity rdfs:label "Harbor ferry" ;
   k:acceptedFact ex:claim-b ; k:neighbor ex:pier-2 ;
@@ -31,4 +33,6 @@ ex:entity rdfs:label "Harbor ferry" ;
 ex:proposal rdf:value "Service runs hourly." ; k:citation ex:passage-b .
 ex:pier-2 rdfs:label "Pier 2" .
 
-ex:disagreement k:left ex:passage-a ; k:right ex:passage-b .
+ex:disagreements k:disagreement ex:disagreement-a, ex:disagreement-b .
+ex:disagreement-a k:left ex:passage-a ; k:right ex:passage-b .
+ex:disagreement-b k:left ex:passage-c ; k:right ex:passage-b .
