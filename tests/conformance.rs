@@ -65,6 +65,11 @@ fn conforms() {
             "iri",
             "urn:iki:ui:workspace:person:urn:person:probe:name:probe",
         ))
+        .fixture(Fixture::new("ui-workspace-face", Verb::Source).binding(
+            "rest",
+            "resource:urn:iki:ui:workspace:person:urn:person:probe:name:probe",
+        ))
+        .pure("ui-shape-workspace")
         .cacheable("test-action-probe")
         .cacheable("ui-lens-extend")
         .cacheable("ui-lens-connect");

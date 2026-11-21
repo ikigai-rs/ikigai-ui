@@ -44,8 +44,11 @@ pub const PREFIX: &str = "urn:iki:ui:workspace:person:";
 pub const SHAPE: &str = "urn:iki:ui:shape:workspace";
 /// The workspace screen's prefix: `{SCREEN}{workspace-iri}`.
 pub const SCREEN: &str = "urn:iki:ui:screen:workspace:";
-/// The atom's shape as Turtle, named [`SHAPE`] (not yet bound: its blank nodes are to be
-/// skolemized first).
+/// The workspace screen under its face name: `{FACE}[select:{role}={pct-iri}&…:]resource:{iri}`,
+/// so an html face (`urn:iki:ui:html:screen:{name}`) reaches it like any named screen.
+pub const FACE: &str = "urn:iki:ui:screen:name:workspace:";
+/// The atom's shape as Turtle, served at [`SHAPE`]. It has no blank nodes: every node is named
+/// under the shape's own IRI.
 pub const SHAPE_TTL: &str = include_str!("../assets/workspace/shape.ttl");
 /// The layout hints' namespace. A face that does not claim it gets the linear form.
 pub const HINTS: &str = "urn:iki:ui:hint:layout:";
@@ -972,5 +975,141 @@ pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
                     .binding(),
             )
             .output(crate::model::MEDIA_TYPE),
+    )
+}
+
+/// The workspace screen's face name, without [`FACE`]'s `urn:iki:ui:screen:name:` part:
+/// `workspace:resource:{iri}`, or `workspace:select:{role}={pct-iri}&…:resource:{iri}` with a
+/// selection. Each selected IRI is percent-encoded, so no `:` in it splits the name.
+pub fn face_name(workspace: &str, selection: &BTreeMap<String, String>) -> String {
+    if selection.is_empty() {
+        return format!("workspace:resource:{workspace}");
+    }
+    let select = selection
+        .iter()
+        .map(|(role, iri)| format!("{role}={}", crate::lens::pct(iri)))
+        .collect::<Vec<_>>()
+        .join("&");
+    format!("workspace:select:{select}:resource:{workspace}")
+}
+
+/// A face name read back: the workspace's IRI and the selection by role.
+pub type FaceName = (String, BTreeMap<String, String>);
+
+/// A face name's workspace and selection, from what follows `workspace:`. `None` when it is
+/// not one; a refusal when its selection is malformed.
+pub fn parse_face_name(rest: &str) -> Option<Result<FaceName, Error>> {
+    if let Some(iri) = rest.strip_prefix("resource:") {
+        return (!iri.is_empty()).then(|| Ok((iri.to_string(), BTreeMap::new())));
+    }
+    let (select, iri) = rest.strip_prefix("select:")?.split_once(":resource:")?;
+    if iri.is_empty() {
+        return None;
+    }
+    let mut out = BTreeMap::new();
+    for pair in select.split('&').filter(|p| !p.is_empty()) {
+        let Some((role, value)) = pair.split_once('=') else {
+            return Some(Err(refuse(format!("`{pair}` is not role=iri"))));
+        };
+        match crate::lens::unpct(value) {
+            Ok(v) => out.insert(role.to_string(), v),
+            Err(e) => return Some(Err(e)),
+        };
+    }
+    Some(Ok((iri.to_string(), out)))
+}
+
+/// The screen a browser's request names: a workspace face name with the request's
+/// `select.{role}` parameters folded in over the name's own (an empty value drops the role),
+/// else `screen` itself.
+pub fn fold(inv: &ikigai_core::Invocation<'_>, screen: &str) -> Result<String, Error> {
+    let Some(rest) = screen.strip_prefix("workspace:") else {
+        return Ok(screen.to_string());
+    };
+    let Some(parsed) = parse_face_name(rest) else {
+        return Ok(screen.to_string());
+    };
+    let (iri, mut chosen) = parsed?;
+    let mut changed = false;
+    for name in inv.request.args.keys() {
+        if let Some(role) = name.strip_prefix("select.") {
+            let value = inv.inline_str(name)?;
+            changed = true;
+            if value.is_empty() {
+                chosen.remove(role);
+            } else {
+                chosen.insert(role.to_string(), value.to_string());
+            }
+        }
+    }
+    Ok(if changed {
+        face_name(&iri, &chosen)
+    } else {
+        screen.to_string()
+    })
+}
+
+/// [`FACE`]`{rest}`: the workspace screen under its face name, read through
+/// `urn:iki:ui:screen:workspace:{iri}` with the name's selection as `select.{role}` arguments.
+/// Reads only, under the caller's capability.
+pub(crate) fn face_endpoint() -> ikigai_core::AsyncFnEndpoint {
+    use ikigai_core::{
+        ArgRef, ArgSpec, AsyncFnEndpoint, Description, Invocation, InvokeFuture, Request, Verb,
+    };
+    AsyncFnEndpoint::new(
+        "ui-workspace-face",
+        |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let rest = inv.bindings.get("rest").unwrap_or_default();
+                let (iri, selection) = parse_face_name(rest)
+                    .ok_or_else(|| Error::NotFound(format!("workspace:{rest}")))??;
+                let mut request = Request::new(
+                    Verb::Source,
+                    Iri::parse(screen(&iri)).map_err(|e| refuse(e.to_string()))?,
+                );
+                for (role, value) in &selection {
+                    request = request.with_arg(
+                        format!("select.{role}"),
+                        ArgRef::Inline(value.as_bytes().to_vec()),
+                    );
+                }
+                inv.issue(request).await
+            })
+        },
+    )
+    .with_description(
+        Description::new("ui-workspace-face")
+            .title("A workspace as a named screen")
+            .summary(
+                "The workspace screen under a screen name, workspace:resource:{iri} or \
+                 workspace:select:{role}={iri}&…:resource:{iri}, so a face reaches it like any \
+                 named screen. Reads only.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(
+                ArgSpec::new("rest")
+                    .summary("resource:{iri}, or select:{role}={pct-iri}&…:resource:{iri}")
+                    .class("http://www.w3.org/2001/XMLSchema#string")
+                    .binding()
+                    .example("resource:urn:iki:ui:workspace:person:urn:person:probe:name:probe"),
+            )
+            .output(crate::model::MEDIA_TYPE),
+    )
+}
+
+/// [`SHAPE`]: the atom's closed SHACL shape, [`SHAPE_TTL`].
+pub(crate) fn shape_endpoint() -> ikigai_core::FnEndpoint {
+    use ikigai_core::{Description, Verb};
+    crate::fixed("ui-shape-workspace", crate::TURTLE, SHAPE_TTL).with_description(
+        Description::new("ui-shape-workspace")
+            .title("The workspace atom's shape")
+            .summary(
+                "The closed SHACL shape of a workspace atom: its label, layout (a split, tabs \
+                 or one pane), panes and selection. It has no blank nodes.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output(crate::TURTLE),
     )
 }

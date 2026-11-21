@@ -109,6 +109,30 @@ fn workspace_host() -> (Kernel, Seen) {
     (common::host_with(None, vec![Arc::new(space)]), seen)
 }
 
+/// [`workspace_host`] with its spaces AHEAD of ikigai-ui's, so the panes' lensed screens are
+/// the recorder's and not ikigai-ui's lensed door: the face's reads of them are seen.
+fn face_host() -> (Kernel, Seen) {
+    let seen = Seen::default();
+    let pane = serde_json::to_vec(&serde_json::json!({
+        "kind": "text", "properties": {"content": "A pane's content."}
+    }))
+    .unwrap();
+    let space = EndpointSpace::new()
+        .bind(
+            Exact::new(WORKSPACE),
+            recorder("atom", seen.clone(), ITEM.to_vec(), "application/json"),
+        )
+        .bind(
+            UriTemplate::parse("urn:iki:ui:screen:name:lens:{rest}").unwrap(),
+            recorder("panes", seen.clone(), pane, model::MEDIA_TYPE),
+        );
+    let root = Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(space) as Arc<dyn ikigai_core::Space>,
+        common::root(None, Vec::new()),
+    ]));
+    (common::kernel(root), seen)
+}
+
 fn workspace_screen(kernel: &Kernel, select: &[(&str, &str)]) -> Result<Node, Error> {
     let mut request = Request::new(
         Verb::Source,
@@ -159,6 +183,139 @@ fn a_selection_never_writes() {
     for field in all(forms[0], "field") {
         assert!(!text(field, "value").contains(chosen), "{field:?}");
     }
+}
+
+/// The same through the html face (round 2): the workspace screen reached as a named screen,
+/// `urn:iki:ui:html:screen:workspace:resource:{iri}`, with the browser's `select.item=` folded
+/// in. The face resolves each pane's reference inside its region, so the pane reads it makes are
+/// covered too: every request is a read, the following panes read the selected item, and the
+/// page's one form is the Layout form, the selection in none of its fields.
+#[test]
+fn a_selection_never_writes_through_the_face() {
+    let (kernel, seen) = face_host();
+    let chosen = "urn:iki:ledger:default:item:3950";
+    let face = format!(
+        "urn:iki:ui:html:screen:{}",
+        workspace::face_name(WORKSPACE, &BTreeMap::new())
+    );
+    let request = Request::new(Verb::Source, Iri::parse(face.as_str()).unwrap())
+        .with_arg("select.item", ArgRef::Inline(chosen.as_bytes().to_vec()));
+    let rep = block_on(kernel.issue(request, &Capability::scoped(["urn:cap:test:read"]))).unwrap();
+    let html = String::from_utf8(rep.bytes).unwrap();
+
+    let seen = seen.lock().unwrap();
+    assert!(
+        seen.iter().all(|(verb, _)| *verb == Verb::Source),
+        "only reads: {seen:?}"
+    );
+    assert!(seen.iter().any(|(_, iri)| iri == WORKSPACE));
+    // The references the face resolved: the following panes at the selection, the pinned one
+    // where it was.
+    let read = |iri: String| seen.iter().any(|(_, i)| *i == iri);
+    assert!(read(format!(
+        "urn:iki:ui:screen:name:lens:session:resource:{chosen}"
+    )));
+    assert!(read(format!(
+        "urn:iki:ui:screen:name:lens:item:resource:{chosen}"
+    )));
+    assert!(read(
+        "urn:iki:ui:screen:name:lens:dashboard:resource:urn:iki:ledger:default".to_string()
+    ));
+    assert_eq!(html.matches("A pane&#39;s content.").count(), 4, "{html}");
+
+    assert_eq!(html.matches("<form").count(), 1, "{html}");
+    let form = &html[html.find("<form").unwrap()..];
+    let form = &form[..form.find("</form>").unwrap()];
+    assert!(!form.contains(chosen), "{form}");
+    assert!(form.contains("name%3Aitem%3Aedit\""), "{form}");
+    assert!(form.contains("name=\"if-version\""), "{form}");
+}
+
+/// Proposal 3, the html face for the layout hints: a split is a flex row or column sized by
+/// its shares (classes, since the CSP allows no inline style), tabs a real tab list with the
+/// active key from the hint, each pane a section with its fragment id; and a face that does
+/// not claim the layout hints gets the linear form.
+#[test]
+fn the_html_face_renders_the_layout_hints() {
+    let (kernel, _) = face_host();
+    let face = format!(
+        "urn:iki:ui:html:screen:{}",
+        workspace::face_name(WORKSPACE, &BTreeMap::new())
+    );
+    let rep = block_on(kernel.issue(
+        Request::new(Verb::Source, Iri::parse(face.as_str()).unwrap()),
+        &Capability::scoped(["urn:cap:test:read"]),
+    ))
+    .unwrap();
+    let html = String::from_utf8(rep.bytes).unwrap();
+    for part in [
+        r##"<div class="ui-split ui-split-row" role="group" aria-label="Side by side: Dashboard, Session">"##,
+        r##"<div class="ui-share ui-share-300"><section class="ui-group ui-pane" id="pane-dashboard" aria-label="Dashboard">"##,
+        r##"<div class="ui-share ui-share-700"><div class="ui-split ui-split-column""##,
+        r##"<div class="ui-tabs" data-ui-tabs role="group""##,
+        r##"<div role="tablist" aria-label="Tabs: Item, Trail">"##,
+        r##"<a role="tab" id="tab-item" href="#pane-item" aria-controls="panel-item" aria-selected="true">Item</a>"##,
+        r##"<a role="tab" id="tab-trail" href="#pane-trail" aria-controls="panel-trail" aria-selected="false">Trail</a>"##,
+        r##"<div role="tabpanel" id="panel-trail" aria-labelledby="tab-trail" class="ui-tabpanel ui-tabpanel-inactive"><section class="ui-group ui-pane" id="pane-trail""##,
+        r##"<nav aria-label="Panes">"##,
+        r##"#pane-trail">Trail: follows item"##,
+    ] {
+        assert!(html.contains(part), "{part}\n{html}");
+    }
+    // The pane list comes before the layout: it is the skip list into the panes.
+    assert!(html.find("aria-label=\"Panes\"") < html.find("ui-split"));
+}
+
+/// The linear fallback: a face that does not claim `urn:iki:ui:hint:layout:` drops the hints
+/// (the same `without_hint_namespace` the choice and group hints take), and the workspace is
+/// its panes in reading order, each still a labeled section with its heading.
+#[test]
+fn without_the_layout_hints_the_workspace_is_linear() {
+    let ws = workspace::validate(ITEM).unwrap();
+    let screen = workspace::compose(&ws, WORKSPACE, 1, &BTreeMap::new()).unwrap();
+    let linear = ikigai_ui::html::without_layout_hints(screen);
+    fn hinted(n: &Node) -> bool {
+        n.hint.keys().any(|k| k.starts_with(workspace::HINTS)) || n.children.iter().any(hinted)
+    }
+    assert!(!hinted(&linear));
+    model::validate(&linear).unwrap();
+    let headings: Vec<&str> = all(&linear, "heading")
+        .iter()
+        .map(|h| text(h, "content"))
+        .collect();
+    assert_eq!(
+        headings,
+        ["Item 3941", "Dashboard", "Session", "Item", "Trail"]
+    );
+}
+
+/// A workspace face name round-trips its selection, percent-encoded so no `:` splits it.
+#[test]
+fn the_face_name() {
+    let mut chosen = BTreeMap::new();
+    assert_eq!(
+        workspace::face_name(WORKSPACE, &chosen),
+        format!("workspace:resource:{WORKSPACE}")
+    );
+    chosen.insert(
+        "item".to_string(),
+        "urn:iki:ledger:default:item:3950".to_string(),
+    );
+    let name = workspace::face_name(WORKSPACE, &chosen);
+    assert_eq!(
+        name,
+        format!(
+            "workspace:select:item=urn%3Aiki%3Aledger%3Adefault%3Aitem%3A3950:resource:{WORKSPACE}"
+        )
+    );
+    let (iri, back) = workspace::parse_face_name(name.strip_prefix("workspace:").unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!((iri.as_str(), back), (WORKSPACE, chosen));
+    assert!(workspace::parse_face_name("select:item:resource:urn:x")
+        .unwrap()
+        .is_err());
+    assert!(workspace::parse_face_name("nothing").is_none());
 }
 
 /// A selection that is not one absolute IRI is refused before anything is read.

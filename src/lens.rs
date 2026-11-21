@@ -2110,7 +2110,7 @@ pub(crate) fn lensed_name(inv: &Invocation<'_>) -> Result<String, Error> {
     }
 }
 
-fn pct(v: &str) -> String {
+pub(crate) fn pct(v: &str) -> String {
     let mut out = String::new();
     for b in v.bytes() {
         if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
@@ -2122,7 +2122,7 @@ fn pct(v: &str) -> String {
     out
 }
 
-fn unpct(v: &str) -> Result<String, Error> {
+pub(crate) fn unpct(v: &str) -> Result<String, Error> {
     let b = v.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
@@ -2145,7 +2145,9 @@ fn unpct(v: &str) -> Result<String, Error> {
 /// A lensed screen name as a compose template expands it (`{screen}`, its `:` escaped),
 /// unescaped once; any other name as it is.
 pub fn unescape_screen(name: &str) -> String {
-    if name.starts_with("lens%3A") || name.starts_with("lens%3a") {
+    let lower = name.get(..12).unwrap_or(name).to_ascii_lowercase();
+    // A workspace's face name (ledger #3950) escapes the same way.
+    if lower.starts_with("lens%3a") || lower.starts_with("workspace%3a") {
         unpct(name).unwrap_or_else(|_| name.to_string())
     } else {
         name.to_string()

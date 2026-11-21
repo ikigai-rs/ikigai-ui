@@ -100,8 +100,11 @@ pub const HINT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:hint:";
 /// The compiled-in templates of the presentation hints the html descriptor claims (`hints`):
 /// a `choice` as radio buttons, a `<fieldset>` with its `<legend>`, and each of its options as
 /// one radio input with its label (ledger #3537, [`model::RADIO`]); groups as wrapping columns;
-/// and plain GET navigation forms, which must not swap a page into the form alone.
-pub const HINT_TEMPLATES: [crate::Artifact; 5] = [
+/// plain GET navigation forms, which must not swap a page into the form alone; and the
+/// workspace's layout hints (ledger #3950, [`crate::workspace::HINTS`]): a split as a flex row
+/// or column sized by its shares, tabs as a real tab list, and a pane as a section with its
+/// fragment id.
+pub const HINT_TEMPLATES: [crate::Artifact; 8] = [
     crate::Artifact {
         iri: "urn:iki:ui:template:hint:choice-radio",
         id: "ui-template-hint",
@@ -136,6 +139,27 @@ pub const HINT_TEMPLATES: [crate::Artifact; 5] = [
         file: "template/hint/text-cited.html",
         media_type: crate::HTML,
         bytes: include_bytes!("../assets/template/hint/text-cited.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:group-split",
+        id: "ui-template-hint",
+        file: "template/hint/group-split.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/group-split.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:group-tabs",
+        id: "ui-template-hint",
+        file: "template/hint/group-tabs.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/group-tabs.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:group-pane",
+        id: "ui-template-hint",
+        file: "template/hint/group-pane.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/group-pane.html"),
     },
 ];
 
@@ -307,12 +331,30 @@ async fn screen(inv: &Invocation<'_>) -> Result<Node, Error> {
     } else {
         without_hint_namespace(node, model::GROUP_HINTS)
     };
+    // The workspace's layout (ledger #3950): a descriptor that does not claim the layout hints
+    // gets the linear form, the panes in reading order, each still its own labeled section.
+    let node = if descriptor
+        .hints
+        .iter()
+        .any(|ns| ns == crate::workspace::HINTS)
+    {
+        node
+    } else {
+        without_hint_namespace(node, crate::workspace::HINTS)
+    };
     // A descriptor that does not claim `scene` (a host serving no WebGPU renderer) takes the
     // ladder's next rung for each one: its replacement, else its label as text (ledger #3514).
     if descriptor.renders.iter().any(|k| k == "scene") {
         return Ok(node);
     }
     Ok(without_scenes(node))
+}
+
+/// `node` as a face that does not claim the workspace's layout hints sees it (ledger #3950):
+/// every `urn:iki:ui:hint:layout:` hint dropped, so splits and tabs are plain groups and the
+/// panes come in reading order.
+pub fn without_layout_hints(node: Node) -> Node {
+    without_hint_namespace(node, crate::workspace::HINTS)
 }
 
 fn without_hint_namespace(mut node: Node, namespace: &str) -> Node {
@@ -421,6 +463,7 @@ async fn view(
     // node below is composed from the same, cacheable name (ledger #3531).
     let given = inv.bindings.get("screen").unwrap_or_default().to_string();
     let screen = crate::lens::fold(inv, &given)?;
+    let screen = crate::workspace::fold(inv, &screen)?;
     let mut named = Bindings::new();
     named.insert("screen", screen.as_str());
     let inv = &inv.with_bindings(&named);
@@ -441,6 +484,9 @@ async fn view(
         "choice" if model::is_radio(node) => "choice-radio",
         "text" if model::role(node) == Some("cited") => "text-cited",
         "group" if model::is_columns(node) => "group-columns",
+        "group" if layout(node, crate::workspace::SPLIT).is_some() => "group-split",
+        "group" if layout(node, crate::workspace::TABS).is_some() => "group-tabs",
+        "group" if layout(node, crate::workspace::PANE).is_some() => "group-pane",
         // A read-only form without a Sink resource navigates. Enhancing it with
         // hx-target=this would put the returned page inside the controls alone.
         "form"
@@ -505,6 +551,53 @@ pub(crate) fn node_endpoint() -> AsyncFnEndpoint {
             .input(screen_arg())
             .input(node_arg())
             .output(crate::HTML),
+    )
+}
+
+/// A layout hint's text on a group (ledger #3950), kept by [`screen`] only when the descriptor
+/// claims [`crate::workspace::HINTS`].
+fn layout<'a>(node: &'a Node, key: &str) -> Option<&'a str> {
+    match node.hint.get(key) {
+        Some(model::Hint::Plain(Value::Text(s))) if node.kind == "group" => Some(s),
+        _ => None,
+    }
+}
+
+/// A pane key as it enters markup: only `[a-z0-9-]`, which [`crate::workspace::validate`]
+/// already holds every key to; anything else is refused rather than escaped.
+fn pane_key(node: &Node) -> Result<&str, Error> {
+    let key = layout(node, crate::workspace::PANE).unwrap_or_default();
+    if crate::workspace::is_key(key) {
+        Ok(key)
+    } else {
+        Err(Error::Endpoint(format!("`{key}` is not a pane key")))
+    }
+}
+
+/// Text for an attribute or an element's content.
+fn escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// A split child's share as a class from a fixed set: `ui-share-{n}`, the share to the nearest
+/// ten thousandths, from 50 to 1000 (the door's CSP allows no inline style).
+fn share_class(share: &str) -> String {
+    let n: u32 = share.parse().unwrap_or(crate::workspace::WHOLE / 2);
+    let n = (n + 5) / 10 * 10;
+    format!(
+        "ui-share-{}",
+        n.clamp(crate::workspace::MIN_SHARE, crate::workspace::WHOLE)
     )
 }
 
@@ -594,6 +687,11 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                         Some(reading.property(name).to_string())
                     }
                     ("form", "submit") => submit(inv, node).await?,
+                    ("group", "axis") => layout(node, crate::workspace::SPLIT)
+                        .and_then(|s| s.split_whitespace().next())
+                        .filter(|a| ["row", "column"].contains(a))
+                        .map(str::to_string),
+                    ("group", "pane-key") => Some(pane_key(node)?.to_string()),
                     ("form", "method") => Some(form_method(node)?),
                     ("scene", "datum-url") => match text_of(node, "datum") {
                         Some(datum) => crate::target::read_descriptor(inv, "html")
@@ -694,6 +792,30 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
                         .map_err(|_| Error::Endpoint(format!("{path}: not UTF-8")))
                 };
                 let mut out = String::new();
+                let shares: Vec<&str> = layout(node, crate::workspace::SPLIT)
+                    .map(|s| s.split_whitespace().skip(1).collect())
+                    .unwrap_or_default();
+                // A tabs group (ledger #3950): a real tab list first, a link per pane so it
+                // works with no script (the shell's script adds the arrow keys), then each pane
+                // in its tab panel. The active key is the hint's.
+                let active = layout(node, crate::workspace::TABS);
+                if let Some(active) = active {
+                    let label = text_of(node, "label").unwrap_or_default();
+                    out.push_str(&format!(
+                        "<div role=\"tablist\" aria-label=\"{}\">",
+                        escape(label)
+                    ));
+                    for child in &node.children {
+                        let key = pane_key(child)?;
+                        let selected = key == active;
+                        out.push_str(&format!(
+                            "<a role=\"tab\" id=\"tab-{key}\" href=\"#pane-{key}\" \
+                             aria-controls=\"panel-{key}\" aria-selected=\"{selected}\">{}</a>",
+                            escape(text_of(child, "label").unwrap_or(key))
+                        ));
+                    }
+                    out.push_str("</div>");
+                }
                 if node.kind == "scene" && node.replacement.is_some() {
                     out.push_str(&child_view(format!("{at}.r")).await?);
                 }
@@ -729,6 +851,26 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
                                 out.push_str(close);
                             }
                             out.push_str("</tr>");
+                        }
+                        _ if active.is_some() => {
+                            let key = pane_key(child)?;
+                            let state = if Some(key) == active {
+                                "ui-tabpanel-active"
+                            } else {
+                                "ui-tabpanel-inactive"
+                            };
+                            out.push_str(&format!(
+                                "<div role=\"tabpanel\" id=\"panel-{key}\" \
+                                 aria-labelledby=\"tab-{key}\" class=\"ui-tabpanel {state}\">"
+                            ));
+                            out.push_str(&child_view(path).await?);
+                            out.push_str("</div>");
+                        }
+                        _ if !shares.is_empty() => {
+                            let class = share_class(shares.get(i).copied().unwrap_or_default());
+                            out.push_str(&format!("<div class=\"ui-share {class}\">"));
+                            out.push_str(&child_view(path).await?);
+                            out.push_str("</div>");
                         }
                         _ => out.push_str(&child_view(path).await?),
                     }

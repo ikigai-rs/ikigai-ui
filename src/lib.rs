@@ -33,7 +33,7 @@
 //! | `urn:iki:ui:prefixes` | data | the default prefix table, `ui:` for `urn:iki:ui:` ([`screen::PREFIXES`]) |
 //! | `urn:iki:ui:setting:name:{name}` | data | a setting a screen runs under: `target`, `theme`, `locale`, `density`, `viewer`, the default here, a host's screen space ahead of it ([`setting`]) |
 //! | `urn:iki:ui:face:screen:{screen}` | composition | a screen through the target its screen space names ([`target::SCREEN_FACE`]) |
-//! | `urn:iki:ui:workspace:person:{person}:name:{name}`, `urn:iki:ui:shape:workspace`, `urn:iki:ui:screen:workspace:{iri}` | data, composition | a workspace atom (a host's), its closed shape, and the workspace as a screen ([`workspace`]) |
+//! | `urn:iki:ui:workspace:person:{person}:name:{name}`, `urn:iki:ui:shape:workspace`, `urn:iki:ui:screen:workspace:{iri}`, `urn:iki:ui:screen:name:workspace:{rest}` | data, composition | a workspace atom (a host's), its closed shape, and the workspace as a screen, also under a screen name for a face ([`workspace`]) |
 //! | `urn:iki:ui:structure:name:{name}` | data | a structural node's SHACL shape: `reference` ([`reference`](mod@reference)), `region` ([`region`]) |
 //! | `urn:iki:ui:example:structure:{name}` | data | a structural node's example |
 //! | `urn:iki:ui:chooser-override:{family}:{theme}` | a host's | a family's own chooser; bound to nothing, it turns the chooser off ([`CHOOSER_OVERRIDE`]) |
@@ -730,6 +730,11 @@ pub fn space() -> EndpointSpace {
             template(&format!("{}{{iri}}", workspace::SCREEN)),
             workspace::screen_endpoint(),
         )
+        .bind(
+            template(&format!("{}{{rest}}", workspace::FACE)),
+            workspace::face_endpoint(),
+        )
+        .bind(Exact::new(workspace::SHAPE), workspace::shape_endpoint())
         .bind(Exact::new(KIND), kind_list_endpoint())
         .bind(template(&format!("{KIND}:name:{{kind}}")), kind_endpoint())
         .bind(template(&format!("{KIND}:{{rest}}")), kind_seal_endpoint())
@@ -924,7 +929,7 @@ pub const FORM_OPENAPI: &str = "urn:iki:ui:form:openapi:";
 /// The gallery: `urn:iki:ui:screen:name:gallery`.
 pub const GALLERY: &str = "urn:iki:ui:screen:name:gallery";
 
-fn fixed(id: &'static str, media_type: &'static str, body: &'static str) -> FnEndpoint {
+pub(crate) fn fixed(id: &'static str, media_type: &'static str, body: &'static str) -> FnEndpoint {
     FnEndpoint::new(id, move |_: &Invocation<'_>| {
         Ok(Representation::new(ReprType::new(media_type), body.as_bytes().to_vec()).cacheable())
     })

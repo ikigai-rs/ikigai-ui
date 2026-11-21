@@ -13,7 +13,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .nth(1)
             .ok_or("usage: cargo run --example axe_site -- <dir>")?,
     );
-    let kernel = common::host(None);
+    // A workspace (ledger #3950) over screens the demo already has, so axe covers the layout
+    // hints' html face (a split, a tab list, panes as sections) in light, dark and more
+    // contrast.
+    let atom = serde_json::json!({
+        "label": "Contacts workspace",
+        "layout": {"split": "row", "children": [
+            {"share": 400, "pane": "list"},
+            {"share": 600, "tabs": ["graph", "dashboard"], "active": "graph"}
+        ]},
+        "panes": {
+            "list": {"label": "Contacts", "content": "lens:contact-list:resource:{graph}", "follows": "graph"},
+            "graph": {"label": "Graph", "content": "lens:contact-list:resource:{graph}", "follows": "graph"},
+            "dashboard": {"label": "Dashboard", "content": "lens:contact-dashboard:resource:{graph}", "follows": "graph"}
+        },
+        "selection": {"graph": ikigai_ui::scene::EXAMPLE_GRAPH}
+    });
+    let atom = serde_json::to_vec(&atom)?;
+    let workspace = "urn:iki:ui:workspace:person:urn:person:demo:name:contacts";
+    let atoms = ikigai_core::EndpointSpace::new().bind(
+        ikigai_core::Exact::new(workspace),
+        ikigai_core::FnEndpoint::new(
+            "axe-workspace-atom",
+            move |_: &ikigai_core::Invocation<'_>| {
+                Ok(ikigai_core::Representation::new(
+                    ikigai_core::ReprType::new("application/json"),
+                    atom.clone(),
+                )
+                .cacheable())
+            },
+        )
+        .with_description(
+            ikigai_core::Description::new("axe-workspace-atom")
+                .title("A workspace atom")
+                .summary("The axe site's workspace.")
+                .verb(ikigai_core::Verb::Source)
+                .output("application/json"),
+        ),
+    );
+    let kernel = common::host_with(None, vec![std::sync::Arc::new(atoms)]);
     let mut files: Vec<(String, String, Vec<u8>)> = Vec::new();
     // The assets, at the paths the shell links them by (the door's route-table entry:
     // /ui/x is urn:iki:ui:x).
@@ -68,6 +106,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         files.push((
             format!("/{screen}.html"),
+            common::HTML.to_string(),
+            page.into_bytes(),
+        ));
+    }
+    // The workspace through the html face: its own heading is the page's h1.
+    {
+        let screen = ikigai_ui::workspace::face_name(workspace, &Default::default());
+        let body = ikigai_ui::testkit::render::source(
+            &kernel,
+            &format!("urn:iki:ui:html:screen:{screen}"),
+            &[],
+        )?;
+        let page = format!("{head}<main id=\"main\" tabindex=\"-1\">\n{body}\n</main>{tail}");
+        files.push((
+            "/workspace.html".to_string(),
             common::HTML.to_string(),
             page.into_bytes(),
         ));
