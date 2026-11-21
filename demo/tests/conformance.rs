@@ -2,6 +2,9 @@
 //! capabilities enforced, no blank nodes. ikigai-ui's own are the root crate's
 //! `tests/conformance.rs`; here they are the fixtures the demo's fragments read.
 
+#[path = "../../tests/common/knowledge_conformance.rs"]
+mod knowledge_conformance;
+
 use std::sync::Arc;
 
 use ikigai_conformance::{Check, Fixture, Suite};
@@ -82,6 +85,7 @@ fn conforms() {
     ] {
         suite = suite.pure(id);
     }
+    suite = knowledge_conformance::register(suite);
     for (id, query) in [
         ("sparql-select", "SELECT * WHERE { ?s ?p ?o } LIMIT 1"),
         ("sparql-ask", "ASK { ?s ?p ?o }"),

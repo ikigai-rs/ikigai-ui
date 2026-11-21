@@ -14,6 +14,8 @@
 //!   is needed.
 
 mod common;
+#[path = "common/knowledge_conformance.rs"]
+mod knowledge_conformance;
 
 use std::sync::Arc;
 
@@ -76,32 +78,10 @@ fn conforms() {
         "ui-lens-shapes-contact",
         "ui-example-graph-log",
         "ui-lens-instance-log",
-        // Knowledge lenses and immutable fixtures (ledger #3886).
-        "ui-lens-answer",
-        "ui-lens-answer-query",
-        "ui-lens-passage",
-        "ui-lens-passage-query",
-        "ui-lens-entity-card",
-        "ui-lens-entity-card-query",
-        "ui-lens-disagreement-list",
-        "ui-lens-disagreement-list-query",
-        "ui-lens-entity-neighborhood",
-        "ui-lens-entity-neighborhood-query",
-        "ui-knowledge-graph",
-        "ui-knowledge-lenses-answer",
-        "ui-knowledge-lenses-abstain",
-        "ui-knowledge-lenses-passage-a",
-        "ui-knowledge-lenses-passage-b",
-        "ui-knowledge-lenses-passage-c",
-        "ui-knowledge-lenses-entity",
-        "ui-knowledge-lenses-disagreements",
-        "ui-knowledge-timetable-v2",
-        "ui-knowledge-bulletin-v1",
-        "ui-knowledge-guide-v3",
     ] {
         suite = suite.pure(id);
     }
-    suite = suite.namespace("urn:iki:ui:fixture:knowledge:");
+    suite = knowledge_conformance::register(suite);
     // ikigai-sparql's endpoints, bound so the lenses run on a real store: a query each over the
     // contact graph, so the answer's golden thread hangs on its source.
     for (id, query) in [
