@@ -1,0 +1,6 @@
+{
+  "@id": "urn:iki:ui:example:knowledge:bulletin-v1",
+  "http://www.w3.org/2000/01/rdf-schema#label": "Visitor bulletin, revision 1",
+  "http://www.w3.org/1999/02/22-rdf-syntax-ns#value": "Ferries run on weekdays.",
+  "urn:iki:ui:fixture:knowledge:authorityRank": 3
+}

@@ -1,0 +1,15 @@
+{"kind": "group", "properties": {"label": "{legend}"}, "children": [
+  {"kind": "list", "properties": {"label": "Answer statements"}, "children": [
+    {"repeat": "rows", "group": "claim", "each": {"kind": "group", "properties": {"label": "Answer statement"}, "children": [
+      {"kind": "text", "properties": {"content": "{?statement}"}},
+      {"when": "annotation", "each": {"kind": "list", "properties": {"label": "Cited passages"}, "children": [
+        {"repeat": "group", "each": {"kind": "group", "properties": {"label": "Citation"}, "children": [
+          {"kind": "text", "properties": {"content": "“{?quote}”"}},
+          {"kind": "link", "properties": {"label": "{?document}", "href": "{home:?source}"}},
+          {"kind": "link", "properties": {"label": "Cited characters {?start}–{?end}", "href": "{lens:passage:?annotation}"}}
+        ]}}
+      ]}}
+    ]}}
+  ]},
+  {"past": "Showing the first {shown} rows. Additional claims or citations are available in the source graph."}
+]}

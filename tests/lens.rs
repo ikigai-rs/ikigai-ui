@@ -1502,3 +1502,145 @@ fn the_html_face_draws_each_role_as_a_class_beside_its_words() {
         "{page}"
     );
 }
+
+const KNOWLEDGE: &str = "urn:iki:ui:example:knowledge:";
+
+#[test]
+fn knowledge_lenses_show_cited_evidence() {
+    use ikigai_ui::lens::{html_href, screen_name, Selection};
+    use scraper::{Html, Selector};
+
+    let kernel = common::host(None);
+    let cap = Capability::root();
+    let read = |name, resource| {
+        let iri = format!("{KNOWLEDGE}{resource}");
+        view(&kernel, name, &iri, &cap).unwrap_or_else(|err| panic!("{name} for {iri}: {err}"))
+    };
+
+    let answer = read("answer", "answer");
+    let statements = of(&answer, "list")[0];
+    assert_eq!(statements.children.len(), 2);
+    let first = &statements.children[0];
+    assert!(said(first).contains("The ferry runs daily."));
+    assert!(said(first).contains("Ferries run daily."));
+    assert!(said(first).contains("Daily service from Pier 2."));
+    assert!(said(&statements.children[1]).contains("The ferry leaves from Pier 2."));
+    let passage_href = html_href(
+        "passage",
+        &format!("{KNOWLEDGE}passage-a"),
+        &Selection::new(),
+    );
+    assert!(of(first, "link").iter().any(|link| {
+        text(&link.properties["href"]) == passage_href
+            && text(&link.properties["label"]) == "Cited characters 11–29"
+    }));
+
+    let abstained = read("answer", "abstain");
+    assert!(
+        said(&abstained).contains("Abstained. No cited source establishes the winter timetable.")
+    );
+    assert_eq!(of(&abstained, "list").len(), 1);
+
+    let passage = read("passage", "passage-a");
+    assert!(
+        said(&passage).contains("⚓ Schedule\n | Ferries run daily. |  Holiday hours may vary.")
+    );
+    let cited = of(&passage, "text")
+        .into_iter()
+        .find(|node| ikigai_ui::model::role(node) == Some("cited"))
+        .unwrap();
+    assert_eq!(text(&cited.properties["content"]), "Ferries run daily.");
+    let revision = format!("{KNOWLEDGE}timetable-v2");
+    assert!(of(&passage, "link")
+        .iter()
+        .any(|link| text(&link.properties["href"]) == ikigai_ui::view::href(&revision)));
+
+    let revision_view = format!("{}{revision}", ikigai_ui::view::RESOURCE);
+    let revision_node: Node =
+        serde_json::from_slice(&common::source(&kernel, &revision_view).unwrap().bytes).unwrap();
+    assert!(said(&revision_node).contains("Holiday hours may vary."));
+
+    let whole = read("passage", "passage-b");
+    let sections = of(&whole, "list")[0];
+    assert_eq!(sections.children.len(), 1);
+    assert_eq!(
+        text(&sections.children[0].properties["label"]),
+        "Cited range"
+    );
+
+    let passage_screen = screen_name(
+        "passage",
+        &format!("{KNOWLEDGE}passage-a"),
+        &Selection::new(),
+    );
+    let passage_html = Html::parse_fragment(&html(&kernel, &passage_screen, &[]));
+    let marked = passage_html
+        .select(&Selector::parse("mark").unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(marked.len(), 1);
+    assert_eq!(marked[0].text().collect::<String>(), "Ferries run daily.");
+    assert!(passage_html
+        .root_element()
+        .text()
+        .collect::<String>()
+        .contains("Cited range"));
+
+    let entity = read("entity-card", "entity");
+    let lists = of(&entity, "list");
+    assert_eq!(text(&lists[0].properties["label"]), "Accepted facts");
+    assert!(said(lists[0]).contains("Daily service from Pier 2."));
+    assert!(!said(&entity).contains("Service runs hourly."));
+    assert_eq!(text(&lists[1].properties["label"]), "Neighborhood");
+    assert_eq!(text(&of(lists[1], "link")[0].properties["label"]), "Pier 2");
+    assert!(of(&entity, "scene").is_empty());
+    let graph = read("entity-neighborhood", "entity");
+    assert!(of(&graph, "scene")[0].replacement.is_some());
+
+    let disagreement = read("disagreement-list", "disagreement");
+    let table = of(&disagreement, "table")[0];
+    let cells = &table.children[1].children;
+    assert_eq!(cells.len(), 2);
+    assert_eq!(said(&cells[0]), "“Ferries run daily.” | Authority rank: 1");
+    assert_eq!(
+        said(&cells[1]),
+        "“Ferries run on weekdays.” | Authority rank: 3"
+    );
+}
+
+#[test]
+fn a_passage_uses_the_callers_graph_and_leaves_mismatched_text_unmarked() {
+    let config =
+        r#"{"renderer":"passage","legend":"Passage","bound":10,"graphs":["urn:host:passage"]}"#;
+    let graph = r#"
+        @prefix oa: <http://www.w3.org/ns/oa#> .
+        @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+        <urn:host:annotation> a oa:Annotation ; oa:hasTarget [
+            oa:hasSource <urn:host:revision> ;
+            oa:hasSelector [ a oa:TextQuoteSelector ; oa:exact "old" ],
+                           [ a oa:TextPositionSelector ; oa:start 0 ; oa:end 3 ]
+        ] .
+        <urn:host:revision> rdf:value "new wording" .
+    "#;
+    let space = EndpointSpace::new()
+        .bind(
+            Exact::new("urn:iki:ui:lens:name:passage"),
+            fixed("host-passage-lens", "application/json", config.into()),
+        )
+        .bind(
+            Exact::new("urn:host:passage"),
+            fixed("host-passage", "text/turtle", graph.into()),
+        );
+    let kernel = common::host_with(None, vec![Arc::new(space)]);
+    let passage = view(
+        &kernel,
+        "passage",
+        "urn:host:annotation",
+        &Capability::root(),
+    )
+    .unwrap();
+    assert!(said(&passage).contains("The selectors do not agree with this revision."));
+    assert!(said(&passage).contains("new wording"));
+    assert!(of(&passage, "text")
+        .iter()
+        .all(|node| ikigai_ui::model::role(node).is_none()));
+}

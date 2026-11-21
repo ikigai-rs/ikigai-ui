@@ -1,0 +1,11 @@
+{
+  "renderer": "passage",
+  "bound": 30,
+  "legend": "Passage",
+  "graphs": [
+    "urn:iki:ui:example:graph:knowledge",
+    "urn:iki:ui:example:knowledge:timetable-v2",
+    "urn:iki:ui:example:knowledge:bulletin-v1",
+    "urn:iki:ui:example:knowledge:guide-v3"
+  ]
+}

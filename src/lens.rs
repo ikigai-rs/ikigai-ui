@@ -34,7 +34,7 @@
 //! **A withheld result is said in words.** When the caller may not read what the lens reads, the
 //! lensed view says so in a `text`, never an empty renderer.
 //!
-//! **Templates repeat, boundedly.** A renderer is a model tree with three constructs beside
+//! **Templates repeat, boundedly.** A renderer is a model tree with data constructs beside
 //! ordinary nodes, all data, nothing code ([`expand`]):
 //!
 //! - `{"repeat": "rows", "each": T}` — `T` once per result row, at most the lens's bound;
@@ -64,8 +64,11 @@
 //!   With `collapse: true`, a thread past `bound` keeps its root and first/last replies by
 //!   `?time`, plus its reply count. Participants and full linked selection are separate lists.
 //!
-//! In any string, `{?v}` is the row's value of `?v`, `{home:?v}` its home link, and `{lens}`,
-//! `{legend}`, `{focus}`, `{bound}`, `{shown}` the lens's.
+//! `{"when":"v","each":...}` includes its template only when the row binds `?v`.
+//!
+//! In any string, `{?v}` is the row's value of `?v`, `{home:?v}` its home link,
+//! and `{lens:name:?v}` a link to the named lens for the row's IRI. The lens supplies
+//! `{lens}`, `{legend}`, `{focus}`, `{bound}`, and `{shown}`.
 //!
 //! **The `graph` renderer draws the lens's own result** (ledger #3532). A CONSTRUCT lens's
 //! result is its graph as JSON-LD; its rows are the graph's nodes (`?node`, `?label`, by label)
@@ -167,7 +170,7 @@ pub const DEFAULT_LENS: (&str, &str) = (
 /// Example lenses over the contact graph ([`crate::scene::EXAMPLE_GRAPH`]) and [`DEMO_GRAPH`]:
 /// (name, lens, query). Shipped by this crate, which owns that graph; a host places
 /// [`examples`].
-pub const EXAMPLES: [(&str, &str, &str); 10] = [
+pub const EXAMPLES: [(&str, &str, &str); 15] = [
     (
         "contact-graph",
         include_str!("../assets/lens/contact-graph.json"),
@@ -218,6 +221,31 @@ pub const EXAMPLES: [(&str, &str, &str); 10] = [
         include_str!("../assets/lens/asserted-vs-derived.json"),
         include_str!("../assets/lens/asserted-vs-derived.rq"),
     ),
+    (
+        "answer",
+        include_str!("../assets/lens/answer.json"),
+        include_str!("../assets/lens/answer.rq"),
+    ),
+    (
+        "passage",
+        include_str!("../assets/lens/passage.json"),
+        include_str!("../assets/lens/passage.rq"),
+    ),
+    (
+        "entity-card",
+        include_str!("../assets/lens/entity-card.json"),
+        include_str!("../assets/lens/entity-card.rq"),
+    ),
+    (
+        "disagreement-list",
+        include_str!("../assets/lens/disagreement-list.json"),
+        include_str!("../assets/lens/disagreement-list.rq"),
+    ),
+    (
+        "entity-neighborhood",
+        include_str!("../assets/lens/entity-neighborhood.json"),
+        include_str!("../assets/lens/entity-neighborhood.rq"),
+    ),
 ];
 
 /// The shapes the example lens `shacl-violations` holds the contact graph to, Turtle, at
@@ -231,7 +259,7 @@ pub const EXAMPLE_LOG: &str = "urn:iki:ui:example:graph:log";
 pub const EXAMPLE_LOG_JSON_LD: &str = include_str!("../assets/lens/log.jsonld");
 
 /// The compiled-in renderers, by name.
-pub const RENDERERS: [(&str, &str); 9] = [
+pub const RENDERERS: [(&str, &str); 13] = [
     ("graph", include_str!("../assets/renderer/graph.json")),
     ("table", include_str!("../assets/renderer/table.json")),
     ("list", include_str!("../assets/renderer/list.json")),
@@ -244,6 +272,16 @@ pub const RENDERERS: [(&str, &str); 9] = [
         include_str!("../assets/renderer/violations.json"),
     ),
     ("split", include_str!("../assets/renderer/split.json")),
+    ("answer", include_str!("../assets/renderer/answer.json")),
+    ("passage", include_str!("../assets/renderer/passage.json")),
+    (
+        "entity-card",
+        include_str!("../assets/renderer/entity-card.json"),
+    ),
+    (
+        "disagreement-list",
+        include_str!("../assets/renderer/disagreement-list.json"),
+    ),
 ];
 
 /// A lens's data.
@@ -812,6 +850,14 @@ fn sub(s: &str, fill: &Fill<'_>, row: Option<&Row>) -> String {
             "bound" => Some(fill.bound.to_string()),
             "page" => Some(fill.page.to_string()),
             "shown" => Some(fill.rows.rows.len().to_string()),
+            k if k.starts_with("lens:") => k[5..].split_once(":?").map(|(lens, var)| {
+                let target = value(var);
+                if Iri::parse(&target).is_ok() {
+                    html_href(lens, &target, &Selection::new())
+                } else {
+                    String::new()
+                }
+            }),
             k if k.starts_with("home:?") => {
                 Some(fill.home.href(&value(&k[6..])).unwrap_or_default())
             }
@@ -1035,6 +1081,19 @@ fn walk(
                 out.extend(walk(x, fill, row, group, count)?);
             }
             Ok(vec![Json::Array(out)])
+        }
+        Json::Object(o) if o.contains_key("when") => {
+            let var = o["when"]
+                .as_str()
+                .ok_or_else(|| refuse("renderer", "when names a result variable"))?;
+            let each = o
+                .get("each")
+                .ok_or_else(|| refuse("renderer", "when needs each"))?;
+            if row.is_some_and(|r| r.contains_key(var)) {
+                walk(each, fill, row, group, count)
+            } else {
+                Ok(Vec::new())
+            }
         }
         Json::Object(o) if o.contains_key("hierarchy") => hierarchy(t, fill, count),
         Json::Object(o) if o.contains_key("past") => {
@@ -2371,7 +2430,7 @@ pub(crate) fn renderer_endpoint() -> AsyncFnEndpoint {
     .with_description(
         Description::new("ui-renderer").input(ikigai_core::ArgSpec::new("name").summary("the renderer's name").class("http://www.w3.org/2001/XMLSchema#string").binding().example("graph"))
             .title("A renderer, a named template")
-            .summary("A model template that repeats, boundedly, over a lens's result rows: graph, table, list, thread, board, tree, timeline, violations, split. A lens whose renderer is construct has no template: its CONSTRUCT builds the model.")
+            .summary("A model template that repeats, boundedly, over a lens's result rows: graph, table, list, thread, board, tree, timeline, violations, split, answer, passage, entity-card, disagreement-list. A lens whose renderer is construct has no template: its CONSTRUCT builds the model.")
             .verb(Verb::Source)
             .output("application/json"),
     )
@@ -2582,7 +2641,7 @@ pub fn examples() -> EndpointSpace {
     for (name, lens, query) in EXAMPLES {
         space = bind_lens(space, name, lens, query);
     }
-    space
+    knowledge_examples(space)
         .bind(
             Exact::new(DEMO_GRAPH),
             fixed(
@@ -2637,6 +2696,60 @@ pub fn examples() -> EndpointSpace {
                 include_str!("../assets/lens/log-instance.json"),
             ),
         )
+}
+
+const KNOWLEDGE_EXAMPLE: &str = "urn:iki:ui:example:knowledge:";
+
+fn knowledge_examples(mut space: EndpointSpace) -> EndpointSpace {
+    for (resource, lenses) in [
+        ("answer", r#"["answer"]"#),
+        ("abstain", r#"["answer"]"#),
+        ("passage-a", r#"["passage"]"#),
+        ("passage-b", r#"["passage"]"#),
+        ("passage-c", r#"["passage"]"#),
+        ("entity", r#"["entity-card", "entity-neighborhood"]"#),
+        ("disagreement", r#"["disagreement-list"]"#),
+    ] {
+        space = space.bind(
+            Exact::new(format!("{INSTANCE}{KNOWLEDGE_EXAMPLE}{resource}")),
+            fixed(
+                &format!("ui-knowledge-lenses-{resource}"),
+                "Knowledge lenses",
+                "application/json",
+                lenses,
+            ),
+        );
+    }
+    for (revision, bytes) in [
+        (
+            "timetable-v2",
+            include_str!("../assets/lens/timetable-v2.jsonld"),
+        ),
+        (
+            "bulletin-v1",
+            include_str!("../assets/lens/bulletin-v1.jsonld"),
+        ),
+        ("guide-v3", include_str!("../assets/lens/guide-v3.jsonld")),
+    ] {
+        space = space.bind(
+            Exact::new(format!("{KNOWLEDGE_EXAMPLE}{revision}")),
+            fixed(
+                &format!("ui-knowledge-{revision}"),
+                "Source document revision",
+                GRAPH,
+                bytes,
+            ),
+        );
+    }
+    space.bind(
+        Exact::new("urn:iki:ui:example:graph:knowledge"),
+        fixed(
+            "ui-knowledge-graph",
+            "Knowledge lens fixture",
+            "text/turtle",
+            include_str!("../assets/lens/knowledge.ttl"),
+        ),
+    )
 }
 
 #[cfg(test)]

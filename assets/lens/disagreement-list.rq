@@ -1,0 +1,23 @@
+PREFIX k: <urn:iki:ui:fixture:knowledge:>
+PREFIX oa: <http://www.w3.org/ns/oa#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?focus ?left ?right ?leftSource ?leftDocument ?leftQuote ?leftRank
+              ?rightSource ?rightDocument ?rightQuote ?rightRank WHERE {
+  ?focus k:left ?left ; k:right ?right .
+  ?left a oa:Annotation ; oa:hasTarget ?leftTarget .
+  ?leftTarget oa:hasSource ?leftSource ; oa:hasSelector ?leftSelector .
+  ?leftSelector a oa:TextQuoteSelector ; oa:exact ?leftQuote .
+  OPTIONAL { ?leftSource rdfs:label ?leftTitle }
+  OPTIONAL { ?leftSource k:authorityRank ?leftNumber }
+  BIND(COALESCE(STR(?leftNumber), "unranked") AS ?leftRank)
+  BIND(COALESCE(?leftTitle, STR(?leftSource)) AS ?leftDocument)
+
+  ?right a oa:Annotation ; oa:hasTarget ?rightTarget .
+  ?rightTarget oa:hasSource ?rightSource ; oa:hasSelector ?rightSelector .
+  ?rightSelector a oa:TextQuoteSelector ; oa:exact ?rightQuote .
+  OPTIONAL { ?rightSource rdfs:label ?rightTitle }
+  OPTIONAL { ?rightSource k:authorityRank ?rightNumber }
+  BIND(COALESCE(STR(?rightNumber), "unranked") AS ?rightRank)
+  BIND(COALESCE(?rightTitle, STR(?rightSource)) AS ?rightDocument)
+}
+ORDER BY ?left ?right ?leftSource ?rightSource ?leftQuote ?rightQuote ?leftRank ?rightRank

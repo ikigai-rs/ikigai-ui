@@ -1,0 +1,6 @@
+{
+  "@id": "urn:iki:ui:example:knowledge:timetable-v2",
+  "http://www.w3.org/2000/01/rdf-schema#label": "Harbor timetable, revision 2",
+  "http://www.w3.org/1999/02/22-rdf-syntax-ns#value": "⚓ Schedule\nFerries run daily. Holiday hours may vary.",
+  "urn:iki:ui:fixture:knowledge:authorityRank": 1
+}

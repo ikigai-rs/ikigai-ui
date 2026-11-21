@@ -101,7 +101,7 @@ pub const HINT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:hint:";
 /// a `choice` as radio buttons, a `<fieldset>` with its `<legend>`, and each of its options as
 /// one radio input with its label (ledger #3537, [`model::RADIO`]); groups as wrapping columns;
 /// and plain GET navigation forms, which must not swap a page into the form alone.
-pub const HINT_TEMPLATES: [crate::Artifact; 4] = [
+pub const HINT_TEMPLATES: [crate::Artifact; 5] = [
     crate::Artifact {
         iri: "urn:iki:ui:template:hint:choice-radio",
         id: "ui-template-hint",
@@ -129,6 +129,13 @@ pub const HINT_TEMPLATES: [crate::Artifact; 4] = [
         file: "template/hint/form-navigation.html",
         media_type: crate::HTML,
         bytes: include_bytes!("../assets/template/hint/form-navigation.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:text-cited",
+        id: "ui-template-hint",
+        file: "template/hint/text-cited.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/text-cited.html"),
     },
 ];
 
@@ -432,6 +439,7 @@ async fn view(
         "option" if in_choice.is_some_and(model::is_radio) => "option-radio",
         "option" if in_choice.is_none() => "text",
         "choice" if model::is_radio(node) => "choice-radio",
+        "text" if model::role(node) == Some("cited") => "text-cited",
         "group" if model::is_columns(node) => "group-columns",
         // A read-only form without a Sink resource navigates. Enhancing it with
         // hx-target=this would put the returned page inside the controls alone.

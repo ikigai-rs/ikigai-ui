@@ -443,6 +443,27 @@ in GPUI. Renderer assets, example queries, and the demo fixture live in
 
 ![The board after choosing page two and the Todo facet, showing its fourth task.](docs/screenshots/lens-board-page-2-light.webp)
 
+### Knowledge lenses
+
+`lens::examples()` also installs the fixture-backed `answer`, `passage`,
+`entity-card`, and `disagreement-list` lenses. Open the
+[example answer](http://127.0.0.1:8080/lens/name/answer/resource/urn%3Aiki%3Aui%3Aexample%3Aknowledge%3Aanswer)
+in the running demo. Its citations open the passage lens, where the document
+text is listed in order with the cited range labeled and highlighted. The
+entity card lists accepted facts and neighbors. Its lens chooser offers
+`entity-neighborhood` for the same neighborhood as a graph with a text table.
+The disagreement table places the two passages and their ranks side by side.
+
+Hosts can bind their own definitions at `urn:iki:ui:lens:name:{name}` ahead of
+`lens::examples()` and set `graphs` to their own graph resources. The queries
+under [`assets/lens`](assets/lens) describe the fixture contract. Replace the
+query at `urn:iki:ui:lens:name:{name}:query` to map a different vocabulary to
+the same renderer columns. In the fixtures, `oa:hasSource` identifies the
+immutable document revision, which carries the normalized text in `rdf:value`.
+The passage query checks the quote against the zero-based, end-exclusive
+Unicode code point range before marking it.
+[Web Annotation selectors](https://www.w3.org/TR/annotation-model/#selectors)
+
 ## The test kit
 
 `ikigai-ui = { version = "0.5", features = ["testkit"] }` as a dev-dependency gives a UI repo:

@@ -1,0 +1,36 @@
+PREFIX oa: <http://www.w3.org/ns/oa#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT DISTINCT ?focus ?rangeKey ?source ?document ?start ?end ?section ?content ?mark WHERE {
+  ?focus a oa:Annotation ; oa:hasTarget ?target .
+  ?target oa:hasSource ?source ; oa:hasSelector ?quoted, ?position .
+  ?quoted a oa:TextQuoteSelector ; oa:exact ?quote .
+  ?position a oa:TextPositionSelector ; oa:start ?start ; oa:end ?end .
+  ?source rdf:value ?body .
+  OPTIONAL { ?source rdfs:label ?title }
+  BIND(COALESCE(?title, STR(?source)) AS ?document)
+  # OA offsets are zero-based code point positions with an exclusive end.
+  BIND(SUBSTR(STR(?body), ?start + 1, ?end - ?start) AS ?range)
+  BIND(CONCAT(ENCODE_FOR_URI(STR(?source)), "/", STR(?start), "/", STR(?end),
+              "/", ENCODE_FOR_URI(STR(?quote))) AS ?rangeKey)
+  BIND(?start = xsd:integer(?start) && ?end = xsd:integer(?end) &&
+       ?start >= 0 && ?end > ?start && ?end <= STRLEN(?body) &&
+       ?range = STR(?quote) AS ?matches)
+  VALUES (?part ?section) {
+    (1 "Before the cited range")
+    (2 "Cited range")
+    (3 "After the cited range")
+    (4 "Selector mismatch")
+    (5 "Source text")
+  }
+  FILTER(IF(COALESCE(?matches, false), ?part <= 3, ?part >= 4))
+  BIND(IF(?part = 1, SUBSTR(STR(?body), 1, ?start),
+    IF(?part = 2, ?range,
+    IF(?part = 3, SUBSTR(STR(?body), ?end + 1),
+    IF(?part = 4, CONCAT("The selectors do not agree with this revision. Quoted text: ", STR(?quote)),
+      STR(?body))))) AS ?content)
+  FILTER(STRLEN(?content) > 0)
+  BIND(IF(?part = 2, "cited", "") AS ?mark)
+}
+ORDER BY ?source ?start ?end ?quote ?part

@@ -1,0 +1,25 @@
+PREFIX k: <urn:iki:ui:fixture:knowledge:>
+PREFIX oa: <http://www.w3.org/ns/oa#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?focus ?claim ?statement ?annotation ?source ?document ?quote ?start ?end WHERE {
+  ?focus a k:Answer .
+  {
+    ?focus k:abstainReason ?reason .
+    BIND(CONCAT("Abstained. ", STR(?reason)) AS ?statement)
+  } UNION {
+    FILTER NOT EXISTS { ?focus k:abstainReason ?reason }
+    ?focus k:claim ?claim .
+    ?claim rdf:value ?statement .
+    OPTIONAL {
+      ?claim k:citation ?annotation .
+      ?annotation a oa:Annotation ; oa:hasTarget ?target .
+      ?target oa:hasSource ?source ; oa:hasSelector ?quoted, ?position .
+      ?quoted a oa:TextQuoteSelector ; oa:exact ?quote .
+      ?position a oa:TextPositionSelector ; oa:start ?start ; oa:end ?end .
+      OPTIONAL { ?source rdfs:label ?title }
+      BIND(COALESCE(?title, STR(?source)) AS ?document)
+    }
+  }
+}
+ORDER BY ?claim ?annotation ?source ?start ?end ?quote

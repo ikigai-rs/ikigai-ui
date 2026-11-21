@@ -788,9 +788,12 @@ impl Screen {
                     .into_any_element();
             }
             "text" | "status" => {
+                if ikigai_ui::model::role(node) == Some("cited") {
+                    body = body.font_weight(gpui::FontWeight::BOLD);
+                }
                 return body
                     .child(self.render_text(text(node, "content").unwrap_or_default().to_string()))
-                    .into_any_element()
+                    .into_any_element();
             }
             "field" => {
                 let input = self.inputs[path].clone();
