@@ -456,15 +456,33 @@ The disagreement table places the two passages and their ranks side by side.
 
 Hosts can bind their own definitions at `urn:iki:ui:lens:name:{name}` ahead of
 `lens::examples()` and set `graphs` to their own graph resources. The queries
-under [`assets/lens`](assets/lens) describe the fixture contract. The
-`urn:iki:ui:fixture:knowledge:` namespace defines the fixture relationships for
-answers, citations, facts, neighbors, disagreements, and authority ranks. Replace the
+under [`assets/lens`](assets/lens) define what each lens reads. Replace the
 query at `urn:iki:ui:lens:name:{name}:query` to map a different vocabulary to
-the same renderer columns. In the fixtures, `oa:hasSource` identifies the
-immutable document revision, which carries the normalized text in `rdf:value`.
-The passage query checks the quote against the zero-based, end-exclusive
-Unicode code point range before marking it.
-[Web Annotation selectors](https://www.w3.org/TR/annotation-model/#selectors)
+the same renderer columns.
+
+The `answer` and `passage` lenses read the answer that ikigai-knowledge's decision
+trail returns: `urn:knowledge:trail:corpus:{c}` with `as=text/turtle`. Point a
+host's `answer` lens `graphs` at that answer and set the focus to the answer's
+IRI. Each claim is one `oa:Annotation` at `{answer}#claim-{n}`. The claim's
+sentence is the annotation's `oa:bodyValue`. Its target names the cited passage
+with `oa:hasSource`, an `oa:TextQuoteSelector`, and an `oa:TextPositionSelector`.
+The answer lists claims in `n` order. It reads three terms from the published
+[`https://ikigai-rs.dev/ns/knowledge#`](https://ikigai-rs.dev/ns/knowledge)
+vocabulary on the answer's own IRI. `knowledge:abstained` makes the answer say
+that it abstains. `knowledge:removedClaims` reports how many claims the citation
+check removed. `knowledge:truncated` reports that the context was cut. The
+passage lens takes the cited text from the source's `rdf:value`. For a work-ledger
+passage, it takes the text from `dcterms:title` and `ledger:body`, joined by a
+blank line when both exist, which is the text ikigai-knowledge quotes. The
+passage query checks the quote against the zero-based, end-exclusive Unicode
+code point range before marking it. See
+[Web Annotation selectors](https://www.w3.org/TR/annotation-model/#selectors).
+
+The `entity-card`, `entity-neighborhood`, and `disagreement-list` lenses still
+use the fixture-only `urn:iki:ui:fixture:knowledge:` namespace. ikigai-knowledge
+has no terms yet for these fields:
+`k:acceptedFact`, `k:proposedFact`, `k:neighbor`, `k:citation`,
+`k:disagreement`, `k:left`, `k:right`, and `k:authorityRank`.
 
 ## The test kit
 

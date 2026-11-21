@@ -1,0 +1,33 @@
+# Copied verbatim from ikigai-knowledge src/vocabulary.ttl at c7ce52b (PR 5, ledger #3888), the
+# definition of the terms its answers carry, so the conformance suite holds the knowledge
+# lenses' fixtures to the published vocabulary (ledger #3915).
+# The ikigai-knowledge vocabulary: the terms this module's answers carry that no standard
+# vocabulary already names. Published at its namespace once deployed.
+@prefix knowledge: <https://ikigai-rs.dev/ns/knowledge#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<https://ikigai-rs.dev/ns/knowledge> a owl:Ontology ;
+    rdfs:label "ikigai-knowledge vocabulary"@en ;
+    rdfs:comment "Terms for grounded, cited answers over an organization's documents, served as ikigai resources."@en ;
+    owl:versionInfo "0.1.0" .
+
+knowledge:truncated a rdf:Property ;
+    rdfs:isDefinedBy <https://ikigai-rs.dev/ns/knowledge> ;
+    rdfs:label "truncated"@en ;
+    rdfs:comment "On an entity or neighborhood answer's own IRI, with the value true: the answer was cut, by the entity's statement limit or by the neighborhood's node budget or a hop's limit. Present only when the answer was cut; a complete answer carries none."@en ;
+    rdfs:range xsd:boolean .
+
+knowledge:abstained a rdf:Property ;
+    rdfs:isDefinedBy <https://ikigai-rs.dev/ns/knowledge> ;
+    rdfs:label "abstained"@en ;
+    rdfs:comment "On a decision trail answer's own IRI, with the value true: the answer abstains, because the topic linked to nothing the caller may read or no claim of the draft survived the citation check. Present only when the answer abstains."@en ;
+    rdfs:range xsd:boolean .
+
+knowledge:removedClaims a rdf:Property ;
+    rdfs:isDefinedBy <https://ikigai-rs.dev/ns/knowledge> ;
+    rdfs:label "removed claims"@en ;
+    rdfs:comment "On a decision trail answer's own IRI: how many of the model's claims the citation check removed, because each cited no passage of the context or did not quote it exactly. Present only when one was removed."@en ;
+    rdfs:range xsd:integer .

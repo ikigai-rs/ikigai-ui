@@ -1,0 +1,7 @@
+# Copied verbatim from ikigai-knowledge's own test output at c7ce52b (PR 5, ledger #3888):
+# tests/trail.rs, a_draft_with_no_grounded_claim_abstains,
+# urn:knowledge:trail:corpus:work with topic=oxigraph and as=text/turtle.
+@prefix knowledge: <https://ikigai-rs.dev/ns/knowledge#> .
+@prefix oa: <http://www.w3.org/ns/oa#> .
+<urn:knowledge:trail:corpus:work> knowledge:abstained true ;
+	knowledge:removedClaims 2 .

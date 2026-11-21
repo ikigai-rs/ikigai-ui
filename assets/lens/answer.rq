@@ -1,25 +1,41 @@
-PREFIX k: <urn:iki:ui:fixture:knowledge:>
+PREFIX knowledge: <https://ikigai-rs.dev/ns/knowledge#>
 PREFIX oa: <http://www.w3.org/ns/oa#>
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+# ikigai-knowledge's decision-trail answer (urn:knowledge:trail:corpus:{c}, as=text/turtle):
+# one oa:Annotation per claim at {answer}#claim-{n}, its sentence the annotation's
+# oa:bodyValue, its passage the target's source, quoted and positioned by its selectors. The
+# answer's own IRI carries knowledge:abstained, knowledge:removedClaims and
+# knowledge:truncated, each only when it applies.
 SELECT ?focus ?claim ?statement ?annotation ?source ?document ?quote ?start ?end WHERE {
-  ?focus a k:Answer .
   {
-    ?focus k:abstainReason ?reason .
-    BIND(CONCAT("Abstained. ", STR(?reason)) AS ?statement)
+    ?focus knowledge:abstained true .
+    BIND(0 AS ?order)
+    BIND("abstained" AS ?claim)
+    BIND("Abstained. The topic linked to nothing you may read, or no claim survived the citation check." AS ?statement)
   } UNION {
-    FILTER NOT EXISTS { ?focus k:abstainReason ?reason }
-    ?focus k:claim ?claim .
-    ?claim rdf:value ?statement .
-    OPTIONAL {
-      ?claim k:citation ?annotation .
-      ?annotation a oa:Annotation ; oa:hasTarget ?target .
-      ?target oa:hasSource ?source ; oa:hasSelector ?quoted, ?position .
-      ?quoted a oa:TextQuoteSelector ; oa:exact ?quote .
-      ?position a oa:TextPositionSelector ; oa:start ?start ; oa:end ?end .
-      OPTIONAL { ?source rdfs:label ?title }
-      BIND(COALESCE(?title, STR(?source)) AS ?document)
-    }
+    FILTER NOT EXISTS { ?focus knowledge:abstained true }
+    ?annotation a oa:Annotation ; oa:bodyValue ?statement ; oa:hasTarget ?target .
+    FILTER(STRSTARTS(STR(?annotation), CONCAT(STR(?focus), "#claim-")))
+    BIND(xsd:integer(STRAFTER(STR(?annotation), CONCAT(STR(?focus), "#claim-"))) AS ?order)
+    BIND(?annotation AS ?claim)
+    ?target oa:hasSource ?source ; oa:hasSelector ?quoted, ?position .
+    ?quoted a oa:TextQuoteSelector ; oa:exact ?quote .
+    ?position a oa:TextPositionSelector ; oa:start ?start ; oa:end ?end .
+    OPTIONAL { ?source rdfs:label ?title }
+    BIND(COALESCE(?title, STR(?source)) AS ?document)
+  } UNION {
+    ?focus knowledge:removedClaims ?removed .
+    FILTER(?removed > 0)
+    BIND(1000000 AS ?order)
+    BIND("removed" AS ?claim)
+    BIND(CONCAT(STR(?removed), IF(?removed = 1, " claim was", " claims were"),
+                " removed: no passage it cited supports it.") AS ?statement)
+  } UNION {
+    ?focus knowledge:truncated true .
+    BIND(1000001 AS ?order)
+    BIND("truncated" AS ?claim)
+    BIND("The context was cut at its node budget, so a step may be missing." AS ?statement)
   }
 }
-ORDER BY ?claim ?annotation ?source ?start ?end ?quote
+ORDER BY ?order ?claim ?source ?start ?end ?quote

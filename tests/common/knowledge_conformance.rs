@@ -16,6 +16,8 @@ pub fn register(mut suite: Suite) -> Suite {
         "ui-knowledge-graph",
         "ui-knowledge-lenses-answer",
         "ui-knowledge-lenses-abstain",
+        "ui-knowledge-lenses-answer-claim-1",
+        "ui-knowledge-lenses-answer-claim-2",
         "ui-knowledge-lenses-passage-a",
         "ui-knowledge-lenses-passage-b",
         "ui-knowledge-lenses-passage-c",
@@ -27,5 +29,9 @@ pub fn register(mut suite: Suite) -> Suite {
     ] {
         suite = suite.pure(id);
     }
-    suite.namespace("urn:iki:ui:fixture:knowledge:")
+    // The published ikigai-knowledge terms the answer fixture carries (ledger #3915), held to
+    // their definition; the fixture-only namespace keeps the terms it has none for yet.
+    suite
+        .vocabulary(include_str!("../fixtures/knowledge-vocabulary.ttl"))
+        .namespace("urn:iki:ui:fixture:knowledge:")
 }

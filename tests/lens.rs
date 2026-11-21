@@ -1519,26 +1519,33 @@ fn knowledge_lenses_show_cited_evidence() {
 
     let answer = read("answer", "answer");
     let statements = of(&answer, "list")[0];
-    assert_eq!(statements.children.len(), 2);
+    assert_eq!(statements.children.len(), 3);
     let first = &statements.children[0];
     assert!(said(first).contains("The ferry runs daily."));
     assert!(said(first).contains("Ferries run daily."));
-    assert!(said(first).contains("Daily service from Pier 2."));
     assert!(said(&statements.children[1]).contains("The ferry leaves from Pier 2."));
+    assert!(said(&statements.children[1]).contains("Daily service from Pier 2."));
+    assert!(said(&statements.children[2])
+        .contains("1 claim was removed: no passage it cited supports it."));
     let passage_href = html_href(
         "passage",
-        &format!("{KNOWLEDGE}passage-a"),
+        &format!("{KNOWLEDGE}answer#claim-1"),
         &Selection::new(),
     );
     assert!(of(first, "link").iter().any(|link| {
         text(&link.properties["href"]) == passage_href
             && text(&link.properties["label"]) == "Cited characters 11–29"
     }));
+    let claim = read("passage", "answer#claim-1");
+    let cited = of(&claim, "text")
+        .into_iter()
+        .find(|node| ikigai_ui::model::role(node) == Some("cited"))
+        .unwrap();
+    assert_eq!(text(&cited.properties["content"]), "Ferries run daily.");
 
     let abstained = read("answer", "abstain");
-    assert!(
-        said(&abstained).contains("Abstained. No cited source establishes the winter timetable.")
-    );
+    assert!(said(&abstained).contains("Abstained. The topic linked to nothing you may read"));
+    assert!(said(&abstained).contains("2 claims were removed"));
     assert_eq!(of(&abstained, "list").len(), 1);
 
     let passage = read("passage", "passage-a");
@@ -1650,4 +1657,107 @@ fn a_passage_uses_the_callers_graph_and_leaves_mismatched_text_unmarked() {
     assert!(of(&passage, "text")
         .iter()
         .all(|node| ikigai_ui::model::role(node).is_none()));
+}
+
+/// ikigai-knowledge's own decision trail, `urn:knowledge:trail:corpus:work` with
+/// `as=text/turtle`, as its tests answer it (ledger #3915), through the answer lens, and its
+/// first claim's passage over the ledger comment it cites.
+#[test]
+fn a_real_decision_trail_renders_through_the_answer_lens() {
+    use scraper::Html;
+
+    const TRAIL: &str = "urn:knowledge:trail:corpus:work";
+    let ledger = r#"
+        @prefix ledger: <https://ikigai-rs.dev/ns/ledger#> .
+        <urn:iki:ledger:default:comment:4a> ledger:body
+            "Decided: we adopt oxigraph, since it already backs ikigai-store." .
+    "#;
+    let lens = |renderer: &str| {
+        format!(
+            r#"{{"renderer":"{renderer}","legend":"Decision trail","bound":30,"graphs":["urn:host:trail","urn:host:ledger"]}}"#
+        )
+    };
+    let space = |turtle: &'static str| {
+        EndpointSpace::new()
+            .bind(
+                Exact::new("urn:iki:ui:lens:name:answer"),
+                fixed("host-answer-lens", "application/json", lens("answer")),
+            )
+            .bind(
+                Exact::new("urn:iki:ui:lens:name:passage"),
+                fixed("host-passage-lens", "application/json", lens("passage")),
+            )
+            .bind(
+                Exact::new("urn:host:trail"),
+                fixed("host-trail", "text/turtle", turtle.into()),
+            )
+            .bind(
+                Exact::new("urn:host:ledger"),
+                fixed("host-ledger", "text/turtle", ledger.into()),
+            )
+    };
+    let cap = Capability::root();
+
+    let kernel = common::host_with(
+        None,
+        vec![Arc::new(space(include_str!(
+            "fixtures/knowledge-trail-work.ttl"
+        )))],
+    );
+    let answer = view(&kernel, "answer", TRAIL, &cap).unwrap();
+    let statements = of(&answer, "list")[0];
+    assert_eq!(statements.children.len(), 3, "{}", said(&answer));
+    let first = said(&statements.children[0]);
+    assert!(first.contains("Brian decided to adopt oxigraph, on the item's first comment."));
+    assert!(first.contains("“we adopt oxigraph, since it already backs ikigai-store”"));
+    assert!(of(&statements.children[0], "link")
+        .iter()
+        .any(|link| { text(&link.properties["label"]) == "Cited characters 9–63" }));
+    assert!(of(&statements.children[0], "link")
+        .iter()
+        .any(|link| { text(&link.properties["label"]) == "urn:iki:ledger:default:comment:4a" }));
+    let second = said(&statements.children[1]);
+    assert!(second.contains("The migration of old graphs is still open."));
+    assert!(of(&statements.children[1], "link")
+        .iter()
+        .any(|link| { text(&link.properties["label"]) == "Cited characters 12–56" }));
+    assert!(said(&statements.children[2])
+        .contains("3 claims were removed: no passage it cited supports it."));
+    let page = Html::parse_fragment(&html(
+        &kernel,
+        &ikigai_ui::lens::screen_name("answer", TRAIL, &ikigai_ui::lens::Selection::new()),
+        &[],
+    ));
+    let words = page.root_element().text().collect::<String>();
+    assert!(words.contains("Brian decided to adopt oxigraph"), "{words}");
+
+    let passage = view(&kernel, "passage", &format!("{TRAIL}#claim-1"), &cap).unwrap();
+    let cited = of(&passage, "text")
+        .into_iter()
+        .find(|node| ikigai_ui::model::role(node) == Some("cited"))
+        .unwrap();
+    assert_eq!(
+        text(&cited.properties["content"]),
+        "we adopt oxigraph, since it already backs ikigai-store"
+    );
+    assert_eq!(
+        said(&passage),
+        "Cited offsets 9–63 (end exclusive) | Decided:  | \
+         we adopt oxigraph, since it already backs ikigai-store | ."
+    );
+
+    let kernel = common::host_with(
+        None,
+        vec![Arc::new(space(include_str!(
+            "fixtures/knowledge-trail-abstained.ttl"
+        )))],
+    );
+    let abstained = view(&kernel, "answer", TRAIL, &cap).unwrap();
+    assert!(
+        said(&abstained).contains("Abstained."),
+        "{}",
+        said(&abstained)
+    );
+    assert!(said(&abstained).contains("2 claims were removed"));
+    assert_eq!(of(&abstained, "list").len(), 1, "no citations");
 }
