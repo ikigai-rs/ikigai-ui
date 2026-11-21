@@ -2704,6 +2704,8 @@ fn knowledge_examples(mut space: EndpointSpace) -> EndpointSpace {
     for (resource, lenses) in [
         ("answer", r#"["answer"]"#),
         ("abstain", r#"["answer"]"#),
+        ("answer#claim-1", r#"["passage"]"#),
+        ("answer#claim-2", r#"["passage"]"#),
         ("passage-a", r#"["passage"]"#),
         ("passage-b", r#"["passage"]"#),
         ("passage-c", r#"["passage"]"#),
@@ -2713,7 +2715,7 @@ fn knowledge_examples(mut space: EndpointSpace) -> EndpointSpace {
         space = space.bind(
             Exact::new(format!("{INSTANCE}{KNOWLEDGE_EXAMPLE}{resource}")),
             fixed(
-                &format!("ui-knowledge-lenses-{resource}"),
+                &format!("ui-knowledge-lenses-{}", resource.replace('#', "-")),
                 "Knowledge lenses",
                 "application/json",
                 lenses,

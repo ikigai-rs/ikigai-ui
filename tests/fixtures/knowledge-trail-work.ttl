@@ -1,0 +1,30 @@
+# Copied verbatim from ikigai-knowledge's own test output at c7ce52b (PR 5, ledger #3888):
+# tests/trail.rs, the_turtle_face_is_web_annotations_with_quote_and_position_selectors,
+# urn:knowledge:trail:corpus:work with topic=oxigraph and as=text/turtle.
+@prefix knowledge: <https://ikigai-rs.dev/ns/knowledge#> .
+@prefix oa: <http://www.w3.org/ns/oa#> .
+<urn:knowledge:trail:corpus:work#claim-1-position> a oa:TextPositionSelector ;
+	oa:end "63"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger> ;
+	oa:start "9"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger> .
+<urn:knowledge:trail:corpus:work#claim-1-quote> a oa:TextQuoteSelector ;
+	oa:exact "we adopt oxigraph, since it already backs ikigai-store" .
+<urn:knowledge:trail:corpus:work#claim-1-target> a oa:SpecificResource ;
+	oa:hasSelector <urn:knowledge:trail:corpus:work#claim-1-position> , <urn:knowledge:trail:corpus:work#claim-1-quote> ;
+	oa:hasSource <urn:iki:ledger:default:comment:4a> .
+<urn:knowledge:trail:corpus:work#claim-1> a oa:Annotation ;
+	oa:bodyValue "Brian decided to adopt oxigraph, on the item's first comment." ;
+	oa:hasTarget <urn:knowledge:trail:corpus:work#claim-1-target> ;
+	oa:motivatedBy oa:describing .
+<urn:knowledge:trail:corpus:work#claim-2-position> a oa:TextPositionSelector ;
+	oa:end "56"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger> ;
+	oa:start "12"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger> .
+<urn:knowledge:trail:corpus:work#claim-2-quote> a oa:TextQuoteSelector ;
+	oa:exact "the migration of old graphs is not scheduled" .
+<urn:knowledge:trail:corpus:work#claim-2-target> a oa:SpecificResource ;
+	oa:hasSelector <urn:knowledge:trail:corpus:work#claim-2-position> , <urn:knowledge:trail:corpus:work#claim-2-quote> ;
+	oa:hasSource <urn:iki:ledger:default:comment:4b> .
+<urn:knowledge:trail:corpus:work#claim-2> a oa:Annotation ;
+	oa:bodyValue "The migration of old graphs is still open." ;
+	oa:hasTarget <urn:knowledge:trail:corpus:work#claim-2-target> ;
+	oa:motivatedBy oa:describing .
+<urn:knowledge:trail:corpus:work> knowledge:removedClaims 3 .

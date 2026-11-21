@@ -1,13 +1,42 @@
 @prefix ex: <urn:iki:ui:example:knowledge:> .
 @prefix k: <urn:iki:ui:fixture:knowledge:> .
+@prefix knowledge: <https://ikigai-rs.dev/ns/knowledge#> .
 @prefix oa: <http://www.w3.org/ns/oa#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-ex:answer a k:Answer ; k:claim ex:claim-a, ex:claim-b .
-ex:claim-a rdf:value "The ferry runs daily." ; k:citation ex:passage-a, ex:passage-c .
+# Answers in the shape of ikigai-knowledge's decision trail (as=text/turtle): one
+# oa:Annotation per claim at {answer}#claim-{n}, the claim's sentence its oa:bodyValue.
+<urn:iki:ui:example:knowledge:answer#claim-1> a oa:Annotation ;
+  oa:motivatedBy oa:describing ;
+  oa:bodyValue "The ferry runs daily." ;
+  oa:hasTarget <urn:iki:ui:example:knowledge:answer#claim-1-target> .
+<urn:iki:ui:example:knowledge:answer#claim-1-target> a oa:SpecificResource ;
+  oa:hasSource ex:timetable-v2 ;
+  oa:hasSelector <urn:iki:ui:example:knowledge:answer#claim-1-quote>,
+                 <urn:iki:ui:example:knowledge:answer#claim-1-position> .
+<urn:iki:ui:example:knowledge:answer#claim-1-quote> a oa:TextQuoteSelector ;
+  oa:exact "Ferries run daily." .
+<urn:iki:ui:example:knowledge:answer#claim-1-position> a oa:TextPositionSelector ;
+  oa:start 11 ; oa:end 29 .
+<urn:iki:ui:example:knowledge:answer#claim-2> a oa:Annotation ;
+  oa:motivatedBy oa:describing ;
+  oa:bodyValue "The ferry leaves from Pier 2." ;
+  oa:hasTarget <urn:iki:ui:example:knowledge:answer#claim-2-target> .
+<urn:iki:ui:example:knowledge:answer#claim-2-target> a oa:SpecificResource ;
+  oa:hasSource ex:guide-v3 ;
+  oa:hasSelector <urn:iki:ui:example:knowledge:answer#claim-2-quote>,
+                 <urn:iki:ui:example:knowledge:answer#claim-2-position> .
+<urn:iki:ui:example:knowledge:answer#claim-2-quote> a oa:TextQuoteSelector ;
+  oa:exact "Daily service from Pier 2." .
+<urn:iki:ui:example:knowledge:answer#claim-2-position> a oa:TextPositionSelector ;
+  oa:start 0 ; oa:end 26 .
+ex:answer knowledge:removedClaims 1 .
+ex:abstain knowledge:abstained true ; knowledge:removedClaims 2 .
+
+# Fixture-only (urn:iki:ui:fixture:knowledge:): ikigai-knowledge has no term yet for an
+# entity's accepted and proposed facts, its neighbors, a disagreement, or an authority rank.
 ex:claim-b rdf:value "The ferry leaves from Pier 2." ; k:citation ex:passage-c .
-ex:abstain a k:Answer ; k:abstainReason "No cited source establishes the winter timetable." .
 
 ex:passage-a a oa:Annotation ; oa:hasTarget ex:passage-a-target .
 ex:passage-a-target a oa:SpecificResource ; oa:hasSource ex:timetable-v2 ;

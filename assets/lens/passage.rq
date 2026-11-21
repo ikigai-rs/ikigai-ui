@@ -1,3 +1,5 @@
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX ledger: <https://ikigai-rs.dev/ns/ledger#>
 PREFIX oa: <http://www.w3.org/ns/oa#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -7,9 +9,18 @@ SELECT DISTINCT ?focus ?rangeKey ?source ?document ?start ?end ?section ?content
   ?target oa:hasSource ?source ; oa:hasSelector ?quoted, ?position .
   ?quoted a oa:TextQuoteSelector ; oa:exact ?quote .
   ?position a oa:TextPositionSelector ; oa:start ?start ; oa:end ?end .
-  ?source rdf:value ?body .
+  # The revision's text: its rdf:value, or, for a decision trail's passage, what
+  # ikigai-knowledge cites: a ledger subject's dcterms:title and ledger:body, joined by a
+  # blank line when it has both.
+  OPTIONAL { ?source rdf:value ?value }
+  OPTIONAL { ?source dcterms:title ?heading }
+  OPTIONAL { ?source ledger:body ?text }
+  BIND(COALESCE(?value,
+    IF(BOUND(?heading) && BOUND(?text), CONCAT(STR(?heading), "\n\n", STR(?text)),
+       COALESCE(?heading, ?text))) AS ?body)
+  FILTER(BOUND(?body))
   OPTIONAL { ?source rdfs:label ?title }
-  BIND(COALESCE(?title, STR(?source)) AS ?document)
+  BIND(COALESCE(?title, ?heading, STR(?source)) AS ?document)
   # OA offsets are zero-based code point positions with an exclusive end.
   BIND(SUBSTR(STR(?body), ?start + 1, ?end - ?start) AS ?range)
   BIND(CONCAT(ENCODE_FOR_URI(STR(?source)), "/", STR(?start), "/", STR(?end),
