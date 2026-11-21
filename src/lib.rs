@@ -33,6 +33,7 @@
 //! | `urn:iki:ui:prefixes` | data | the default prefix table, `ui:` for `urn:iki:ui:` ([`screen::PREFIXES`]) |
 //! | `urn:iki:ui:setting:name:{name}` | data | a setting a screen runs under: `target`, `theme`, `locale`, `density`, `viewer`, the default here, a host's screen space ahead of it ([`setting`]) |
 //! | `urn:iki:ui:face:screen:{screen}` | composition | a screen through the target its screen space names ([`target::SCREEN_FACE`]) |
+//! | `urn:iki:ui:workspace:person:{person}:name:{name}`, `urn:iki:ui:shape:workspace`, `urn:iki:ui:screen:workspace:{iri}` | data, composition | a workspace atom (a host's), its closed shape, and the workspace as a screen ([`workspace`]) |
 //! | `urn:iki:ui:structure:name:{name}` | data | a structural node's SHACL shape: `reference` ([`reference`](mod@reference)), `region` ([`region`]) |
 //! | `urn:iki:ui:example:structure:{name}` | data | a structural node's example |
 //! | `urn:iki:ui:chooser-override:{family}:{theme}` | a host's | a family's own chooser; bound to nothing, it turns the chooser off ([`CHOOSER_OVERRIDE`]) |
@@ -131,6 +132,7 @@ pub mod target;
 #[cfg(feature = "testkit")]
 pub mod testkit;
 pub mod view;
+pub mod workspace;
 
 /// The name [`space`] claims: `urn:iki:space:ui`.
 pub const SPACE_ID: &str = "urn:iki:space:ui";
@@ -723,6 +725,10 @@ pub fn space() -> EndpointSpace {
         .bind(
             Exact::new(criterion::SHAPE_IRI),
             criterion::shape_endpoint(),
+        )
+        .bind(
+            template(&format!("{}{{iri}}", workspace::SCREEN)),
+            workspace::screen_endpoint(),
         )
         .bind(Exact::new(KIND), kind_list_endpoint())
         .bind(template(&format!("{KIND}:name:{{kind}}")), kind_endpoint())

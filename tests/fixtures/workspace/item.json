@@ -1,0 +1,17 @@
+{
+  "label": "Item 3941",
+  "layout": {"split": "row", "children": [
+    {"share": 300, "pane": "dashboard"},
+    {"share": 700, "split": "column", "children": [
+      {"share": 600, "pane": "session"},
+      {"share": 400, "tabs": ["item", "trail"], "active": "item"}
+    ]}
+  ]},
+  "panes": {
+    "dashboard": {"label": "Dashboard", "content": "lens:dashboard:resource:urn:iki:ledger:default", "emits": "item"},
+    "session":   {"label": "Session",   "content": "lens:session:resource:{item}", "follows": "item", "live": true},
+    "item":      {"label": "Item",      "content": "lens:item:resource:{item}",    "follows": "item", "emits": "item"},
+    "trail":     {"label": "Trail",     "content": "lens:trail:resource:{item}",   "follows": "item"}
+  },
+  "selection": {"item": "urn:iki:ledger:default:item:3941"}
+}

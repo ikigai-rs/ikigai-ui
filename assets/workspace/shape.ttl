@@ -1,0 +1,38 @@
+# The workspace atom's closed shape (ledger #3950, docs/design/workspace.md section 1).
+# ikigai_ui::workspace::validate says the same in Rust, with the bounds this shape cannot:
+# the shares in a split add up to 1000, every pane is in the layout once, at most 16 panes,
+# a layout at most 4 deep, at most 8 tabs and 8 selection roles.
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ws: <urn:iki:ui:workspace:property:name:> .
+
+<urn:iki:ui:shape:workspace> a sh:NodeShape ;
+  sh:closed true ;
+  sh:property [ sh:path ws:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ; sh:maxLength 256 ] ,
+    [ sh:path ws:layout ; sh:minCount 1 ; sh:maxCount 1 ; sh:node <urn:iki:ui:shape:workspace:layout> ] ,
+    [ sh:path ws:panes ; sh:minCount 1 ; sh:maxCount 16 ; sh:node <urn:iki:ui:shape:workspace:pane> ] ,
+    [ sh:path ws:selection ; sh:maxCount 8 ; sh:nodeKind sh:IRI ] .
+
+<urn:iki:ui:shape:workspace:layout> a sh:NodeShape ;
+  sh:closed true ;
+  sh:xone (
+    [ sh:property [ sh:path ws:split ; sh:minCount 1 ; sh:in ( "row" "column" ) ] ,
+                  [ sh:path ws:children ; sh:minCount 2 ; sh:node <urn:iki:ui:shape:workspace:layout> ] ]
+    [ sh:property [ sh:path ws:tabs ; sh:minCount 1 ; sh:maxCount 8 ; sh:pattern "^[a-z0-9-]{1,32}$" ] ,
+                  [ sh:path ws:active ; sh:maxCount 1 ; sh:pattern "^[a-z0-9-]{1,32}$" ] ]
+    [ sh:property [ sh:path ws:pane ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[a-z0-9-]{1,32}$" ] ]
+  ) ;
+  sh:property [ sh:path ws:share ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 50 ; sh:maxInclusive 1000 ] ,
+    [ sh:path ws:collapsed ; sh:maxCount 1 ; sh:datatype xsd:boolean ] .
+
+<urn:iki:ui:shape:workspace:pane> a sh:NodeShape ;
+  sh:closed true ;
+  sh:property [ sh:path ws:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ; sh:maxLength 256 ] ,
+    [ sh:path ws:content ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+      sh:pattern "^(lens:[^ ]+:resource:|view:resource:|urn:iki:ui:screen:name:)" ] ,
+    [ sh:path ws:follows ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+    [ sh:path ws:emits ; sh:maxCount 1 ; sh:pattern "^[a-z0-9-]{1,32}$" ] ,
+    [ sh:path ws:accepts ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+    [ sh:path ws:live ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ,
+    [ sh:path ws:as-of ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ,
+    [ sh:path ws:scopes ; sh:maxCount 1 ; sh:datatype xsd:string ] .

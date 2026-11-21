@@ -30,12 +30,41 @@ fn conforms() {
             Ok(ikigai_core::Representation::new(ikigai_core::ReprType::new("application/json"),
                 br#"{"renderer":"table","bound":10,"legend":"Probe","actions":{"extend":{"graph":"urn:probe:graph"},"connect":{"graph":"urn:probe:graph"}}}"#.to_vec()).cacheable())
         }).with_description(ikigai_core::Description::new("test-action-probe").title("Probe").summary("Gesture configuration for conformance.").verb(Verb::Source).output("application/json")));
-    let root = common::root(None, vec![Arc::new(common::form_models()), Arc::new(probe)]);
+    let atom = ikigai_core::EndpointSpace::new().bind(
+        ikigai_core::Exact::new("urn:iki:ui:workspace:person:urn:person:probe:name:probe"),
+        ikigai_core::FnEndpoint::new("test-workspace-atom", |_: &ikigai_core::Invocation<'_>| {
+            Ok(ikigai_core::Representation::new(
+                ikigai_core::ReprType::new("application/json"),
+                include_bytes!("fixtures/workspace/item.json").to_vec(),
+            )
+            .cacheable())
+        })
+        .with_description(
+            ikigai_core::Description::new("test-workspace-atom")
+                .title("A workspace atom")
+                .summary("The fixture workspace, for conformance.")
+                .verb(Verb::Source)
+                .output("application/json"),
+        ),
+    );
+    let root = common::root(
+        None,
+        vec![
+            Arc::new(common::form_models()),
+            Arc::new(probe),
+            Arc::new(atom),
+        ],
+    );
     let kernel = common::kernel(root.clone());
     let pages = Arc::new(common::demo_pages());
     let mut suite = Suite::new()
         .pure("test-action-probe")
         .pure("ui-lens-operations")
+        .pure("test-workspace-atom")
+        .fixture(Fixture::new("ui-workspace-screen", Verb::Source).binding(
+            "iri",
+            "urn:iki:ui:workspace:person:urn:person:probe:name:probe",
+        ))
         .cacheable("test-action-probe")
         .cacheable("ui-lens-extend")
         .cacheable("ui-lens-connect");
