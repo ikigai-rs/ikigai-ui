@@ -1,8 +1,10 @@
 # Design spike: the workspace
 
-Ledger #3941. Status: **proposal, for Brian's decision.** This is a design document. It changes
-no code, and it files no items. The names below are proposals; nothing here is bound yet.
-It ends with [the decisions](#8-decisions-for-brian).
+Ledger #3941. Status: **decided.** Brian accepted all seventeen recommendations on 2026-11-21,
+with one requirement added: the layout is a live, direct-manipulation surface (resize by dragging,
+rearrange, tabs, collapse, maximize, close, add, saved as it changes). That requirement is
+[section 5A, Interaction](#5a-interaction). This is a design document. It changes no code, and it
+files no items. It ends with [the decisions](#8-decisions-for-brian), now each marked accepted.
 
 A **workspace** is a tiled layout of panes, saved as a resource. Each pane shows one of three
 things: a **lens** (a view of a resource), a **live stream** (a lens that refetches when its
@@ -86,7 +88,9 @@ It is closed: unknown fields are refused, naming the field, as target descriptor
 - **`layout`** is a tree of three node types. A `split` has an axis (`row` or `column`) and children,
   each with a `share` in thousandths (integers, so a version compares byte for byte and no
   float rounds differently on two faces). A `tabs` node lists panes and names the active one. A
-  `pane` leaf names a pane by its key. The shares in one split must add up to 1000.
+  `pane` leaf names a pane by its key. The shares in one split must add up to 1000. A `pane` or
+  `tabs` child may carry `"collapsed": true` (section 5A): it keeps its share, so restoring it
+  gives back the size it had, and the open siblings divide the space between them.
 - **`panes`** is a map from a key to a pane (section 2). A key is `[a-z0-9-]`, at most 32 bytes.
 - **`selection`** is the saved selection (section 3): a map from a selection role to one IRI.
 - **Bounds**, said in words when they are hit: at most 16 panes, a layout at most 4 deep, at most
@@ -331,7 +335,8 @@ spliced into an action argument without the form showing it.
 | Layout | CSS grid from the split hint's shares; tabs as the ARIA tabs pattern | The same grid (it is CSS, not script); tabs as a list of links to each pane's region, all panes present |
 | Selection | boosted links swap the following panes and push the URL | a GET of the whole workspace |
 | Live panes | one `EventSource`, quiet refetch | not live. Each live pane says "Shown at {time}. Reload to update." |
-| Resize | a splitter that is a keyboard control (below) and a "Layout" form | the "Layout" form |
+| Resize | drag a splitter with any pointer, live; the splitter is also a keyboard control (below); the "Layout" form (section 5A) | the "Layout" form |
+| Rearrange, tabs, collapse, maximize, close, add | drag a pane's header onto a drop target, or the pane's "Pane" menu (section 5A) | the same menu, as forms in a `<details>`; maximize is a link |
 | Narrow viewport (320 CSS px) | panes stack in reading order; tabs stay tabs | the same |
 
 Every target must support, at the least: the panes in reading order with their labels, the pane
@@ -388,6 +393,184 @@ The GPUI target's `multi-window` capability suggests one window per pane as anot
 is not recommended for the first version: the panes would have no shared selection without new
 inter-window state, and a screen reader user would have to move between windows.
 
+## 5A. Interaction
+
+Brian's added requirement (2026-11-21): "I want to make sure that the layout is
+interactive/resizable, etc." The layout is a live surface that a person changes directly, as in a
+tiling window manager. Each item below is a **requirement**, and each one names its accessible
+equivalent. None of them changes a decision in section 8. They are how decisions 1, 3, 5, 8 and
+10 behave when the layout moves under a person's hand.
+
+### The edit: one Sink for every change
+
+Every change to the layout is **one edit**, written through one Sink on the atom:
+
+| Name | What it does |
+|---|---|
+| `urn:iki:ui:workspace:person:{p}:name:{name}:edit` | Applies one edit to the latest version and writes version `n+1`. The arguments are `op` (`resize`, `move`, `split`, `tabs`, `reorder`, `collapse`, `expand`, `close`, `add`, `activate`), the op's own arguments (pane keys, a position, shares), and `if-version` (the version the change was made against). |
+| `…:name:{name}:revert` | Writes version `n+1` with the content of an earlier version `to-version`. History is never rewritten. |
+| `…:name:{name}:copy` | (section 1) Writes version 1 of a new name in the caller's own partition. "Save as a new workspace" and the copy of a shared workspace both use it. |
+
+The server applies the edit, validates the result against `urn:iki:ui:shape:workspace` (the
+bounds included), and writes it, or refuses it naming the reason. The shell script never sends a
+whole atom, and it holds no layout rule that the server does not check again. So the pointer, the
+keyboard, the "Pane" menu, the "Layout" form and GPUI all send the same edits, and a test of an
+edit is the same test on every face. Each edit also carries the selection from the address and the
+active tabs, so they are saved with the layout, as decision 8 says ("saved with the workspace when
+it is saved").
+
+`if-version` makes two windows safe. If the latest version is not the one the change was made
+against, the edit is refused, the page shows the latest layout, and `#status` says once: "This
+workspace changed in another window. Showing the latest; your last change was not saved."
+
+### Resize by dragging
+
+- **Requirement.** Any splitter can be dragged with a mouse, a pen or a finger (Pointer Events
+  with pointer capture, not HTML drag and drop, which does not work with touch). The panes resize
+  **live** as it moves: the shell rewrites the split's grid template on each animation frame and
+  composes nothing. The pane contents are not refetched during or after a resize.
+- **Minimum size.** A pane is never smaller than 16rem wide or 8rem tall, so its header and its
+  "Pane" menu always fit. A drag stops where either neighbour would go below it. The stored share
+  is never below 50 (5%), whatever the viewport. In a viewport too small for every pane at its
+  minimum, the layout stacks (the narrow form, section 5).
+- **Saving.** A drag saves **once, at the end** (on `pointerup`), as one `resize` edit with the
+  new shares. Escape during a drag, or `pointercancel`, puts the splitter back and saves nothing
+  (SC 2.5.2, pointer cancellation).
+- **Equivalents (SC 2.5.7).** The splitter is a focusable `role="separator"` with
+  `aria-orientation`, `aria-valuenow`, `aria-valuemin`, `aria-valuemax` and `aria-valuetext`
+  ("Dashboard 30%, Session 70%"), and `aria-controls` naming the two panes. The arrow keys move it by
+  10 (1%), Shift with an arrow by 100, and Home and End move it to either minimum. A keyboard
+  resize saves one second after the last key, or when the splitter loses focus. The "Layout" form
+  sets every share as a number, and works with no script.
+
+### Rearrange: move, split, tabs and tab order
+
+- **Move by dragging.** A pane's header (its heading row, apart from its buttons) is its drag
+  handle. While a pane is dragged, the pane under the pointer shows five drop targets: **left,
+  right, above, below** and **into tabs** (its middle). The target under the pointer is outlined
+  and labelled in words ("Right of Dashboard"), never shown by colour alone. Letting go there sends
+  one `move` edit. Letting go anywhere else, or Escape, cancels.
+- **Split a pane.** "Split right" and "Split below" in the pane's menu halve the pane and open the
+  "Add pane" list in the new half. Nothing is saved until something is chosen, and cancelling puts
+  the layout back.
+- **Merge into tabs.** Dropping a pane on another pane's middle makes a tabs node of the two, or
+  adds the pane to the tabs already there. Dragging a tab out to an edge target takes it out of
+  the tabs.
+- **Reorder tabs.** A tab can be dragged along its tab list.
+- **Bounds.** A target that would break a bound (16 panes, 4 deep, 8 tabs) is not offered while
+  dragging. The menu shows it as unavailable and says why ("A tab group holds at most 8 panes").
+- **Equivalents.** Each pane header has a **"Pane" menu button** (`aria-haspopup`,
+  `aria-expanded`) with: Move…, Split right, Split below, Put in tabs with…, Collapse, Maximize,
+  Close and Open alone, and on a tab, Move tab earlier and Move tab later. **"Move…"** is a short
+  form: a list of the other panes and a choice of left, right, above, below or into tabs with it.
+  It is the same `move` edit as the drag. With no script, the menu is a `<details>` holding the
+  same forms, posting to the edit Sink and returning to the workspace at `#pane-{key}`.
+
+When a pane moves, the shell moves its existing element. The pane keeps its content, its scroll
+position and its live subscription. Nothing is refetched. The element is moved **in the DOM**,
+not only by CSS `order`, so the reading order and the pane list always match what is on the
+screen (SC 1.3.2).
+
+### Collapse, maximize and restore
+
+- **Collapse** shrinks a pane to its header bar. It stays a landmark with its heading, and its
+  "Expand" button (`aria-expanded="false"`) is where Collapse was. The open siblings share the
+  space. It is a `collapse` edit, saved: the atom's `collapsed` (section 1).
+- **Maximize** fills the workspace with one pane until it is restored. It is **a view, not a
+  change to the layout**: it is in the address (`maximize={key}`), as the selection is, so it works
+  with no script (a link), survives a reload, can be shared, and never writes. That also means a
+  viewer who cannot write can still maximize. The other panes are `hidden` (out of the tab order and
+  out of the accessibility tree, not only covered). The pane list still lists them, marked "hidden
+  while Session is maximized", and following one restores the layout and moves to it. The
+  "Maximize" button becomes "Restore" in the same place (`aria-pressed`). A hidden live pane keeps
+  its subscription and refetches once when it is shown again.
+
+### Close and add
+
+- **Close** removes the pane from the layout (a `close` edit). Its siblings take its space. Focus
+  moves to the heading of the pane that took it. `#status` says: "Closed Trail. Revert to version
+  12 brings it back." No confirmation: the version history is the undo.
+- **Add.** An "Add pane" button in the workspace's toolbar (and at the end of the pane list) opens
+  the list of what can be opened: the lenses the host offers, each with a content address the
+  viewer can read, filtered by what the current selection is (a pane's `accepts`). It is a composed
+  list, `urn:iki:ui:workspace:person:{p}:name:{name}:addable`, so the list is read under the
+  viewer's capability and never offers something the viewer could not read. The new pane goes to
+  the right of the pane that had focus, or where the form says.
+- **"Open this selection in a new pane."** Beside each selection link in a pane that `emits`, a
+  secondary "Open in a new pane" adds a pinned pane with that resource's lens to the right of the
+  current pane. With no script it is a form button posting an `add` edit.
+
+### Persistence
+
+- **No Save step.** Every change above, apart from maximize, is saved to the atom as it is made,
+  as a new version (section 1). A drag saves once, at the end. Keyboard resizes are debounced (one
+  second). Edits are sent in order, one at a time. An edit still waiting when the page is left is
+  sent with `fetch(…, {keepalive: true})`.
+- **Saying it quietly.** A save that succeeds is not announced. A save that fails is said once in
+  `#status` with its reason, the header of the workspace says "Not saved", and the layout goes
+  back to the last saved version on the screen, so the screen never shows a layout that is not
+  stored.
+- **"Revert to version {m}"**, in the workspace toolbar, where `m` is the version that was in force
+  when the page was opened ("Revert to version 12, from 14:03"). It writes that layout as a new
+  version. Earlier versions are reached through the version list (`as-of`, section 1).
+- **"Save as a new workspace"** asks for a label and copies the current version into a new name in
+  the viewer's own partition, then opens it.
+- **A shared workspace.** A viewer of someone else's workspace may change its layout on their
+  screen, and the first change makes **their own copy** (decision 5) before it is applied: the
+  shell calls `:copy`, applies the edit to the copy, and replaces the address with the copy's. The
+  first time, and only then, `#status` and a note in the workspace header say: "This is Alice's
+  workspace. Your change is saved in your own copy, "Item 3941 (copy)". Alice's is unchanged." The
+  owner's atom is never written.
+- **A viewer who cannot write** (no `urn:cap:ui:workspace:write:person:{p}` for their own
+  partition, or write that has lapsed) gets the structural controls disabled, marked
+  `data-ui-write` like any write control, with the reason. Drag handles and splitters do nothing
+  then, and the splitter is `aria-disabled`. Maximize, tab switching and moving between panes
+  still work, unsaved.
+- **Cost.** One version per gesture is many versions a day for a busy person. Decision 4 has the
+  store keep them all. This should be measured on the first target before anyone adds coalescing,
+  and coalescing, if it is wanted, is the host store's choice, not the edit's.
+
+### Where it lives, and what it may not do
+
+| Part | Owner |
+|---|---|
+| Pointer capture, the live preview of a resize, the drop targets, moving pane elements, the debounce and the queue of edits, focus after a change, the `#status` sentence | the shell script (`assets/shell.js`, a new section), on the HTMX face |
+| The same, natively | the GPUI face, after the gpui move (decision 14). Until then GPUI shows the linear form and changes nothing. The first target is a web page, so it does not wait for GPUI. |
+| What the layout is, the bounds, the minimum share, validation | the atom's shape and the edit Sink, on the server |
+| Every save | a resource write: the edit, revert or copy Sink on the atom, under the viewer's capability, through `urn:iki:ui:lens:operation:` like any other Sink |
+| With no script | the grid, the pane list, the "Layout" form and the "Pane" menu as forms (section 5) |
+
+**No interaction can widen authority** (decision 10). An edit can only rearrange addresses the
+atom already holds, or add one from the composed `addable` list. Every pane's content is still
+read under the viewer's capability after every change, and a moved or added pane the viewer may
+not read shows its withheld rung. Moving a pane next to another never lets it read what the other
+reads. A drag is not a grant, and the edit Sink grants nothing.
+
+### Accessibility of the interaction (WCAG 2.2 AA)
+
+- **A keyboard path and a single-pointer path for every change.** Drag is never the only way:
+  the "Pane" menu, "Move…", the splitter keys and the "Layout" form do everything a drag does
+  (SC 2.1.1, SC 2.5.7). No change needs a path-based or multipoint gesture (SC 2.5.1).
+- **Focus stays with the pane that changed.** After a move, a split, a merge or a reorder, focus is
+  on the moved pane's heading (for a pointer drag too, so the keyboard can carry on from there).
+  After a resize, focus stays on the splitter. After a close, it is on the heading of the pane that
+  took its place. Focus is never lost to `<body>`, and it is never obscured by a header (SC 2.4.11).
+- **One sentence in `#status` after a structural change**, politely, and never one per pane:
+  "Moved Session to the right of Dashboard." "Put Trail in tabs with Item." "Collapsed
+  Dashboard." "Session maximized. Restore to see every pane." A pointer resize says once at the end
+  "Dashboard is now 30% wide." A keyboard resize says nothing in `#status`, since the separator's
+  `aria-valuetext` is already read as it changes. With no script, the page the form returns to
+  carries the same sentence in `#status`.
+- **Target size (SC 2.5.8).** A splitter's hit area is at least 24 CSS pixels across, whatever
+  its drawn line, and 44 on a coarse pointer (`@media (pointer: coarse)`). The header buttons and
+  the menu items are at least 24 by 24. Drop targets are parts of panes, so they are larger.
+- **Seen in every theme.** The splitter, its focus ring, the drag handle and the drop-target
+  outlines meet 3:1 against what is around them (SC 1.4.11) in light, dark and high contrast, and
+  use system colours in forced colours mode. Touch dragging sets `touch-action: none` on the
+  handles only, so the page still scrolls. Nothing animates under `prefers-reduced-motion`.
+- **Nothing changes on focus alone** (SC 3.2.1). Opening the menu, focusing a splitter or hovering
+  over a drop target changes nothing until a key, a button or the end of a drag says so.
+
 ## 6. The public line
 
 | In public ikigai-ui | Added by a host or product |
@@ -397,6 +580,7 @@ inter-window state, and a screen reader user would have to move between windows.
 | The pane contract (`content`, `follows`, `emits`, `accepts`, `live`, `as-of`, `scopes`) | The lenses its panes show (a ledger dashboard, an item lens, a review lens) |
 | Linked selection in the address, the rewritten selection links, the status sentence | Following another person's selection (shared state) |
 | The pane list, keyboard movement, splitters, the "Layout" form, the narrow form | Default workspaces for its pages, templates, onboarding |
+| The interaction (section 5A): the edit, revert and copy Sinks' contracts, pointer resize, rearrange and tabs, collapse, maximize, close and add, autosave, and their keyboard equivalents | The `addable` list's contents (which lenses it offers), and whether its store coalesces versions |
 | A generic `session` renderer over PROV-O-shaped trail data (from ikigai-log's vocabulary, which is public) | Which sessions exist, where its trail is, and its push cuts |
 | The rule that panes add no authority, and the tests for it | Its approval policy, and its approval Sink |
 
@@ -429,106 +613,153 @@ ikigai-ui lenses.
 1. The workspace atom's shape and its validation, with fixtures, and the names in section 1.
 2. The workspace screen: the layout composed into groups with the split and tabs hints and panes
    as regions, and the linear form for a face that does not claim the hints.
-3. The html face for the layout hints: the CSS grid, the tabs, the pane list, the keyboard
-   splitter and the "Layout" form, with snapshots and axe in light, dark and high contrast.
-4. Selection in the address: `select.{role}=` folded into the workspace screen name, a pane's
+3. The html face for the layout hints: the CSS grid, the tabs, the pane list, and the "Layout"
+   form posting to the edit Sink (section 5A) with `if-version`, with snapshots and axe in light,
+   dark and high contrast.
+4. **Pointer resize with the keyboard splitter** (section 5A): the `role="separator"` splitter,
+   its arrow, Shift, Home and End keys, the live drag with Pointer Events, the minimum pane size,
+   one `resize` edit at the end of a drag and one second after the last key, and Escape to cancel.
+   Tests: Playwright drags with mouse and touch emulation and the same resize by keyboard, both
+   saving one version with the same shares; a cancelled drag saving none; snapshots mid-drag and
+   after, and axe, in light, dark and high contrast.
+5. **Rearrange and tabs**: the drag handle and the five drop targets, the "Pane" menu with
+   "Move…", split, put in tabs, take out of tabs and reorder tabs, and the same as forms with no
+   script. Tests: each change made by pointer and by keyboard gives the same version; the DOM
+   order and the pane list match the layout after each; focus is on the moved pane; one `#status`
+   sentence; an over-bound target is not offered; snapshots of the drop targets and axe in light,
+   dark and high contrast, and in forced colours.
+6. **Collapse, maximize, close and add**: the `collapsed` field in the shape, maximize in the
+   address, close, the composed `addable` list, and "Open in a new pane" on selection links. Tests:
+   by pointer and keyboard, and with no script; maximized panes hidden from the tab order and still
+   in the pane list; the `addable` list never offering what the viewer cannot read; focus after a
+   close; snapshots and axe in light, dark and high contrast.
+7. **Autosave and revert**: the queue of edits, the debounce, `keepalive` on leaving, `if-version`
+   refusal and its sentence, "Revert to version {m}", "Save as a new workspace", the copy made by
+   the first change to a shared workspace and its one-time sentence, and the controls disabled when
+   the viewer cannot write. Tests: a drag saving once; two windows, the second refused and shown
+   the latest; a shared workspace whose owner's atom is never written; a lapsed write disabling the
+   drag and the splitter; a failed save putting the layout back; snapshots and axe in light, dark
+   and high contrast.
+8. Selection in the address: `select.{role}=` folded into the workspace screen name, a pane's
    selection links rewritten when it `emits`, and the one status sentence.
-5. Boosted selection in `shell.js`: swap only the following panes and push the URL, with
+9. Boosted selection in `shell.js`: swap only the following panes and push the URL, with
    shell-smoke checks that focus stays where it was and that nothing else is announced.
-6. Pane movement on the keyboard in `shell.js`, and a person's keyboard and screen-reader pass of
-   a fixture workspace, recorded in `ACCESSIBILITY.md`.
-7. A per-element refetch rate on `data-ui-push`, so a busy pane refetches at most once a second.
-8. A `session` renderer over ikigai-log's vocabulary, with a fixture trail, in the shape of the
-   thread and timeline renderers.
-9. Tests that a pane's form naming a Sink the manifold did not offer is refused, and that a
-   shared workspace shows each viewer only their own reads.
+10. Pane movement on the keyboard in `shell.js`, and a person's keyboard and screen-reader pass of
+    a fixture workspace, recorded in `ACCESSIBILITY.md`.
+11. A per-element refetch rate on `data-ui-push`, so a busy pane refetches at most once a second.
+12. A `session` renderer over ikigai-log's vocabulary, with a fixture trail, in the shape of the
+    thread and timeline renderers.
+13. Tests that a pane's form naming a Sink the manifold did not offer is refused, and that a
+    shared workspace shows each viewer only their own reads.
 
 **In gonk:**
 
-10. An item lens: the item, its state, its children (items whose `parent` is it), its comments,
+14. An item lens: the item, its state, its children (items whose `parent` is it), its comments,
     and its verdict, as a query over the ledger graph. This needs a decision first: "done-when"
     has no field today, and a "verdict" is in three places (the judge's verdict on a finding, the
     dispatcher's close with its evidence, and a `verdict:` line in a close note). The lens should
     show one, so the ledger should say which one counts.
-11. A Dashboard lens: the open and in-flight items of a ledger, as a board or a table that emits
+15. A Dashboard lens: the open and in-flight items of a ledger, as a board or a table that emits
     `item`. Today's Dashboard is XSLT over polled fragments, so this is a new lens beside it, not
     a port of it.
-12. gonk pages composed over ikigai-ui's `Pages` with lenses on, so a gonk page can serve the
+16. gonk pages composed over ikigai-ui's `Pages` with lenses on, so a gonk page can serve the
     workspace, and a route for `/workspace/{+iri}` in gonk's door.
-13. A store for workspace atoms that keeps every version, and the
+17. A store for workspace atoms that keeps every version, and the
     `urn:cap:ui:workspace:{read,write}:person:{person}` grants in gonk's roles.
-14. The push stream at gonk's door (the open push build items, #3209 and #3210), and a cut on the
+18. The push stream at gonk's door (the open push build items, #3209 and #3210), and a cut on the
     item's resources when it changes. Without it the item and Dashboard panes poll, and the
     session pane is not live.
 
 **In the session trail (ikigai-log, gonk-starter and the harness):**
 
-15. A recorded session trail: one line per tool call (its name, its arguments' digest or text,
+19. A recorded session trail: one line per tool call (its name, its arguments' digest or text,
     its outcome and its duration) and per prompt, with the session's IRI
     (`urn:agent:session:id:{id}`) on every line, written where the kernel cuts it on append.
     This is the biggest missing piece. It needs its own decision about what may be recorded
     (prompts and results can hold secrets), who may read it (its own capability), and how long it
     is kept. Today only door calls and content-free summaries are recorded.
-16. A link from an item to its live session: which session holds the item's claim now. Session
+20. A link from an item to its live session: which session holds the item's claim now. Session
     summaries are written after a session ends. A pane following `item` needs the running one.
-17. A `session` lens in gonk over that trail, joined to the item through the claim.
+21. A `session` lens in gonk over that trail, joined to the item through the claim.
 
 ## 8. Decisions for Brian
 
-Each has a recommendation. The ones marked **blocks** must be decided before any code.
+Each has a recommendation. The ones marked **blocks** had to be decided before any code. **All
+seventeen were accepted by Brian on 2026-11-21**, as written, with one requirement added: the
+layout is fully interactive and resizable, which section 5A sets out. The proposal numbers in
+decisions 15 to 17 are updated to section 7's list as it now stands (the four interaction items
+are proposals 4 to 7); the decisions themselves are unchanged.
 
 1. **A workspace is an ordinary screen** (blocks). The layout composes into `group` nodes with
    `urn:iki:ui:hint:layout:split` and `:tabs` hints, and each pane into a `region`, so the fallback
    ladder, regions and withheld rungs apply unchanged. The alternative is new core kinds (`split`,
    `tabs`, `pane`), which every descriptor would then have to decide. **Recommend: hints and
    regions, no new kinds.**
+   **Accepted (Brian, 2026-11-21).**
 2. **The names** (blocks): `urn:iki:ui:workspace:person:{person}:name:{name}`, with `:version:{n}`
    and `:as-of:{instant}`, the shape at `urn:iki:ui:shape:workspace`, the screen at
    `urn:iki:ui:screen:workspace:{iri}` and the page at `/workspace/{+iri}`. **Recommend: as written.**
+   **Accepted (Brian, 2026-11-21).**
 3. **The atom stores layout, pane addresses and the saved selection, nothing else** (blocks). No
    content, no answers, no pixels, no theme. **Recommend: yes.**
+   **Accepted (Brian, 2026-11-21).**
 4. **ikigai-ui stores nothing.** It validates and composes. Versions are kept by the store the host
    binds, and a host whose store cannot keep versions does not offer `as-of`. **Recommend: yes.**
+   **Accepted (Brian, 2026-11-21).**
 5. **Sharing is a read grant, and changing a shared workspace is a copy.** Two people never write
    the same atom. **Recommend: yes**, and leave co-editing out of public ikigai-ui.
+   **Accepted (Brian, 2026-11-21).**
 6. **"As of a date" means the layout**, and content as of a date only for panes that declare
    `as-of`, each pane saying "now" or "as of {instant}" in words. **Recommend: yes.**
+   **Accepted (Brian, 2026-11-21).**
 7. **One pane contract with two flags** (`live`, and the content's own address), rather than three
    pane types. An agent session is a live lens over the session's trail in the log. **Recommend:
    yes.**
+   **Accepted (Brian, 2026-11-21).**
 8. **Selection lives in the address** (`select.{role}={iri}`), saved with the workspace when it is
    saved, boosted by htmx with script and a full GET without it. Shared selection state (following
    another person) is a host feature on top. **Recommend: in the address.**
+   **Accepted (Brian, 2026-11-21).**
 9. **A selection moves one IRI per role**, and the relation from it to what a pane shows (its
    session, its trail, its review) is in that pane's lens query, never in the workspace.
    **Recommend: yes.**
+   **Accepted (Brian, 2026-11-21).**
 10. **A workspace adds no authority.** No workspace capability, no pane grant; a pane's `scopes`
     can only narrow; actions only as generated forms from what `urn:kernel:actions` offers,
     through `urn:iki:ui:lens:operation:`, marked `data-ui-write`; a selection never writes. An agent
     is just another caller. **Recommend: yes**, with the two refusal tests in section 4 written
     first.
+    **Accepted (Brian, 2026-11-21).**
 11. **The web shortcut for moving between panes.** F6 is the desktop convention, but browsers take
     it. **Recommend: Alt+Shift+Arrow Left/Right on the web, shown in the pane list; F6 and Ctrl+F6
     on GPUI**, with the pane list as the way that always works. This needs a person's keyboard and
     screen reader pass before it is called done, not only scripted checks.
+    **Accepted (Brian, 2026-11-21).**
 12. **A session pane does not announce new activity.** An opt-in "Say new activity in this pane",
     at most one sentence every ten seconds in `#status`, is the only exception. **Recommend: off by
     default; build the opt-in only if someone asks for it.**
+    **Accepted (Brian, 2026-11-21).**
 13. **A live pane refetches at most once a second.** A busy session would otherwise refetch on
     every line. **Recommend: a per-element rate on `data-ui-push`, default one second for session
     panes**, and whole-pane refetch, not append, for the first version.
+    **Accepted (Brian, 2026-11-21).**
 14. **The GPUI workspace waits for the gpui move** (`gpui-upgrade.md`, option A) and its AccessKit
     roles. Until then GPUI shows the linear form. One window per pane is not the first version.
     **Recommend: yes.**
+    **Accepted (Brian, 2026-11-21).**
 15. **The first target is gonk's three-pane item page** (section 7), built in this order:
-    the workspace shape and screen with fixtures here (proposals 1 to 9); then the item and
-    Dashboard lenses in gonk (10 to 13); then push at gonk's door (14); then the session trail and
-    its lens (15 to 17). **Recommend: yes**, and ship the page with a session pane that shows door
-    calls and the summary until the trail exists, saying in words what it does not show.
-16. **What a session trail records** (blocks proposal 15, not this design). Prompts and tool
+    the workspace shape and screen with fixtures here (proposals 1 to 13, the interaction
+    included); then the item and Dashboard lenses in gonk (14 to 17); then push at gonk's door
+    (18); then the session trail and its lens (19 to 21). **Recommend: yes**, and ship the page
+    with a session pane that shows door calls and the summary until the trail exists, saying in
+    words what it does not show.
+    **Accepted (Brian, 2026-11-21).**
+16. **What a session trail records** (blocks proposal 19, not this design). Prompts and tool
     results can hold secrets. **Recommend: record tool names, outcomes, durations and argument
     digests by default; record text only where a host opts in, under its own read capability
     (for example `urn:cap:log:read:session:{id}`), with a retention limit.**
-17. **Which verdict an item lens shows** (blocks proposal 10). **Recommend: the dispatcher's close
+    **Accepted (Brian, 2026-11-21).**
+17. **Which verdict an item lens shows** (blocks proposal 14). **Recommend: the dispatcher's close
     and its evidence**, since that is the one that closes the item; the judge's verdicts on findings
     belong to the review pane.
+    **Accepted (Brian, 2026-11-21).**
