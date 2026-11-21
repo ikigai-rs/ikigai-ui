@@ -1,0 +1,38 @@
+@prefix ex: <urn:iki:ui:example:knowledge:> .
+@prefix k: <urn:iki:ui:fixture:knowledge:> .
+@prefix oa: <http://www.w3.org/ns/oa#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+ex:answer a k:Answer ; k:claim ex:claim-a, ex:claim-b .
+ex:claim-a rdf:value "The ferry runs daily." ; k:citation ex:passage-a, ex:passage-c .
+ex:claim-b rdf:value "The ferry leaves from Pier 2." ; k:citation ex:passage-c .
+ex:abstain a k:Answer ; k:abstainReason "No cited source establishes the winter timetable." .
+
+ex:passage-a a oa:Annotation ; oa:hasTarget ex:passage-a-target .
+ex:passage-a-target a oa:SpecificResource ; oa:hasSource ex:timetable-v2 ;
+  oa:hasSelector ex:passage-a-quote, ex:passage-a-position .
+ex:passage-a-quote a oa:TextQuoteSelector ; oa:exact "Ferries run daily." .
+ex:passage-a-position a oa:TextPositionSelector ; oa:start 11 ; oa:end 29 .
+
+ex:passage-b a oa:Annotation ; oa:hasTarget ex:passage-b-target .
+ex:passage-b-target a oa:SpecificResource ; oa:hasSource ex:bulletin-v1 ;
+  oa:hasSelector ex:passage-b-quote, ex:passage-b-position .
+ex:passage-b-quote a oa:TextQuoteSelector ; oa:exact "Ferries run on weekdays." .
+ex:passage-b-position a oa:TextPositionSelector ; oa:start 0 ; oa:end 24 .
+
+ex:passage-c a oa:Annotation ; oa:hasTarget ex:passage-c-target .
+ex:passage-c-target a oa:SpecificResource ; oa:hasSource ex:guide-v3 ;
+  oa:hasSelector ex:passage-c-quote, ex:passage-c-position .
+ex:passage-c-quote a oa:TextQuoteSelector ; oa:exact "Daily service from Pier 2." .
+ex:passage-c-position a oa:TextPositionSelector ; oa:start 0 ; oa:end 26 .
+
+ex:entity rdfs:label "Harbor ferry" ;
+  k:acceptedFact ex:claim-b ; k:neighbor ex:pier-2 ;
+  k:proposedFact ex:proposal .
+ex:proposal rdf:value "Service runs hourly." ; k:citation ex:passage-b .
+ex:pier-2 rdfs:label "Pier 2" .
+
+ex:disagreements k:disagreement ex:disagreement-a, ex:disagreement-b .
+ex:disagreement-a k:left ex:passage-a ; k:right ex:passage-b .
+ex:disagreement-b k:left ex:passage-c ; k:right ex:passage-b .

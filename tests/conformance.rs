@@ -14,6 +14,8 @@
 //!   is needed.
 
 mod common;
+#[path = "common/knowledge_conformance.rs"]
+mod knowledge_conformance;
 
 use std::sync::Arc;
 
@@ -79,6 +81,7 @@ fn conforms() {
     ] {
         suite = suite.pure(id);
     }
+    suite = knowledge_conformance::register(suite);
     // ikigai-sparql's endpoints, bound so the lenses run on a real store: a query each over the
     // contact graph, so the answer's golden thread hangs on its source.
     for (id, query) in [

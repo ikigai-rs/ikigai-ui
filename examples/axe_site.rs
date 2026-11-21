@@ -190,6 +190,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
         }
     }
+    for (lens, resource) in [
+        ("answer", "answer"),
+        ("answer", "abstain"),
+        ("passage", "passage-a"),
+        ("entity-card", "entity"),
+        ("disagreement-list", "disagreements"),
+    ] {
+        for theme in ["light", "dark"] {
+            let page = ikigai_ui::testkit::render::source(
+                &kernel,
+                &format!(
+                    "urn:demo:page:lens:{lens}:resource:urn:iki:ui:example:knowledge:{resource}"
+                ),
+                &[("theme", theme)],
+            )?;
+            files.push((
+                format!("/knowledge-{resource}-{theme}.html"),
+                common::HTML.to_string(),
+                page.into_bytes(),
+            ));
+        }
+    }
     let violations_datum = format!(
         "{}urn:iki:ui:lens:name:shacl-violations:focus:{}",
         ikigai_ui::scene::SCENE_PREFIX,

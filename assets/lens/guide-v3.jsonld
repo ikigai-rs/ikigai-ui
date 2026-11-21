@@ -1,0 +1,6 @@
+{
+  "@id": "urn:iki:ui:example:knowledge:guide-v3",
+  "http://www.w3.org/2000/01/rdf-schema#label": "Ferry guide, revision 3",
+  "http://www.w3.org/1999/02/22-rdf-syntax-ns#value": "Daily service from Pier 2.",
+  "urn:iki:ui:fixture:knowledge:authorityRank": 2
+}

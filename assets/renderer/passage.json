@@ -1,0 +1,13 @@
+{"kind": "group", "properties": {"label": "{legend}"}, "children": [
+  {"repeat": "rows", "group": "rangeKey", "each": {"kind": "group", "properties": {"label": "{?document}"}, "children": [
+    {"kind": "text", "properties": {"content": "Cited offsets {?start}–{?end} (end exclusive)"}},
+    {"kind": "link", "properties": {"label": "Open {?document}", "href": "{home:?source}"}},
+    {"kind": "list", "properties": {"label": "Document text"}, "children": [
+      {"repeat": "group", "each": {"kind": "group", "properties": {"label": "{?section}"}, "children": [
+        {"kind": "heading", "properties": {"content": "{?section}", "level": 3}},
+        {"kind": "text", "hint": {"urn:iki:ui:hint:role:mark": "{?mark}"}, "properties": {"content": "{?content}"}}
+      ]}}
+    ]}
+  ]}},
+  {"past": "Showing the first {shown} document sections. Open the source revision for the complete text."}
+]}

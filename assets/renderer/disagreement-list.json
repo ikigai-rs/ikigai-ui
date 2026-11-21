@@ -1,0 +1,21 @@
+{"kind": "group", "properties": {"label": "{legend}"}, "children": [
+  {"kind": "table", "properties": {"caption": "{legend}"}, "children": [
+    {"kind": "group", "properties": {"label": "Columns", "header": "column"}, "children": [
+      {"kind": "text", "properties": {"content": "First cited passage"}},
+      {"kind": "text", "properties": {"content": "Second cited passage"}}
+    ]},
+    {"repeat": "rows", "each": {"kind": "group", "properties": {"label": "Disagreement"}, "children": [
+      {"kind": "group", "properties": {"label": "{?leftDocument}"}, "children": [
+        {"kind": "link", "properties": {"label": "{?leftDocument}", "href": "{lens:passage:?left}"}},
+        {"kind": "text", "properties": {"content": "“{?leftQuote}”"}},
+        {"kind": "text", "properties": {"content": "Authority rank: {?leftRank}"}}
+      ]},
+      {"kind": "group", "properties": {"label": "{?rightDocument}"}, "children": [
+        {"kind": "link", "properties": {"label": "{?rightDocument}", "href": "{lens:passage:?right}"}},
+        {"kind": "text", "properties": {"content": "“{?rightQuote}”"}},
+        {"kind": "text", "properties": {"content": "Authority rank: {?rightRank}"}}
+      ]}
+    ]}}
+  ]},
+  {"past": "Showing the first {shown} disagreements."}
+]}

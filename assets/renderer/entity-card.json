@@ -1,0 +1,17 @@
+{"kind": "group", "properties": {"label": "{legend}"}, "children": [
+  {"repeat": "rows", "distinct": "entity", "each": {"kind": "heading", "properties": {"content": "{?entity}", "level": 3}}},
+  {"repeat": "rows", "group": "section", "each": {"kind": "group", "properties": {"label": "{?section}"}, "children": [
+    {"kind": "heading", "properties": {"content": "{?section}", "level": 4}},
+    {"kind": "list", "properties": {"label": "{?section}"}, "children": [
+      {"repeat": "group", "each": {"kind": "group", "properties": {"label": "{?label}"}, "children": [
+        {"kind": "link", "properties": {"label": "{?label}", "href": "{home:?item}"}},
+        {"when": "annotation", "each": {"kind": "group", "properties": {"label": "Citation"}, "children": [
+          {"kind": "text", "properties": {"content": "“{?quote}”"}},
+          {"kind": "link", "properties": {"label": "{?document}", "href": "{home:?source}"}},
+          {"kind": "link", "properties": {"label": "Cited characters {?start}–{?end}", "href": "{lens:passage:?annotation}"}}
+        ]}}
+      ]}}
+    ]}
+  ]}},
+  {"past": "Showing the first {shown} rows. Additional facts, citations or neighbors are available in the source graph."}
+]}

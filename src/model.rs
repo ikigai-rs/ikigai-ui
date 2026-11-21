@@ -309,14 +309,14 @@ pub fn is_columns(node: &Node) -> bool {
 /// that claims this namespace and dropped by every other: the row's TEXT says the same, so a face
 /// without them loses a line or a color, never the meaning.
 pub const ROLE_HINTS: &str = "urn:iki:ui:hint:role:";
-/// The role a list item or a table row plays, one of [`ROLES`]: `danger` (a SHACL violation,
+/// The visual role a node plays, one of [`ROLES`]: `danger` (a SHACL violation,
 /// drawn in the palette's danger color with a solid danger rule), `asserted` (a solid rule),
-/// `derived` (a dashed rule). A lens's query states it per row as `?role`.
+/// `derived` (a dashed rule), or `cited` (highlighted passage text).
 pub const ROLE: &str = "urn:iki:ui:hint:role:mark";
 /// The roles [`ROLE`] names.
-pub const ROLES: [&str; 3] = ["danger", "asserted", "derived"];
+pub const ROLES: [&str; 4] = ["danger", "asserted", "derived", "cited"];
 
-/// The role `node` plays as a list item or a table row, when it carries [`ROLE`] with one of
+/// The role `node` plays when it carries [`ROLE`] with one of
 /// [`ROLES`]; anything else is no role.
 pub fn role(node: &Node) -> Option<&'static str> {
     match node.hint.get(ROLE) {

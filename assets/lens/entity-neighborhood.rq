@@ -1,0 +1,11 @@
+PREFIX k: <urn:iki:ui:fixture:knowledge:>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+CONSTRUCT {
+  ?focus rdfs:label ?entity ; k:neighbor ?neighbor .
+  ?neighbor rdfs:label ?label .
+  k:neighbor rdfs:label "Neighbor" .
+} WHERE {
+  ?focus rdfs:label ?entity ; k:neighbor ?neighbor .
+  OPTIONAL { ?neighbor rdfs:label ?name }
+  BIND(COALESCE(?name, STR(?neighbor)) AS ?label)
+}
