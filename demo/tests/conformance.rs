@@ -56,6 +56,15 @@ fn conforms() {
         .pure("test-action-probe")
         .pure("ui-lens-operations")
         .pure("test-workspace-atom")
+        .pure("uidemo-workspace")
+        .fixture(
+            Fixture::new("ui-page-workspace-uidemo", Verb::Source)
+                .binding("iri", ikigai_ui_demo::WORKSPACE),
+        )
+        .fixture(Fixture::new("ui-workspace-title", Verb::Source).binding(
+            "rest",
+            "resource:urn:iki:ui:workspace:person:urn:person:probe:name:probe",
+        ))
         .fixture(Fixture::new("ui-workspace-screen", Verb::Source).binding(
             "iri",
             "urn:iki:ui:workspace:person:urn:person:probe:name:probe",

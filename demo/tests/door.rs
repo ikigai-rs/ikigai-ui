@@ -227,3 +227,48 @@ async fn the_door_serves_a_lensed_view_as_a_page() {
     assert!(fragment.starts_with("HTTP/1.1 200"), "{fragment}");
     assert!(!fragment.contains("<main"), "{fragment}");
 }
+
+/// The demo's workspace opens through the door as a page in the shell (ledger #3967), at the
+/// path its own "Panes" list links to: the tab list, the splitters, the panes filled from the
+/// example lenses, the Layout form; and `select.graph=` moves the following panes.
+#[tokio::test(flavor = "current_thread")]
+async fn the_door_serves_the_workspace_as_a_page() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(ikigai_ui_demo::serve(listener, Store::default()));
+
+    let page = call(addr, "GET", ikigai_ui_demo::WORKSPACE_PATH, "").await;
+    assert!(page.starts_with("HTTP/1.1 200"), "{page}");
+    for part in [
+        "<title>Contacts workspace</title>",
+        "href=\"/ui/base.css\"",
+        "src=\"/ui/shell.js\"",
+        "<div id=\"status\" role=\"status\"",
+        "<h1>Contacts workspace</h1>",
+        "<nav aria-label=\"Panes\">",
+        &format!("href=\"{}#pane-table\"", ikigai_ui_demo::WORKSPACE_PATH),
+        "<div role=\"tablist\"",
+        "role=\"separator\"",
+        "id=\"pane-table\"",
+        "aria-label=\"Tabs: Dashboard, Table\"",
+        "name=\"if-version\"",
+    ] {
+        assert!(page.contains(part), "{part} not in {page}");
+    }
+    assert!(
+        !page.contains("is not shown under your capability"),
+        "{page}"
+    );
+    // Percent-encoded, as one segment: the same page.
+    let encoded = ikigai_ui_demo::WORKSPACE_PATH.replacen(
+        ikigai_ui_demo::WORKSPACE,
+        &ikigai_ui_demo::WORKSPACE.replace(':', "%3A"),
+        1,
+    );
+    let same = call(addr, "GET", &encoded, "").await;
+    assert!(same.starts_with("HTTP/1.1 200"), "{same}");
+    assert!(same.contains("<h1>Contacts workspace</h1>"), "{same}");
+    // Not a workspace: refused, not a page.
+    let refused = call(addr, "GET", "/workspace/urn:iki:uidemo:contact", "").await;
+    assert!(!refused.starts_with("HTTP/1.1 200"), "{refused}");
+}

@@ -722,3 +722,302 @@ fn the_layout_form_is_a_resize_edit() {
     );
     assert_eq!(workspace::resize(&ws, &posted).unwrap(), ws);
 }
+
+// --- proposal 13, second half: a shared workspace shows each viewer only their own reads -----
+
+const ALICE: &str = "urn:cap:test:person:alice";
+const BOB: &str = "urn:cap:test:person:bob";
+const TRAIL_READ: &str = "urn:cap:test:trail:read";
+
+/// Every request seen, with the viewer it was read for.
+type SeenBy = Arc<Mutex<Vec<(Verb, String, &'static str)>>>;
+
+/// One atom, two viewers: every pane answers "{viewer}'s {pane}", from the capability it is
+/// read under, and the trail pane needs a grant only Bob holds. Records every request with the
+/// viewer it came from.
+fn shared_host() -> (Kernel, SeenBy) {
+    let seen: SeenBy = Arc::default();
+    let who = |cap: &Capability| match (cap.allows(ALICE), cap.allows(BOB)) {
+        (true, false) => "Alice",
+        (false, true) => "Bob",
+        _ => "nobody",
+    };
+    let pane = |id: &'static str, seen: SeenBy| {
+        FnEndpoint::new(id, move |inv: &Invocation<'_>| {
+            let viewer = who(inv.capability);
+            let target = inv.request.target.as_str().to_string();
+            seen.lock()
+                .unwrap()
+                .push((inv.request.verb, target.clone(), viewer));
+            let lens = target
+                .trim_start_matches("urn:iki:ui:screen:name:lens:")
+                .split(':')
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            let node = serde_json::json!({
+                "kind": "text", "properties": {"content": format!("{viewer}'s {lens} pane.")}
+            });
+            Ok(Representation::new(
+                ReprType::new(model::MEDIA_TYPE),
+                serde_json::to_vec(&node).unwrap(),
+            ))
+        })
+    };
+    let described = |id: &'static str| {
+        Description::new(id)
+            .title(id)
+            .summary("Answers the viewer's own reads.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output(model::MEDIA_TYPE)
+    };
+    let atom_seen = seen.clone();
+    let space = EndpointSpace::new()
+        .bind(
+            Exact::new(WORKSPACE),
+            FnEndpoint::new("atom", move |inv: &Invocation<'_>| {
+                atom_seen.lock().unwrap().push((
+                    inv.request.verb,
+                    WORKSPACE.to_string(),
+                    who(inv.capability),
+                ));
+                if inv.request.verb != Verb::Source {
+                    return Err(Error::Denied("the atom is read only here".into()));
+                }
+                Ok(Representation::new(
+                    ReprType::new("application/json"),
+                    ITEM.to_vec(),
+                ))
+            })
+            .with_description(
+                Description::new("atom")
+                    .title("atom")
+                    .summary("Alice's workspace, shared with Bob.")
+                    .verb(Verb::Source)
+                    .verb(Verb::Sink)
+                    .verb(Verb::Meta)
+                    .output("application/json"),
+            ),
+        )
+        .bind(
+            UriTemplate::parse("urn:iki:ui:screen:name:lens:trail:{rest}").unwrap(),
+            pane("trail", seen.clone()).with_description(described("trail").requires(TRAIL_READ)),
+        )
+        .bind(
+            UriTemplate::parse("urn:iki:ui:screen:name:lens:{rest}").unwrap(),
+            pane("panes", seen.clone()).with_description(described("panes")),
+        );
+    let root = Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(space) as Arc<dyn ikigai_core::Space>,
+        common::root(None, Vec::new()),
+    ]));
+    (common::kernel(root), seen)
+}
+
+/// Proposal 13, second half (section 1, "Shared"): Alice's workspace, read by Alice and by Bob
+/// under their own capabilities. Each sees the same layout filled with their own reads: every
+/// pane is read under the viewer's capability and answers that viewer's content; the trail,
+/// which only Bob may read, shows Bob's and is withheld from Alice; neither page carries a word
+/// of the other's; and nobody writes the atom.
+#[test]
+fn a_shared_workspace_shows_each_viewer_only_their_own_reads() {
+    let (kernel, seen) = shared_host();
+    let face = format!(
+        "urn:iki:ui:html:screen:{}",
+        workspace::face_name(WORKSPACE, &BTreeMap::new())
+    );
+    let page = |scopes: &[&str]| {
+        let rep = block_on(kernel.issue(
+            Request::new(Verb::Source, Iri::parse(face.as_str()).unwrap()),
+            &Capability::scoped(scopes.iter().copied()),
+        ))
+        .unwrap();
+        String::from_utf8(rep.bytes).unwrap()
+    };
+    let alice = page(&["urn:cap:test:read", ALICE]);
+    let bob = page(&["urn:cap:test:read", BOB, TRAIL_READ]);
+
+    // The same layout for both: the same panes, in the same order, with the same splitters.
+    let panes = |html: &str| -> Vec<String> {
+        html.match_indices(" id=\"pane-")
+            .map(|(i, _)| {
+                let id = &html[i + 5..];
+                id[..id.find('"').unwrap()].to_string()
+            })
+            .collect()
+    };
+    assert_eq!(
+        panes(&alice),
+        ["pane-dashboard", "pane-session", "pane-item", "pane-trail"],
+        "{alice}"
+    );
+    assert_eq!(panes(&alice), panes(&bob));
+    assert_eq!(
+        alice.matches("role=\"separator\"").count(),
+        bob.matches("role=\"separator\"").count()
+    );
+
+    // Each sees their own reads, and nothing of the other's.
+    for lens in ["dashboard", "session", "item"] {
+        assert!(
+            alice.contains(&format!("Alice&#39;s {lens} pane.")),
+            "{alice}"
+        );
+        assert!(bob.contains(&format!("Bob&#39;s {lens} pane.")), "{bob}");
+    }
+    assert!(bob.contains("Bob&#39;s trail pane."), "{bob}");
+    assert!(
+        !alice.contains("trail pane."),
+        "Alice may not read the trail: {alice}"
+    );
+    assert!(!alice.contains("Bob"), "{alice}");
+    assert!(!bob.contains("Alice"), "{bob}");
+
+    // Every read was made under the viewer who asked, none under the other or anyone else; the
+    // trail was never answered for Alice; and the atom was only read.
+    let seen = seen.lock().unwrap();
+    assert!(
+        seen.iter().all(|(verb, _, _)| *verb == Verb::Source),
+        "{seen:?}"
+    );
+    assert!(seen.iter().all(|(_, _, who)| *who != "nobody"), "{seen:?}");
+    let atom_reads: Vec<_> = seen.iter().filter(|(_, iri, _)| iri == WORKSPACE).collect();
+    assert!(atom_reads.iter().any(|(_, _, w)| *w == "Alice"));
+    assert!(atom_reads.iter().any(|(_, _, w)| *w == "Bob"));
+    assert!(
+        !seen
+            .iter()
+            .any(|(_, iri, w)| iri.contains(":lens:trail:") && *w == "Alice"),
+        "{seen:?}"
+    );
+}
+
+/// The Layout form's hidden fields (`op`, `if-version`) are hidden inputs and nothing else: no
+/// visible `<label>`, no hint or note, so a sighted keyboard user and a screen reader meet no
+/// label without a control. The visible share fields keep theirs.
+#[test]
+fn a_hidden_field_renders_no_label() {
+    let html = face_html();
+    let form = &html[html.find("<form").unwrap()..];
+    let form = &form[..form.find("</form>").unwrap()];
+    assert!(!form.contains(">Edit</label>"), "{form}");
+    assert!(!form.contains(">Made against version</label>"), "{form}");
+    assert!(
+        form.contains("<input type=\"hidden\" name=\"op\" value=\"resize\">"),
+        "{form}"
+    );
+    assert!(
+        form.contains("<input type=\"hidden\" name=\"if-version\" value=\"1\">"),
+        "{form}"
+    );
+    // Every label left names a control that is there.
+    for (i, _) in form.match_indices("<label for=\"") {
+        let id = &form[i + 12..];
+        let id = &id[..id.find('"').unwrap()];
+        assert!(form.contains(&format!("id=\"{id}\"")), "{id}: {form}");
+        assert!(!form.contains(&format!("id=\"{id}\" name=\"op\"")));
+    }
+    assert_eq!(form.matches("type=\"number\"").count(), 4, "{form}");
+}
+
+// --- the workspace as a page (ledger #3967, section 1: `{base}page:workspace:{iri}`) ---------
+
+fn page(kernel: &Kernel, name: &str, args: &[(&str, &str)]) -> Result<String, Error> {
+    let mut request = Request::new(Verb::Source, Iri::parse(name).unwrap());
+    for (k, v) in args {
+        request = request.with_arg(*k, ArgRef::Inline(v.as_bytes().to_vec()));
+    }
+    let rep = block_on(kernel.issue(request, &Capability::scoped(["urn:cap:test:read"])))?;
+    Ok(String::from_utf8(rep.bytes).unwrap())
+}
+
+/// `Pages::workspaces(true)` serves `{base}page:workspace:{iri}`: the shell (the family's
+/// header, the theme, the status region) over the workspace's html face, titled by the atom's
+/// label. The IRI may come percent-encoded, as a door's one segment; `select.{role}=` is the
+/// selection; the theme is the shell's.
+#[test]
+fn a_workspace_is_a_page_in_the_shell() {
+    let (kernel, seen) = face_host();
+    let html = page(
+        &kernel,
+        &format!("urn:demo:page:workspace:{WORKSPACE}"),
+        &[],
+    )
+    .unwrap();
+    assert!(html.starts_with("<!doctype html>"), "{html}");
+    assert!(html.contains("<title>Item 3941</title>"), "{html}");
+    assert!(
+        html.contains("<div id=\"status\" role=\"status\""),
+        "{html}"
+    );
+    assert!(html.contains("<nav aria-label=\"Site\">"), "{html}");
+    let main = &html[html.find("<main id=\"main\" tabindex=\"-1\">").unwrap()..];
+    assert!(main.contains("<h1>Item 3941</h1>"), "{main}");
+    assert!(main.contains("<div role=\"tablist\""), "{main}");
+    assert!(main.contains("role=\"separator\""), "{main}");
+    assert!(main.contains("<nav aria-label=\"Panes\">"), "{main}");
+    // The "Panes" list links to this page's own address.
+    assert!(
+        main.contains(&format!("href=\"/workspace/{WORKSPACE}#pane-trail\"")),
+        "{main}"
+    );
+    assert!(seen
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|(verb, _)| *verb == Verb::Source));
+
+    // Percent-encoded, as a door may hand it over: the same page.
+    let encoded = WORKSPACE.replace(':', "%3A");
+    let same = page(&kernel, &format!("urn:demo:page:workspace:{encoded}"), &[]).unwrap();
+    assert_eq!(same, html);
+
+    // The selection from the address, and the theme.
+    let chosen = "urn:iki:ledger:default:item:3950";
+    let selected = page(
+        &kernel,
+        &format!("urn:demo:page:workspace:{WORKSPACE}"),
+        &[("select.item", chosen), ("theme", "dark")],
+    )
+    .unwrap();
+    assert!(selected.contains("data-theme=\"dark\""), "{selected}");
+    assert!(
+        selected.contains(&format!("Session: follows item: {chosen}")),
+        "{selected}"
+    );
+    assert!(!selected.contains("Session: follows item: urn:iki:ledger:default:item:3941"));
+}
+
+/// A workspace page refuses, before reading anything, an IRI that is not a workspace or that
+/// carries what would leave the name; and a family that does not turn workspaces on has none.
+#[test]
+fn a_workspace_page_refuses_what_is_not_a_workspace() {
+    let (kernel, seen) = face_host();
+    for bad in [
+        "urn:iki:ledger:default:item:3941",
+        "urn:iki:ui:workspace:person:urn:person:alice:name:item%3Fx",
+        "urn:iki:ui:workspace:person:urn:person:alice:name:item%23x",
+    ] {
+        let refused = page(&kernel, &format!("urn:demo:page:workspace:{bad}"), &[]).unwrap_err();
+        assert!(
+            matches!(refused, Error::InvalidArgument { .. }),
+            "{bad}: {refused:?}"
+        );
+    }
+    assert!(seen.lock().unwrap().is_empty(), "nothing was read");
+
+    let off = ikigai_ui::Pages::new("plain", "urn:plain:")
+        .build()
+        .unwrap();
+    let kernel = common::kernel(Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(ikigai_ui::space()) as Arc<dyn ikigai_core::Space>,
+        Arc::new(off),
+    ])));
+    assert!(page(
+        &kernel,
+        &format!("urn:plain:page:workspace:{WORKSPACE}"),
+        &[]
+    )
+    .is_err());
+}

@@ -4,7 +4,8 @@
 //
 // It opens the demo (fixtures only: the gallery's examples, the demo's own contact contract, no
 // real data) in headless Chromium, in light and in dark (the media emulation axe/check.mjs uses;
-// the pages are `auto`, so the token set follows it), and writes each shot as lossless WebP,
+// the pages are `auto`, so the token set follows it), and a shot that asks for it also in more
+// contrast (light with prefers-contrast: more, as axe/check.mjs names it), and writes each shot as lossless WebP,
 // at quality 0.9, a fraction of the PNG's size.
 //
 // Staleness without pixels. Fonts, antialiasing and GPUs differ between machines, so the images
@@ -25,7 +26,13 @@ if (!base || !out || (flag && (flag !== "--check" || !committed))) {
   process.exit(2);
 }
 
-const MODES = ["light", "dark"];
+// The media each mode emulates; a shot is taken in DEFAULT_MODES unless it names its own.
+const MODES = {
+  light: { colorScheme: "light" },
+  dark: { colorScheme: "dark" },
+  "more-contrast": { colorScheme: "light", contrast: "more" },
+};
+const DEFAULT_MODES = ["light", "dark"];
 const WIDTH = 1000;
 const MAX_HEIGHT = 1400;
 
@@ -73,6 +80,16 @@ const SHOTS = [
     clip: "form[data-ui-form]",
   },
   { name: "support", path: "/page/support" },
+  // The demo's workspace (ledger #3967) at its own route: Contacts beside the Dashboard and
+  // Table tabs, with the splitter between, and the Layout form below.
+  {
+    name: "workspace",
+    path: "/workspace/urn:iki:ui:workspace:person:urn:person:demo:name:contacts",
+    modes: ["light", "dark", "more-contrast"],
+    act: async (page) => {
+      await page.locator("[data-ui-tabs][data-ui-tabs-ready]").waitFor();
+    },
+  },
   {
     name: "scene",
     path: "/page/gallery",
@@ -127,7 +144,7 @@ const browser = await chromium.launch({ args: ["--disable-features=WebGPU,Vulkan
 const manifest = {};
 let errors = 0;
 for (const shot of SHOTS) {
-  for (const mode of MODES) {
+  for (const mode of shot.modes ?? DEFAULT_MODES) {
     const file = `${shot.name}-${mode}.webp`;
     const context = await browser.newContext({ viewport: { width: WIDTH, height: 900 }, deviceScaleFactor: 2 });
     const page = await context.newPage();
@@ -135,7 +152,7 @@ for (const shot of SHOTS) {
       errors += 1;
       console.log(`FAIL ${file}: page error: ${e.message}`);
     });
-    await page.emulateMedia({ colorScheme: mode, reducedMotion: "reduce" });
+    await page.emulateMedia({ ...MODES[mode], reducedMotion: "reduce" });
     await page.goto(base + shot.path, { waitUntil: "networkidle" });
     if (shot.act) await shot.act(page);
     let png;

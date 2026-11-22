@@ -29,6 +29,15 @@
   "support-dark.webp": {
     "inputs": "493c9b20f9ee16cef1fc6590cc48a77a00d6132c70621b00617152c217839ad9"
   },
+  "workspace-light.webp": {
+    "inputs": "5bddfbb62d1895adba6df208617ff14f19a8c311dc92c4867200bd57818eba9e"
+  },
+  "workspace-dark.webp": {
+    "inputs": "5bddfbb62d1895adba6df208617ff14f19a8c311dc92c4867200bd57818eba9e"
+  },
+  "workspace-more-contrast.webp": {
+    "inputs": "5bddfbb62d1895adba6df208617ff14f19a8c311dc92c4867200bd57818eba9e"
+  },
   "scene-light.webp": {
     "inputs": "8053f878754cfdc00878f0f1aa962048a35704c6ddac889cdc42671266acd360",
     "webgpu": false

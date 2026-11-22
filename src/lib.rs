@@ -33,7 +33,7 @@
 //! | `urn:iki:ui:prefixes` | data | the default prefix table, `ui:` for `urn:iki:ui:` ([`screen::PREFIXES`]) |
 //! | `urn:iki:ui:setting:name:{name}` | data | a setting a screen runs under: `target`, `theme`, `locale`, `density`, `viewer`, the default here, a host's screen space ahead of it ([`setting`]) |
 //! | `urn:iki:ui:face:screen:{screen}` | composition | a screen through the target its screen space names ([`target::SCREEN_FACE`]) |
-//! | `urn:iki:ui:workspace:person:{person}:name:{name}`, `urn:iki:ui:shape:workspace`, `urn:iki:ui:screen:workspace:{iri}`, `urn:iki:ui:screen:name:workspace:{rest}` | data, composition | a workspace atom (a host's), its closed shape, and the workspace as a screen, also under a screen name for a face ([`workspace`]) |
+//! | `urn:iki:ui:workspace:person:{person}:name:{name}`, `urn:iki:ui:shape:workspace`, `urn:iki:ui:screen:workspace:{iri}`, `urn:iki:ui:screen:name:workspace:{rest}`, `urn:iki:ui:workspace:title:{rest}` | data, composition | a workspace atom (a host's), its closed shape, and the workspace as a screen, also under a screen name for a face, and its page's title ([`workspace`], [`Pages::workspaces`]) |
 //! | `urn:iki:ui:structure:name:{name}` | data | a structural node's SHACL shape: `reference` ([`reference`](mod@reference)), `region` ([`region`]) |
 //! | `urn:iki:ui:example:structure:{name}` | data | a structural node's example |
 //! | `urn:iki:ui:chooser-override:{family}:{theme}` | a host's | a family's own chooser; bound to nothing, it turns the chooser off ([`CHOOSER_OVERRIDE`]) |
@@ -735,6 +735,10 @@ pub fn space() -> EndpointSpace {
             workspace::face_endpoint(),
         )
         .bind(Exact::new(workspace::SHAPE), workspace::shape_endpoint())
+        .bind(
+            template(&format!("{}{{rest}}", workspace::TITLE)),
+            workspace::title_endpoint(),
+        )
         .bind(Exact::new(KIND), kind_list_endpoint())
         .bind(template(&format!("{KIND}:name:{{kind}}")), kind_endpoint())
         .bind(template(&format!("{KIND}:{{rest}}")), kind_seal_endpoint())
@@ -1393,6 +1397,7 @@ pub struct Pages {
     session: Option<String>,
     chooser: bool,
     lenses: bool,
+    workspaces: bool,
 }
 
 impl Pages {
@@ -1407,6 +1412,7 @@ impl Pages {
             session: None,
             chooser: true,
             lenses: false,
+            workspaces: false,
         }
     }
 
@@ -1422,6 +1428,20 @@ impl Pages {
     /// `/lens/name/{lens}/resource/{+iri}` ([`lens::html_href`]) onto it.
     pub fn lenses(mut self, on: bool) -> Self {
         self.lenses = on;
+        self
+    }
+
+    /// Whether the family serves workspaces as pages (ledger #3967, `docs/design/workspace.md`
+    /// section 1): off unless turned on. On, `{base}page:workspace:{iri}` is the shell over
+    /// ikigai-ui's html face of the workspace screen,
+    /// `urn:iki:ui:html:screen:workspace:resource:{iri}` ([`workspace::face_name`]), titled by
+    /// the atom's label (`urn:iki:ui:workspace:title:…`, [`workspace::TITLE`]); the host binds
+    /// the atom and nothing else for it. The IRI may arrive percent-encoded and is decoded and
+    /// checked ([`workspace::page_screen`]); the request's `select.{role}=` parameters are the
+    /// selection. A door routes `/workspace/{+iri}`, where the workspace's "Panes" list links,
+    /// onto it.
+    pub fn workspaces(mut self, on: bool) -> Self {
+        self.workspaces = on;
         self
     }
 
@@ -1473,6 +1493,7 @@ impl Pages {
             session,
             chooser,
             lenses,
+            workspaces,
         } = self;
         if !family_ok(&family) {
             return Err(ConfigError(format!(
@@ -1525,6 +1546,13 @@ impl Pages {
                 lens_page_endpoint(family.clone()),
             );
         }
+        if workspaces {
+            // Before the family's own pages, so a workspace page name is never a host fragment.
+            doors = doors.bind(
+                template(&format!("{base}page:workspace:{{iri}}")),
+                workspace_page_endpoint(family.clone()),
+            );
+        }
         let mut doors = doors
             .bind(
                 template(&format!("{base}page:{{name}}")),
@@ -1553,6 +1581,18 @@ impl Pages {
                 .prefix_at_root(
                     format!("urn:iki:ui:main:{family}:lens:"),
                     "urn:iki:ui:html:screen:lens:",
+                );
+        }
+        if workspaces {
+            // Longer than the family's own prefixes, so these win for a workspace page's names.
+            aliases = aliases
+                .prefix_at_root(
+                    format!("urn:iki:ui:title:{family}:workspace:"),
+                    workspace::TITLE,
+                )
+                .prefix_at_root(
+                    format!("urn:iki:ui:main:{family}:workspace:"),
+                    "urn:iki:ui:html:screen:workspace:",
                 );
         }
         let aliases = aliases
@@ -1642,6 +1682,55 @@ fn lens_page_endpoint(family: String) -> AsyncFnEndpoint {
         Box::pin(async move {
             let name = lens::lensed_name(inv)?;
             let screen = lens::page_screen(inv, &name)?;
+            let theme = inv
+                .inline_str("theme")
+                .ok()
+                .filter(|t| THEMES.contains(t))
+                .unwrap_or("auto");
+            let mut vars = Bindings::new();
+            vars.insert("family", family.as_str());
+            vars.insert("name", screen.as_str());
+            vars.insert("theme", theme);
+            composer.invoke(&inv.with_bindings(&vars)).await
+        })
+    })
+    .with_description(description)
+}
+
+fn workspace_page_endpoint(family: String) -> AsyncFnEndpoint {
+    let id = format!("ui-page-workspace-{family}");
+    let composer =
+        Arc::new(ikigai_fn::compose_over(Iri::parse(SHELL).expect("an IRI")).named(id.clone()));
+    let description = Description::new(id.as_str())
+        .title("A workspace as a page over the UI shell")
+        .summary(format!(
+            "The shared page shell filled with the `{family}` family's header, the workspace's \
+             label as the title and ikigai-ui's html face of the workspace screen as the main \
+             content; its select.{{role}}= parameters are the selection."
+        ))
+        .verb(Verb::Source)
+        .verb(Verb::Meta)
+        .input(
+            ArgSpec::new("iri")
+                .summary("the workspace, percent-encoded or not")
+                .class("http://www.w3.org/2001/XMLSchema#anyURI")
+                .binding()
+                .example("urn:iki:ui:workspace:person:urn:person:probe:name:probe"),
+        )
+        .input(
+            ArgSpec::new("theme")
+                .summary("the palette: auto follows the viewer's system (UI conventions D12)")
+                .class(XSD_STRING)
+                .one_of(THEMES)
+                .default_value("auto"),
+        )
+        .output(HTML);
+    AsyncFnEndpoint::new(id, move |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+        let composer = composer.clone();
+        let family = family.clone();
+        Box::pin(async move {
+            let given = inv.bindings.get("iri").unwrap_or_default().to_string();
+            let screen = workspace::page_screen(inv, &given)?;
             let theme = inv
                 .inline_str("theme")
                 .ok()
