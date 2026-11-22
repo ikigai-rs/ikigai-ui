@@ -4,7 +4,7 @@
 // paint. It touches only <html> while it runs; everything else waits for htmx's events, which
 // bubble to `document`.
 //
-// It does seven things htmx does not (2 includes riding out a restart: a GET that gets a 502,
+// It does eight things htmx does not (2 includes riding out a restart: a GET that gets a 502,
 // 503 or 504 or no answer is sent again, with backoff, before it is shown; see 2a):
 // 1. The theme (D12). `theme=` in the URL wins and is remembered; with none, a remembered choice
 //    replaces the server's `auto`. A chooser is a real <select name="theme" data-ui-theme> in a
@@ -53,6 +53,8 @@
 // 6. Write that lapses (ledger #3822). With the host's session answer named in <head>, a control
 //    marked data-ui-write is disabled, with a note saying why, once its `writeSeconds` is 0.
 // 7. Workspace tabs (ledger #3950): the ARIA tabs pattern over a [data-ui-tabs] tab list.
+// 8. Workspace splitters (ledger #3951): a [data-ui-splitter] separator resized by any pointer,
+//    live, and by the keyboard, saved as one `resize` edit through the workspace's "Layout" form.
 (function () {
   "use strict";
   var KEY = "ikigai-ui:theme";
@@ -785,4 +787,335 @@
     ready(e.target);
   });
   window.addEventListener("hashchange", reveal);
+})();
+
+// 8. Workspace splitters (ledger #3951, docs/design/workspace.md section 5A "Resize by
+// dragging"). The html face puts a role="separator" [data-ui-splitter] between each two children
+// of a split, not focusable, with the "Layout" form (a `resize` edit: op, if-version and one
+// share{path}.{i} per child) as the way that works with no script. Here, for each splitter whose
+// workspace has that form:
+// - it joins the tab order. Left/Up and Right/Down move it by 10 thousandths (1%), with Shift by
+//   100; Home and End move it to either minimum. Its aria-valuenow (the first child's share),
+//   aria-valuemin/max and aria-valuetext ("Dashboard 30%, Session 70%") follow as it moves, so a
+//   keyboard resize says nothing in #status. It saves one second after the last key, or when it
+//   loses focus.
+// - a mouse, a pen or a finger drags it (Pointer Events with pointer capture, not HTML drag and
+//   drop, which touch does not have). The two children resize live, once per animation frame,
+//   and nothing is composed or refetched. Neither child goes below 16rem wide (8rem tall in a
+//   stacked split) nor below a share of 50, and a share moves in steps of 10, so a drag and the
+//   keys land on the same shares. The drag saves once, on pointerup, and #status says once
+//   "Dashboard is now 30% wide." Escape during a drag, pointercancel, or a capture lost without
+//   a pointerup puts it back and saves nothing (SC 2.5.2).
+// - a save is the Layout form's own fields, with the new shares, POSTed to its action: the same
+//   edit the form makes, one at a time, in order. A save that succeeds says nothing and the form's
+//   if-version moves on to the version it wrote; one that fails puts the shares back to the last
+//   saved and says why once in #status. A save still waiting when the page is left is sent with
+//   keepalive. An aria-disabled splitter does nothing.
+(function () {
+  "use strict";
+  var MIN = 50;
+  var STEP = 10;
+  var BIG = 100;
+  var WAIT = 1000;
+  var queue = window.Promise ? Promise.resolve() : null;
+  var pending = []; // keyboard saves waiting for their second: { split, timer }
+  function children(split) {
+    return Array.prototype.filter.call(split.children, function (c) {
+      return c.classList.contains("ui-share");
+    });
+  }
+  function splitters(split) {
+    return Array.prototype.filter.call(split.children, function (c) {
+      return c.hasAttribute("data-ui-splitter");
+    });
+  }
+  // The split's path in the layout ("", ".1", ".1.0"), from the splits around it, as the Layout
+  // form names its fields: share{path}.{i}.
+  function pathOf(split) {
+    var path = "";
+    var el = split;
+    for (;;) {
+      var share = el.parentElement;
+      var outer = share && share.parentElement;
+      if (!share || !share.classList.contains("ui-share") || !outer || !outer.classList.contains("ui-split")) break;
+      path = "." + children(outer).indexOf(share) + path;
+      el = outer;
+    }
+    return path;
+  }
+  function rootOf(split) {
+    var el = split;
+    while (el.parentElement && el.parentElement.classList.contains("ui-share") &&
+      el.parentElement.parentElement && el.parentElement.parentElement.classList.contains("ui-split")) {
+      el = el.parentElement.parentElement;
+    }
+    return el;
+  }
+  // The workspace's Layout form: the nearest one around the split with a `resize` op.
+  function formOf(split) {
+    for (var el = rootOf(split).parentElement; el; el = el.parentElement) {
+      var op = el.querySelector('form input[name="op"][value="resize"]');
+      if (op && op.form) return op.form;
+    }
+    return null;
+  }
+  function field(form, split, i) {
+    return form.querySelector('input[name="share' + pathOf(split) + "." + i + '"]');
+  }
+  function saved(split) {
+    var form = formOf(split);
+    if (!form) return null;
+    var out = [];
+    var n = children(split).length;
+    for (var i = 0; i < n; i++) {
+      var f = field(form, split, i);
+      var v = f && parseInt(f.value, 10);
+      if (!f || !(v >= MIN)) return null;
+      out.push(v);
+    }
+    return out;
+  }
+  function percent(v) {
+    return (v % 10 === 0 ? v / 10 : (v / 10).toFixed(1)) + "%";
+  }
+  function names(sep) {
+    var label = sep.getAttribute("aria-label") || "";
+    var m = /^Resize (.*) and (.*)$/.exec(label);
+    return m ? [m[1], m[2]] : ["", ""];
+  }
+  function row(split) {
+    return window.getComputedStyle(split).flexDirection.indexOf("row") === 0;
+  }
+  // The least share each side of splitter i may keep: 50, or what 16rem (8rem stacked) is of
+  // the two children's room, whichever is more.
+  function least(split, i, values) {
+    var kids = children(split);
+    var horizontal = row(split);
+    var size = function (el) {
+      var r = el.getBoundingClientRect();
+      return horizontal ? r.width : r.height;
+    };
+    var room = size(kids[i]) + size(kids[i + 1]);
+    var rem = parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
+    var px = (horizontal ? 16 : 8) * rem;
+    var total = values[i] + values[i + 1];
+    var lo = MIN;
+    if (room > 2 * px) lo = Math.max(MIN, Math.ceil((total * px) / room / STEP) * STEP);
+    if (lo > total - lo) lo = MIN;
+    return { lo: lo, hi: total - lo, room: room, total: total };
+  }
+  function show(split, values) {
+    children(split).forEach(function (kid, i) {
+      kid.style.flexGrow = String(values[i]);
+    });
+    splitters(split).forEach(function (sep) {
+      var i = parseInt(sep.getAttribute("data-ui-splitter"), 10);
+      var b = least(split, i, values);
+      var n = names(sep);
+      sep.setAttribute("aria-valuenow", String(values[i]));
+      sep.setAttribute("aria-valuemin", String(b.lo));
+      sep.setAttribute("aria-valuemax", String(b.hi));
+      sep.setAttribute("aria-valuetext", n[0] + " " + percent(values[i]) + ", " + n[1] + " " + percent(values[i + 1]));
+    });
+  }
+  function current(split) {
+    return split.uiShares ? split.uiShares.slice() : saved(split);
+  }
+  // Splitter i at `value`, kept within its bounds; the shares of the two beside it change.
+  function moved(split, i, values, value) {
+    var b = least(split, i, values);
+    var v = Math.min(b.hi, Math.max(b.lo, value));
+    var out = values.slice();
+    out[i] = v;
+    out[i + 1] = b.total - v;
+    return out;
+  }
+  function say(text, seen) {
+    var area = document.getElementById("status");
+    if (!area) return;
+    area.textContent = "";
+    if (!text) return;
+    var p = document.createElement("p");
+    p.className = seen ? "ui-note" : "ui-sr-only";
+    p.textContent = text;
+    area.appendChild(p);
+  }
+  function save(split, values, keepalive) {
+    var form = formOf(split);
+    if (!form || !queue) return;
+    var before;
+    queue = queue.then(function () {
+      before = (split.uiSaved || saved(split) || values).slice();
+      // The body is read when its turn comes, so it carries the if-version the save before it
+      // moved on to.
+      values.forEach(function (v, i) {
+        var f = field(form, split, i);
+        if (f) f.value = String(v);
+      });
+      var body = new URLSearchParams(new FormData(form));
+      return window.fetch(form.action, {
+        method: "POST",
+        body: body,
+        credentials: "same-origin",
+        keepalive: !!keepalive,
+        headers: { "HX-Request": "true" },
+      }).then(function (r) {
+        if (!r.ok) {
+          return r.text().then(function (t) {
+            throw new Error(t || "the server answered " + r.status);
+          });
+        }
+        split.uiSaved = values.slice();
+        var version = form.querySelector('input[name="if-version"]');
+        var n = version && parseInt(version.value, 10);
+        if (version && n >= 0) version.value = String(n + 1);
+      }).catch(function (e) {
+        // The screen never shows a layout that is not stored.
+        before.forEach(function (v, i) {
+          var f = field(form, split, i);
+          if (f) f.value = String(v);
+        });
+        split.uiShares = before.slice();
+        show(split, before);
+        say("The layout was not saved: " + (e && e.message ? e.message : "no answer") + ".", true);
+      });
+    });
+  }
+  function later(split) {
+    flush(split, false, true);
+    pending.push({
+      split: split,
+      timer: window.setTimeout(function () {
+        flush(split, false);
+      }, WAIT),
+    });
+  }
+  // A keyboard save waiting for its second, now (or dropped, with `drop`).
+  function flush(split, keepalive, drop) {
+    pending = pending.filter(function (p) {
+      if (split && p.split !== split) return true;
+      window.clearTimeout(p.timer);
+      if (!drop) save(p.split, p.split.uiShares, keepalive);
+      return false;
+    });
+  }
+  function off(sep) {
+    return sep.getAttribute("aria-disabled") === "true" || !!(sep.closest && sep.closest("[data-ui-write-off]"));
+  }
+  function wire(sep) {
+    var split = sep.parentElement;
+    var i = parseInt(sep.getAttribute("data-ui-splitter"), 10);
+    var drag = null;
+    sep.setAttribute("tabindex", "0");
+    sep.setAttribute("data-ui-splitter-ready", "");
+    function end(keep) {
+      if (!drag) return;
+      var d = drag;
+      drag = null;
+      if (d.frame) window.cancelAnimationFrame(d.frame);
+      sep.removeAttribute("data-ui-dragging");
+      if (sep.hasPointerCapture && sep.hasPointerCapture(d.pointer)) sep.releasePointerCapture(d.pointer);
+      if (!keep || d.values[i] === d.start[i]) {
+        split.uiShares = d.start;
+        show(split, d.start);
+        return;
+      }
+      split.uiShares = d.values;
+      show(split, d.values);
+      save(split, d.values, false);
+      var n = names(sep);
+      say(n[0] + " is now " + percent(d.values[i]) + (row(split) ? " wide." : " tall."));
+    }
+    sep.addEventListener("pointerdown", function (e) {
+      if (drag || off(sep) || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+      var values = current(split);
+      if (!values) return;
+      e.preventDefault();
+      flush(split, false);
+      sep.focus({ preventScroll: true });
+      sep.setPointerCapture(e.pointerId);
+      sep.setAttribute("data-ui-dragging", "");
+      var b = least(split, i, values);
+      drag = {
+        pointer: e.pointerId,
+        from: row(split) ? e.clientX : e.clientY,
+        start: values,
+        values: values,
+        room: b.room,
+        frame: 0,
+      };
+    });
+    sep.addEventListener("pointermove", function (e) {
+      if (!drag || e.pointerId !== drag.pointer) return;
+      var delta = (row(split) ? e.clientX : e.clientY) - drag.from;
+      var raw = drag.start[i] + (drag.room > 0 ? ((drag.start[i] + drag.start[i + 1]) * delta) / drag.room : 0);
+      drag.values = moved(split, i, drag.start, Math.round(raw / STEP) * STEP);
+      if (!drag.frame) {
+        drag.frame = window.requestAnimationFrame(function () {
+          if (!drag) return;
+          drag.frame = 0;
+          show(split, drag.values);
+        });
+      }
+    });
+    sep.addEventListener("pointerup", function (e) {
+      if (drag && e.pointerId === drag.pointer) end(true);
+    });
+    sep.addEventListener("pointercancel", function (e) {
+      if (drag && e.pointerId === drag.pointer) end(false);
+    });
+    sep.addEventListener("lostpointercapture", function (e) {
+      if (drag && e.pointerId === drag.pointer) end(false);
+    });
+    sep.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && drag) {
+        e.preventDefault();
+        return end(false);
+      }
+      if (drag || off(sep) || e.altKey || e.ctrlKey || e.metaKey) return;
+      var values = current(split);
+      if (!values) return;
+      var step = e.shiftKey ? BIG : STEP;
+      var b = least(split, i, values);
+      var to = {
+        ArrowLeft: values[i] - step,
+        ArrowUp: values[i] - step,
+        ArrowRight: values[i] + step,
+        ArrowDown: values[i] + step,
+        Home: b.lo,
+        End: b.hi,
+      }[e.key];
+      if (to === undefined) return;
+      e.preventDefault();
+      var next = moved(split, i, values, to);
+      if (next[i] === values[i]) return;
+      split.uiShares = next;
+      show(split, next);
+      later(split);
+    });
+    sep.addEventListener("blur", function () {
+      flush(split, false);
+    });
+  }
+  function ready(root) {
+    var all = root.querySelectorAll ? root.querySelectorAll("[data-ui-splitter]:not([data-ui-splitter-ready])") : [];
+    Array.prototype.forEach.call(all, function (sep) {
+      var split = sep.parentElement;
+      if (!split || !split.classList.contains("ui-split") || !window.fetch) return;
+      var values = saved(split);
+      if (!values) return;
+      wire(sep);
+      split.uiSaved = values.slice();
+      show(split, values);
+    });
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    ready(document);
+  });
+  document.addEventListener("htmx:load", function (e) {
+    ready(e.target);
+  });
+  window.addEventListener("pagehide", function () {
+    flush(null, true);
+  });
 })();

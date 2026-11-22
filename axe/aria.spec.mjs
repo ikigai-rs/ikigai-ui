@@ -267,6 +267,77 @@ test.describe("contact", () => {
   });
 });
 
+// The workspace splitter (ledger #3951): a focusable separator between the two children it sizes,
+// named for them, its value the first child's share and said in words; before a drag, mid-drag
+// and after it. Playwright's snapshot carries the role, the name and the order; the value, its
+// range, the orientation and the panes it controls are read from Chromium's own tree over CDP.
+// Chromium's tree leaves a separator's valuetext empty, so its words are read from the attribute.
+test.describe("workspace", () => {
+  const axSplitter = async (page) => {
+    const cdp = await page.context().newCDPSession(page);
+    const { nodes } = await cdp.send("Accessibility.getFullAXTree");
+    await cdp.detach();
+    const node = nodes.find((n) => !n.ignored && n.role?.value === "separator" && n.name?.value === "Resize Contacts and Graph");
+    if (!node) return null;
+    const prop = (name) => (node.properties || []).find((p) => p.name === name)?.value.value;
+    const words = await page.getByRole("separator", { name: "Resize Contacts and Graph", exact: true }).getAttribute("aria-valuetext");
+    return {
+      value: node.value?.value,
+      text: words,
+      controls: prop("controls"),
+      orientation: prop("orientation"),
+      focusable: prop("focusable"),
+      min: prop("valuemin"),
+      max: prop("valuemax"),
+    };
+  };
+  const layout = `
+    - 'group "Side by side: Contacts, Graph"':
+      - region "Contacts":
+        - heading "Contacts" [level=2]
+      - separator "Resize Contacts and Graph"
+      - 'group "Stacked: Graph, Table"':
+        - 'group "Tabs: Graph, Dashboard"':
+          - 'tablist "Tabs: Graph, Dashboard"':
+            - tab "Graph" [selected]
+            - tab "Dashboard"
+        - separator "Resize Graph and Table"
+        - region "Table":
+          - heading "Table" [level=2]
+  `;
+
+  test("the splitter: a focusable separator naming both sides, its value in words, before, mid-drag and after a drag", async ({ page }) => {
+    await page.route((url) => url.href.includes("%3Aedit"), (route) => route.fulfill({ status: 200, body: "" }));
+    expect(await open(page, "/workspace.html")).toEqual([]);
+    const split = page.locator(".ui-split-row").first();
+    const splitter = page.getByRole("separator", { name: "Resize Contacts and Graph", exact: true });
+    await expect(splitter).toHaveAttribute("data-ui-splitter-ready", "");
+    await expect(split).toMatchAriaSnapshot(layout);
+    const before = await axSplitter(page);
+    expect(before).toMatchObject({ value: 400, text: "Contacts 40%, Graph 60%", orientation: "vertical", focusable: true, controls: "pane-list pane-graph" });
+    expect(before.min).toBeGreaterThanOrEqual(50);
+    expect(before.max).toBeLessThanOrEqual(950);
+    const box = await splitter.boundingBox();
+    const room = await page.locator(".ui-split-row > .ui-share").evaluateAll((k) => k[0].getBoundingClientRect().width + k[1].getBoundingClientRect().width);
+    const x = box.x + box.width / 2;
+    const y = box.y + 40;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + room / 10, y, { steps: 5 });
+    await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+    await expect(split).toMatchAriaSnapshot(layout);
+    expect(await axSplitter(page)).toMatchObject({ value: 500, text: "Contacts 50%, Graph 50%", orientation: "vertical" });
+    await page.mouse.up();
+    await expect(split).toMatchAriaSnapshot(layout);
+    expect(await axSplitter(page)).toMatchObject({ value: 500, text: "Contacts 50%, Graph 50%", orientation: "vertical" });
+    await expect(splitter).toBeFocused();
+    await expect(page.getByRole("status")).toMatchAriaSnapshot(`
+      - status:
+        - paragraph: "Contacts is now 50% wide."
+    `);
+  });
+});
+
 test("the status region says a refusal, naming the control", async ({ page }) => {
   expect(await open(page, "/home-auto.html")).toEqual([]);
   await page.getByRole("button", { name: "Load details", exact: true }).click();

@@ -578,3 +578,147 @@ fn a_panes_scopes_narrow_its_region() {
         .unwrap();
     assert_eq!(text(trail, "scopes"), "urn:cap:ledger:read");
 }
+
+fn face_html() -> String {
+    let (kernel, _) = face_host();
+    let face = format!(
+        "urn:iki:ui:html:screen:{}",
+        workspace::face_name(WORKSPACE, &BTreeMap::new())
+    );
+    let rep = block_on(kernel.issue(
+        Request::new(Verb::Source, Iri::parse(face.as_str()).unwrap()),
+        &Capability::scoped(["urn:cap:test:read"]),
+    ))
+    .unwrap();
+    String::from_utf8(rep.bytes).unwrap()
+}
+
+/// The splitter (ledger #3951, section 5A "Resize by dragging"): one `role="separator"` between
+/// each two children of a split, its value the first child's share, its range leaving each side
+/// at least `MIN_SHARE`, its value said in words and naming the two panes it sizes (a tabs
+/// group by its active pane, a split by its first). Not focusable in markup: the shell's script
+/// puts it in the tab order, and with no script the "Layout" form sizes the panes.
+#[test]
+fn a_splitter_between_each_two_split_children() {
+    let html = face_html();
+    assert_eq!(html.matches("role=\"separator\"").count(), 2, "{html}");
+    for part in [
+        // The root row: Dashboard 300 beside the column split led by Session.
+        r##"<div class="ui-share ui-share-300"><section class="ui-group ui-pane" id="pane-dashboard""##,
+        r##"</div><div class="ui-splitter" role="separator" data-ui-splitter="0" aria-orientation="vertical" aria-label="Resize Dashboard and Session" aria-controls="pane-dashboard pane-session" aria-valuenow="300" aria-valuemin="50" aria-valuemax="950" aria-valuetext="Dashboard 30%, Session 70%"></div><div class="ui-share ui-share-700">"##,
+        // The column: Session 600 above the tabs, whose active pane is Item.
+        r##"<div class="ui-splitter" role="separator" data-ui-splitter="0" aria-orientation="horizontal" aria-label="Resize Session and Item" aria-controls="pane-session pane-item" aria-valuenow="600" aria-valuemin="50" aria-valuemax="950" aria-valuetext="Session 60%, Item 40%"></div><div class="ui-share ui-share-400"><div class="ui-tabs""##,
+    ] {
+        assert!(html.contains(part), "{part}\n{html}");
+    }
+    let separator = &html[html.find("role=\"separator\"").unwrap()..];
+    assert!(!separator[..separator.find('>').unwrap()].contains("tabindex"));
+}
+
+fn args(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+fn shares(layout: &Layout) -> Vec<u32> {
+    match layout {
+        Layout::Split { children, .. } => children
+            .iter()
+            .flat_map(|c| std::iter::once(c.share).chain(shares(&c.node)))
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// One `resize` edit (section 5A): the arguments the "Layout" form posts, and the same the
+/// splitter sends at the end of a drag or a second after its last key. It moves shares and
+/// nothing else, and a result that breaks a split's sum or the least share is refused.
+#[test]
+fn a_resize_edit_moves_shares_only() {
+    let ws = workspace::validate(ITEM).unwrap();
+    assert_eq!(shares(&ws.layout), [300, 700, 600, 400]);
+    let done = workspace::resize(
+        &ws,
+        &args(&[
+            ("op", "resize"),
+            ("if-version", "7"),
+            ("share.0", "450"),
+            ("share.1", "550"),
+            ("share.1.0", "500"),
+            ("share.1.1", "500"),
+        ]),
+    )
+    .unwrap();
+    assert_eq!(shares(&done.layout), [450, 550, 500, 500]);
+    assert_eq!(done.panes, ws.panes);
+    assert_eq!(done.selection, ws.selection);
+    assert_eq!(
+        workspace::reading_order(&done.layout),
+        workspace::reading_order(&ws.layout)
+    );
+    // A child not named keeps its share; the split must still add up.
+    let one = workspace::resize(
+        &ws,
+        &args(&[("op", "resize"), ("share.1.0", "550"), ("share.1.1", "450")]),
+    )
+    .unwrap();
+    assert_eq!(shares(&one.layout), [300, 700, 550, 450]);
+    for (pairs, says) in [
+        (vec![("op", "move")], "`move` is not a resize edit"),
+        (vec![("share.0", "500")], "no `op`"),
+        (
+            vec![("op", "resize"), ("share.0", "400")],
+            "add up to 1100, not 1000",
+        ),
+        (
+            vec![("op", "resize"), ("share.1.0", "960"), ("share.1.1", "40")],
+            "`share.1.1` is 40",
+        ),
+        (
+            vec![("op", "resize"), ("share.0.0", "500")],
+            "`share.0.0` names no split child",
+        ),
+        (
+            vec![("op", "resize"), ("share.2", "500")],
+            "`share.2` names no split child",
+        ),
+        (
+            vec![("op", "resize"), ("share.0", "half")],
+            "not a whole number",
+        ),
+        (
+            vec![("op", "resize"), ("label", "Mine")],
+            "`label` is not an argument",
+        ),
+    ] {
+        let err = workspace::resize(&ws, &args(&pairs))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(says), "{pairs:?}: {err}");
+    }
+}
+
+/// The "Layout" form's fields are a resize edit: posted as they stand, they change nothing.
+#[test]
+fn the_layout_form_is_a_resize_edit() {
+    let ws = workspace::validate(ITEM).unwrap();
+    let form = workspace::layout_form(&ws, WORKSPACE, 3);
+    let posted: BTreeMap<String, String> = all(&form, "field")
+        .into_iter()
+        .map(|f| (text(f, "name").to_string(), text(f, "value").to_string()))
+        .collect();
+    assert_eq!(
+        posted.keys().map(String::as_str).collect::<Vec<_>>(),
+        [
+            "if-version",
+            "op",
+            "share.0",
+            "share.1",
+            "share.1.0",
+            "share.1.1"
+        ]
+    );
+    assert_eq!(workspace::resize(&ws, &posted).unwrap(), ws);
+}

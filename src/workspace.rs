@@ -868,6 +868,82 @@ pub fn layout_form(workspace: &Workspace, iri: &str, version: u64) -> Node {
     )
 }
 
+/// One `resize` edit (section 5A) applied to a workspace: the "Layout" form's arguments, or
+/// the same arguments the shell's splitter sends at the end of a drag or a second after the last
+/// key. Each `share{path}` (`share.0`, `share.1.0`, as [`layout_form`] names them) sets that
+/// split child's share; a child not named keeps its own. `op` must be `resize`; `if-version`
+/// is the host's to check against its latest version and is not looked at here. Anything else,
+/// a path that is not a split child, or a result whose shares do not add up to [`WHOLE`] in
+/// every split, each at least [`MIN_SHARE`], is refused naming it, and nothing is changed.
+/// The edit only moves shares: no pane, address or selection changes (decision 10).
+pub fn resize(workspace: &Workspace, args: &BTreeMap<String, String>) -> Result<Workspace, Error> {
+    match args.get("op").map(String::as_str) {
+        Some("resize") => {}
+        Some(op) => return Err(refuse(format!("`{op}` is not a resize edit"))),
+        None => return Err(refuse("the edit has no `op`")),
+    }
+    let mut out = workspace.clone();
+    for (name, value) in args {
+        if name == "op" || name == "if-version" {
+            continue;
+        }
+        let Some(path) = name.strip_prefix("share.") else {
+            return Err(refuse(format!(
+                "`{name}` is not an argument of a resize edit"
+            )));
+        };
+        let share: u32 = value
+            .trim()
+            .parse()
+            .map_err(|_| refuse(format!("`{name}` is not a whole number of thousandths")))?;
+        let mut at = &mut out.layout;
+        let steps = path.split('.').collect::<Vec<_>>();
+        for (n, step) in steps.iter().enumerate() {
+            let i: usize = step
+                .parse()
+                .map_err(|_| refuse(format!("`{name}` names no split child")))?;
+            let Layout::Split { children, .. } = at else {
+                return Err(refuse(format!("`{name}` names no split child")));
+            };
+            let Some(child) = children.get_mut(i) else {
+                return Err(refuse(format!("`{name}` names no split child")));
+            };
+            if n + 1 == steps.len() {
+                child.share = share;
+            }
+            at = &mut child.node;
+        }
+    }
+    fn check(layout: &Layout, path: &str) -> Result<(), Error> {
+        if let Layout::Split { children, .. } = layout {
+            let mut total = 0;
+            for (i, child) in children.iter().enumerate() {
+                if !(MIN_SHARE..=WHOLE).contains(&child.share) {
+                    return Err(refuse(format!(
+                        "`share{path}.{i}` is {}: a share is from {MIN_SHARE} to {WHOLE} thousandths",
+                        child.share
+                    )));
+                }
+                total += child.share;
+                check(&child.node, &format!("{path}.{i}"))?;
+            }
+            if total != WHOLE {
+                let at = if path.is_empty() {
+                    "the layout's root"
+                } else {
+                    path
+                };
+                return Err(refuse(format!(
+                    "the shares in the split at {at} add up to {total}, not {WHOLE}"
+                )));
+            }
+        }
+        Ok(())
+    }
+    check(&out.layout, "")?;
+    Ok(out)
+}
+
 /// The workspace as an ordinary screen: its heading, the pane list, the layout (groups with
 /// the split and tabs hints, panes as regions) and the "Layout" form. A pure function of the
 /// atom, its IRI, its version and the selection in the address: it reads nothing and writes

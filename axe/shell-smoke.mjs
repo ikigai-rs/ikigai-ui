@@ -6,6 +6,7 @@
 // Controls the demo pages do not carry are added with page.evaluate and handed to htmx with
 // htmx.process: the test driver is not the page, so the door CSP does not apply to it.
 import { chromium } from "playwright";
+import { AxeBuilder } from "@axe-core/playwright";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -948,6 +949,332 @@ await check("a host that does not report writeSeconds sees no change", async (pa
     if (JSON.stringify(sent) !== '["POST"]') return `${what}: requests ${JSON.stringify(sent)}`;
   }
 });
+
+// ---- 8. workspace splitters (ledger #3951) -------------------------------------------------
+// The axe site's workspace: Contacts (400) beside a stacked split (600) of the tabs led by Graph
+// (600) above Table (400). Its Layout form
+// posts to the edit Sink; here the test answers it and keeps each body.
+const WORKSPACE = site.base + "/workspace.html";
+const SPLITTER = ".ui-split-row > .ui-splitter";
+const editUrl = (url) => url.href.includes("%3Aedit");
+async function workspacePage(page, answer = { status: 200, body: "" }) {
+  const posts = [];
+  await page.route(editUrl, async (route) => {
+    posts.push(Object.fromEntries(new URLSearchParams(route.request().postData() || "")));
+    if (answer.delay) await new Promise((ok) => setTimeout(ok, answer.delay));
+    await route.fulfill({ status: answer.status, contentType: "text/plain", body: answer.body });
+  });
+  await page.goto(WORKSPACE);
+  await page.locator(SPLITTER + "[data-ui-splitter-ready]").waitFor({ timeout: 3000 });
+  return posts;
+}
+const splitState = (page) =>
+  page.evaluate((sel) => {
+    const s = document.querySelector(sel);
+    const kids = [...s.parentElement.children].filter((c) => c.classList.contains("ui-share"));
+    const status = document.getElementById("status");
+    return {
+      now: Number(s.getAttribute("aria-valuenow")),
+      min: Number(s.getAttribute("aria-valuemin")),
+      max: Number(s.getAttribute("aria-valuemax")),
+      text: s.getAttribute("aria-valuetext"),
+      dragging: s.hasAttribute("data-ui-dragging"),
+      focused: document.activeElement === s,
+      widths: kids.map((k) => k.getBoundingClientRect().width),
+      rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+      status: status ? status.textContent : null,
+    };
+  }, SPLITTER);
+const splitterBox = async (page) => (await page.locator(SPLITTER).boundingBox());
+// What a drag of `shares` thousandths moves the pointer by, in CSS pixels.
+const pixels = async (page, shares) => {
+  const st = await splitState(page);
+  return ((st.widths[0] + st.widths[1]) * shares) / 1000;
+};
+const sameEdit = (posted, shares) => {
+  const want = { op: "resize", "share.0": String(shares[0]), "share.1": String(shares[1]) };
+  for (const [k, v] of Object.entries(want)) if (posted[k] !== v) return `${k} is ${JSON.stringify(posted[k])}, not ${v}`;
+  return null;
+};
+
+await check("a workspace splitter is a separator in the tab order, its value in words, a 24px target", async (page) => {
+  await workspacePage(page);
+  const attrs = await page.locator(SPLITTER).evaluate((s) =>
+    Object.fromEntries(["tabindex", "role", "aria-orientation", "aria-controls", "aria-label"].map((a) => [a, s.getAttribute(a)])),
+  );
+  const want = {
+    tabindex: "0",
+    role: "separator",
+    "aria-orientation": "vertical",
+    "aria-controls": "pane-list pane-graph",
+    "aria-label": "Resize Contacts and Graph",
+  };
+  if (JSON.stringify(attrs) !== JSON.stringify(want)) return `attributes ${JSON.stringify(attrs)}`;
+  const st = await splitState(page);
+  if (st.now !== 400 || st.text !== "Contacts 40%, Graph 60%") return `value ${st.now}, ${JSON.stringify(st.text)}`;
+  if (!(st.min >= 50 && st.max <= 950 && st.min < 400 && st.max > 400)) return `range ${st.min} to ${st.max}`;
+  const box = await splitterBox(page);
+  if (box.width < 24 || box.height < 24) return `the hit area is ${box.width} by ${box.height}`;
+  if ((await page.locator(SPLITTER).evaluate((s) => getComputedStyle(s).touchAction)) !== "none") return "touch-action is not none";
+  if ((await page.locator("main").evaluate((m) => getComputedStyle(m).touchAction)) === "none") return "the page lost touch scrolling";
+});
+
+await check("the keyboard moves a splitter by 1% (Shift 10%), Home and End to either minimum, saving once a second after the last key", async (page) => {
+  const posts = await workspacePage(page);
+  const before = await splitState(page);
+  await page.locator(SPLITTER).focus();
+  for (let n = 0; n < 5; n++) await page.keyboard.press("ArrowRight");
+  let st = await splitState(page);
+  if (st.now !== 450 || st.text !== "Contacts 45%, Graph 55%") return `after five Right: ${st.now}, ${JSON.stringify(st.text)}`;
+  if (!(st.widths[0] > before.widths[0] + 1)) return "the panes did not resize as the keys moved it";
+  await page.waitForTimeout(500);
+  if (posts.length !== 0) return `saved before the second was up: ${posts.length}`;
+  await page.waitForTimeout(900);
+  if (posts.length !== 1) return `${posts.length} saves a second after the last key, not 1`;
+  const edit = sameEdit(posts[0], [450, 550]);
+  if (edit) return edit;
+  if (posts[0]["if-version"] !== "1") return `if-version ${posts[0]["if-version"]}`;
+  if ((await splitState(page)).status) return `a keyboard resize said ${JSON.stringify((await splitState(page)).status)}`;
+  // Shift moves 100; losing focus saves at once, against the version the first save wrote.
+  await page.keyboard.press("Shift+ArrowLeft");
+  if ((await splitState(page)).now !== 350) return "Shift+Left did not move it by 100";
+  await page.keyboard.press("ArrowUp");
+  if ((await splitState(page)).now !== 340) return "Up did not move it by 10";
+  await page.locator(SPLITTER).evaluate((s) => s.blur());
+  await page.waitForTimeout(200);
+  if (posts.length !== 2) return `${posts.length} saves after leaving it, not 2`;
+  if (sameEdit(posts[1], [340, 660]) || posts[1]["if-version"] !== "2") return `the second save: ${JSON.stringify(posts[1])}`;
+  await page.locator(SPLITTER).focus();
+  await page.keyboard.press("Home");
+  st = await splitState(page);
+  if (st.now !== st.min) return `Home: ${st.now}, not the minimum ${st.min}`;
+  if (st.widths[0] < 16 * st.rem - 1) return `Home left Contacts ${st.widths[0]}px wide, under 16rem`;
+  await page.keyboard.press("End");
+  st = await splitState(page);
+  if (st.now !== st.max) return `End: ${st.now}, not the maximum ${st.max}`;
+  if (st.widths[1] < 16 * st.rem - 1) return `End left Graph ${st.widths[1]}px wide, under 16rem`;
+  await page.keyboard.press("ArrowRight");
+  if ((await splitState(page)).now !== st.max) return "Right moved it past the maximum";
+});
+
+await check("a stacked split's splitter is horizontal: Up and Down, and a vertical drag, size its two children", async (page) => {
+  const posts = await workspacePage(page);
+  const sel = ".ui-split-column > .ui-splitter";
+  const sep = page.locator(sel);
+  const st = () =>
+    sep.evaluate((s) => ({
+      o: s.getAttribute("aria-orientation"),
+      label: s.getAttribute("aria-label"),
+      now: Number(s.getAttribute("aria-valuenow")),
+      text: s.getAttribute("aria-valuetext"),
+      heights: [...s.parentElement.children].filter((c) => c.classList.contains("ui-share")).map((k) => k.getBoundingClientRect().height),
+      status: document.getElementById("status").textContent,
+    }));
+  const before = await st();
+  if (before.o !== "horizontal" || before.label !== "Resize Graph and Table" || before.now !== 600 || before.text !== "Graph 60%, Table 40%")
+    return `before: ${JSON.stringify(before)}`;
+  await sep.focus();
+  for (let n = 0; n < 3; n++) await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowUp");
+  const keyed = await st();
+  if (keyed.now !== 620 || !(keyed.heights[0] > before.heights[0])) return `after the keys: ${keyed.now}, ${keyed.heights}`;
+  await page.waitForTimeout(1300);
+  if (posts.length !== 1) return `${posts.length} saves`;
+  const want = { op: "resize", "share.0": "400", "share.1": "600", "share.1.0": "620", "share.1.1": "380" };
+  for (const [k, v] of Object.entries(want)) if (posts[0][k] !== v) return `${k} is ${posts[0][k]}`;
+  const box = await sep.boundingBox();
+  const x = box.x + Math.min(box.width / 2, 40);
+  const y = box.y + box.height / 2;
+  const room = keyed.heights[0] + keyed.heights[1];
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y - room / 10, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const dragged = await st();
+  if (dragged.now !== 520 || posts.length !== 2 || posts[1]["share.1.0"] !== "520") return `after the drag: ${dragged.now}, ${JSON.stringify(posts[1])}`;
+  if (dragged.status !== "Graph is now 52% tall.") return `#status says ${JSON.stringify(dragged.status)}`;
+  if (dragged.heights[1] < 8 * 16 - 1) return `Table is ${dragged.heights[1]}px tall`;
+});
+
+// A drag in steps, by mouse: down on the splitter's middle, `dx` across, then `finish`.
+async function mouseDrag(page, dx, finish) {
+  const box = await splitterBox(page);
+  const x = box.x + box.width / 2;
+  const y = box.y + Math.min(box.height / 2, 40); // on screen: the splitter is the panes' height
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx, y, { steps: 6 });
+  await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+  if (finish) await finish();
+  return { x, y };
+}
+
+await check("a mouse drag resizes live and saves once at pointerup, the same edit as the keys", async (page) => {
+  const posts = await workspacePage(page);
+  const before = await splitState(page);
+  const dx = await pixels(page, 50);
+  let mid;
+  await mouseDrag(page, dx, async () => {
+    mid = await splitState(page);
+  });
+  if (!mid.dragging) return "not marked as dragging mid-drag";
+  if (mid.now !== 450 || mid.text !== "Contacts 45%, Graph 55%") return `mid-drag: ${mid.now}, ${JSON.stringify(mid.text)}`;
+  if (!(mid.widths[0] > before.widths[0] + dx / 2)) return `mid-drag Contacts is ${mid.widths[0]}px, from ${before.widths[0]}px`;
+  if (posts.length !== 0) return "saved before pointerup";
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  if (posts.length !== 1) return `${posts.length} saves at the end of a drag, not 1`;
+  const edit = sameEdit(posts[0], [450, 550]);
+  if (edit) return edit;
+  const after = await splitState(page);
+  if (after.dragging || !after.focused) return `after: dragging ${after.dragging}, focused ${after.focused}`;
+  if (after.status !== "Contacts is now 45% wide.") return `#status says ${JSON.stringify(after.status)}`;
+  await page.waitForTimeout(1200);
+  if (posts.length !== 1) return `${posts.length} saves a second later`;
+  // A press and release without a move saves nothing.
+  const box = await splitterBox(page);
+  await page.mouse.click(box.x + box.width / 2, box.y + 40);
+  await page.waitForTimeout(300);
+  if (posts.length !== 1) return "a click with no move saved";
+});
+
+// A touch drag through Chromium's own touch input, so the page gets pointer events of type
+// touch, as from a finger.
+async function touchDrag(page, dx, end = "touchEnd") {
+  const cdp = await page.context().newCDPSession(page);
+  const box = await splitterBox(page);
+  const x = box.x + box.width / 2;
+  const y = box.y + Math.min(box.height / 2, 40); // on screen: the splitter is the panes' height
+  const seen = [];
+  await page.exposeFunction("__seenPointer", (t) => seen.push(t)).catch(() => {});
+  await page.evaluate((sel) => {
+    const s = document.querySelector(sel);
+    for (const t of ["pointerdown", "pointercancel"]) s.addEventListener(t, (e) => window.__seenPointer(`${t}:${e.pointerType}`));
+  }, SPLITTER);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+  for (let n = 1; n <= 6; n++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x + (dx * n) / 6, y }] });
+  }
+  await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+  const mid = await splitState(page);
+  await cdp.send("Input.dispatchTouchEvent", { type: end, touchPoints: [] });
+  await page.waitForTimeout(300);
+  return { mid, seen };
+}
+const touch = { newContext: () => browser.newContext({ hasTouch: true }) };
+
+await check("a touch drag resizes live and saves once at the end, the same edit as the keys", async (page) => {
+  const posts = await workspacePage(page);
+  const { mid, seen } = await touchDrag(page, await pixels(page, 50));
+  if (!seen.includes("pointerdown:touch")) return `no touch pointer: ${JSON.stringify(seen)}`;
+  if (mid.now !== 450 || !mid.dragging) return `mid-drag: ${mid.now}, dragging ${mid.dragging}`;
+  if (posts.length !== 1) return `${posts.length} saves at the end of a touch drag, not 1`;
+  const edit = sameEdit(posts[0], [450, 550]);
+  if (edit) return edit;
+  if ((await splitState(page)).status !== "Contacts is now 45% wide.") return "no sentence at the end";
+}, touch);
+
+await check("pointercancel puts the splitter back and saves nothing", async (page) => {
+  const posts = await workspacePage(page);
+  const before = await splitState(page);
+  const { mid, seen } = await touchDrag(page, await pixels(page, 100), "touchCancel");
+  if (mid.now !== 500) return `mid-drag: ${mid.now}`;
+  if (!seen.includes("pointercancel:touch")) return `no pointercancel: ${JSON.stringify(seen)}`;
+  await page.waitForTimeout(1200);
+  const st = await splitState(page);
+  if (st.now !== 400 || st.text !== before.text || st.dragging) return `after: ${st.now}, ${st.text}, dragging ${st.dragging}`;
+  if (Math.abs(st.widths[0] - before.widths[0]) > 0.5) return `Contacts is ${st.widths[0]}px, was ${before.widths[0]}px`;
+  if (posts.length !== 0) return `${posts.length} saves`;
+}, touch);
+
+await check("Escape during a drag puts the splitter back and saves nothing, even at pointerup", async (page) => {
+  const posts = await workspacePage(page);
+  const before = await splitState(page);
+  await mouseDrag(page, await pixels(page, 150), async () => {
+    if ((await splitState(page)).now !== 550) throw new Error("the drag did not move it");
+    await page.keyboard.press("Escape");
+  });
+  await page.mouse.move(before.widths[0] + 400, 10);
+  await page.mouse.up();
+  await page.waitForTimeout(1200);
+  const st = await splitState(page);
+  if (st.now !== 400 || st.text !== "Contacts 40%, Graph 60%" || st.dragging) return `after: ${st.now}, ${st.text}, dragging ${st.dragging}`;
+  if (Math.abs(st.widths[0] - before.widths[0]) > 0.5) return `Contacts is ${st.widths[0]}px, was ${before.widths[0]}px`;
+  if (posts.length !== 0) return `${posts.length} saves`;
+  if (st.status) return `#status says ${JSON.stringify(st.status)}`;
+});
+
+await check("a drag stops where either pane would go under 16rem, and no share under 50", async (page) => {
+  const posts = await workspacePage(page);
+  await mouseDrag(page, -2000, () => page.mouse.up());
+  let st = await splitState(page);
+  if (st.widths[0] < 16 * st.rem - 1 || st.now < 50 || st.now !== st.min) return `left: Contacts ${st.widths[0]}px, share ${st.now}, min ${st.min}`;
+  await mouseDrag(page, 4000, () => page.mouse.up());
+  st = await splitState(page);
+  if (st.widths[1] < 16 * st.rem - 1 || 1000 - st.now < 50 || st.now !== st.max) return `right: Graph ${st.widths[1]}px, share ${st.now}, max ${st.max}`;
+  if (posts.length !== 2) return `${posts.length} saves for two drags`;
+  if (Number(posts[1]["share.0"]) + Number(posts[1]["share.1"]) !== 1000) return `the shares ${JSON.stringify(posts[1])}`;
+});
+
+await check("saves go one at a time, in order, each against the version the one before wrote", async (page) => {
+  const posts = await workspacePage(page, { status: 200, body: "", delay: 400 });
+  const dx = await pixels(page, 50);
+  await mouseDrag(page, dx, () => page.mouse.up());
+  await mouseDrag(page, dx, () => page.mouse.up());
+  await page.waitForTimeout(100);
+  if (posts.length !== 1) return `${posts.length} saves in flight at once`;
+  await page.waitForTimeout(900);
+  if (posts.length !== 2) return `${posts.length} saves, not 2`;
+  const got = posts.map((p) => [p["if-version"], p["share.0"]]);
+  if (JSON.stringify(got) !== JSON.stringify([["1", "450"], ["2", "500"]])) return `saves ${JSON.stringify(got)}`;
+});
+
+await check("a refused save puts the layout back and says why once", async (page) => {
+  await workspacePage(page, { status: 409, body: "refused: this workspace changed in another window" });
+  await mouseDrag(page, await pixels(page, 100), () => page.mouse.up());
+  await page.waitForFunction(() => /not saved/.test(document.getElementById("status").textContent), null, { timeout: 3000 });
+  const st = await splitState(page);
+  if (st.status !== "The layout was not saved: refused: this workspace changed in another window.") return `#status says ${JSON.stringify(st.status)}`;
+  if (st.now !== 400) return `the splitter stayed at ${st.now}`;
+  const field = await page.locator('form input[name="share.0"]').inputValue();
+  if (field !== "400") return `the Layout form says ${field}`;
+});
+
+await check("an aria-disabled splitter does nothing", async (page) => {
+  const posts = await workspacePage(page);
+  await page.locator(SPLITTER).evaluate((s) => s.setAttribute("aria-disabled", "true"));
+  await page.locator(SPLITTER).focus();
+  await page.keyboard.press("ArrowRight");
+  await mouseDrag(page, await pixels(page, 100), () => page.mouse.up());
+  await page.waitForTimeout(1200);
+  const st = await splitState(page);
+  if (st.now !== 400 || posts.length !== 0) return `value ${st.now}, ${posts.length} saves`;
+});
+
+// axe over the workspace mid-drag and after it, in light, dark and more contrast.
+for (const mode of [
+  { name: "light", media: { colorScheme: "light" } },
+  { name: "dark", media: { colorScheme: "dark" } },
+  { name: "more-contrast", media: { colorScheme: "light", contrast: "more" } },
+]) {
+  await check(`axe passes a workspace mid-drag and after it (${mode.name})`, async (page) => {
+    await page.emulateMedia(mode.media);
+    await workspacePage(page);
+    const tags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
+    const run = async (when) => {
+      const r = await new AxeBuilder({ page }).withTags(tags).analyze();
+      return r.violations.map((v) => `${when}: ${v.id} at ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
+    };
+    let found = [];
+    await mouseDrag(page, await pixels(page, 100), async () => {
+      found = found.concat(await run("mid-drag"));
+      await page.mouse.up();
+    });
+    found = found.concat(await run("after"));
+    if (found.length) return found.join("; ");
+  });
+}
 
 await browser.close();
 await site.close();

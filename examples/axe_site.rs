@@ -15,17 +15,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     // A workspace (ledger #3950) over screens the demo already has, so axe covers the layout
     // hints' html face (a split, a tab list, panes as sections) in light, dark and more
-    // contrast.
+    // contrast; and a stacked split inside the row, so both splitters' orientations are
+    // covered (ledger #3951).
     let atom = serde_json::json!({
         "label": "Contacts workspace",
         "layout": {"split": "row", "children": [
             {"share": 400, "pane": "list"},
-            {"share": 600, "tabs": ["graph", "dashboard"], "active": "graph"}
+            {"share": 600, "split": "column", "children": [
+                {"share": 600, "tabs": ["graph", "dashboard"], "active": "graph"},
+                {"share": 400, "pane": "table"}
+            ]}
         ]},
         "panes": {
             "list": {"label": "Contacts", "content": "lens:contact-list:resource:{graph}", "follows": "graph"},
             "graph": {"label": "Graph", "content": "lens:contact-list:resource:{graph}", "follows": "graph"},
-            "dashboard": {"label": "Dashboard", "content": "lens:contact-dashboard:resource:{graph}", "follows": "graph"}
+            "dashboard": {"label": "Dashboard", "content": "lens:contact-dashboard:resource:{graph}", "follows": "graph"},
+            "table": {"label": "Table", "content": "lens:contact-table:resource:{graph}", "follows": "graph"}
         },
         "selection": {"graph": ikigai_ui::scene::EXAMPLE_GRAPH}
     });
@@ -118,6 +123,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &format!("urn:iki:ui:html:screen:{screen}"),
             &[],
         )?;
+        // base.css carries the layout's own rules (the split, the tabs, the splitter, ledger
+        // #3951), which the demo's stylesheet does not.
+        let head = head.replace(
+            "</head>",
+            "<link rel=\"stylesheet\" href=\"/ui/base.css\"></head>",
+        );
         let page = format!("{head}<main id=\"main\" tabindex=\"-1\">\n{body}\n</main>{tail}");
         files.push((
             "/workspace.html".to_string(),
