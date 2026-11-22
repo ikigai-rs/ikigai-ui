@@ -590,6 +590,84 @@ fn escape(text: &str) -> String {
     out
 }
 
+/// A layout child's lead pane: its key and its label (a pane's own; a tabs group's active
+/// pane's; a split's first child's), the pane a splitter names for the space it sizes.
+fn lead(node: &Node) -> Result<Option<(&str, &str)>, Error> {
+    if layout(node, crate::workspace::PANE).is_some() {
+        let key = pane_key(node)?;
+        return Ok(Some((key, text_of(node, "label").unwrap_or(key))));
+    }
+    if let Some(active) = layout(node, crate::workspace::TABS) {
+        for child in &node.children {
+            if pane_key(child)? == active {
+                return lead(child);
+            }
+        }
+        return Ok(None);
+    }
+    match node.children.first() {
+        Some(first) if layout(node, crate::workspace::SPLIT).is_some() => lead(first),
+        _ => Ok(None),
+    }
+}
+
+/// A share as a percentage in words: `30%`, or `33.3%`.
+fn percent(share: u32) -> String {
+    if share.is_multiple_of(10) {
+        format!("{}%", share / 10)
+    } else {
+        format!("{}.{}%", share / 10, share % 10)
+    }
+}
+
+/// The splitter between a split's children `i` and `i + 1` (ledger #3951, design section 5A
+/// "Resize by dragging"): a `role="separator"` whose value is child `i`'s share in thousandths,
+/// from [`crate::workspace::MIN_SHARE`] to what leaves the other its least, said in words
+/// ("Dashboard 30%, Session 70%") and naming the two panes it sizes. It is not focusable in
+/// markup: with no script nothing would move it, and the "Layout" form sizes every pane. The
+/// shell's script (section 8) puts it in the tab order and moves it by pointer and keyboard,
+/// saving through that form. None beside a collapsed child, which keeps its share.
+fn splitter(node: &Node, shares: &[&str], i: usize) -> Result<String, Error> {
+    let (Some(a), Some(b)) = (node.children.get(i), node.children.get(i + 1)) else {
+        return Ok(String::new());
+    };
+    if [a, b]
+        .iter()
+        .any(|c| c.hint.contains_key(crate::workspace::COLLAPSED))
+    {
+        return Ok(String::new());
+    }
+    let share = |j: usize| -> Result<u32, Error> {
+        shares
+            .get(j)
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| Error::Endpoint(format!("a split's share {j} is not a number")))
+    };
+    let (now, next) = (share(i)?, share(i + 1)?);
+    let (Some((key_a, label_a)), Some((key_b, label_b))) = (lead(a)?, lead(b)?) else {
+        return Ok(String::new());
+    };
+    let orientation =
+        match layout(node, crate::workspace::SPLIT).and_then(|s| s.split_whitespace().next()) {
+            Some("column") => "horizontal",
+            _ => "vertical",
+        };
+    let min = crate::workspace::MIN_SHARE;
+    Ok(format!(
+        "<div class=\"ui-splitter\" role=\"separator\" data-ui-splitter=\"{i}\" \
+         aria-orientation=\"{orientation}\" aria-label=\"Resize {} and {}\" \
+         aria-controls=\"pane-{key_a} pane-{key_b}\" aria-valuenow=\"{now}\" \
+         aria-valuemin=\"{min}\" aria-valuemax=\"{}\" aria-valuetext=\"{} {}, {} {}\"></div>",
+        escape(label_a),
+        escape(label_b),
+        (now + next).saturating_sub(min),
+        escape(label_a),
+        percent(now),
+        escape(label_b),
+        percent(next),
+    ))
+}
+
 /// A split child's share as a class from a fixed set: `ui-share-{n}`, the share to the nearest
 /// ten thousandths, from 50 to 1000 (the door's CSP allows no inline style).
 fn share_class(share: &str) -> String {
@@ -867,6 +945,10 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
                             out.push_str("</div>");
                         }
                         _ if !shares.is_empty() => {
+                            // Between two split children, the splitter (ledger #3951).
+                            if i > 0 {
+                                out.push_str(&splitter(node, &shares, i - 1)?);
+                            }
                             let class = share_class(shares.get(i).copied().unwrap_or_default());
                             out.push_str(&format!("<div class=\"ui-share {class}\">"));
                             out.push_str(&child_view(path).await?);

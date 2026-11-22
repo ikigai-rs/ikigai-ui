@@ -182,9 +182,39 @@ meter { width: 12rem; height: 1rem; vertical-align: middle; }
 .ui-share { flex-basis: 0; flex-shrink: 1; min-width: 0; }
 .ui-pane { margin: 0; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; overflow-wrap: anywhere; }
 .ui-pane > :last-child { margin-bottom: 0; }
+/* The splitter between two children (ledger #3951): a 24px hit area (SC 2.5.8), 44px on a coarse
+   pointer, that is the gap itself; its drawn line is the muted text colour, 3:1 or more against
+   the page in every palette (SC 1.4.11), the accent while it is dragged, a system colour in
+   forced colours. Only the splitter takes touch-action: none, so the page still scrolls. A
+   stacked split has a height to divide: at least 32rem, each child at least 8rem, its content
+   scrolling inside it. */
+.ui-split:has(> .ui-splitter) { gap: 0; }
+.ui-splitter { flex: 0 0 1.5rem; display: flex; align-items: center; justify-content: center; touch-action: none; user-select: none; }
+.ui-splitter::before { content: ""; background: var(--muted); border-radius: 1px; }
+.ui-split-row > .ui-splitter { cursor: col-resize; }
+.ui-split-row > .ui-splitter::before { width: 2px; align-self: stretch; }
+.ui-split-column > .ui-splitter { cursor: row-resize; }
+.ui-split-column > .ui-splitter::before { height: 2px; width: 100%; }
+.ui-splitter:hover::before, .ui-splitter[data-ui-dragging]::before { background: var(--accent); }
+.ui-split-row > .ui-splitter:hover::before, .ui-split-row > .ui-splitter[data-ui-dragging]::before { width: 4px; }
+.ui-split-column > .ui-splitter:hover::before, .ui-split-column > .ui-splitter[data-ui-dragging]::before { height: 4px; }
+.ui-splitter[aria-disabled="true"] { cursor: not-allowed; }
+.ui-split-column:has(> .ui-splitter) { min-height: 32rem; }
+.ui-split-column > .ui-share { min-height: 8rem; overflow: auto; }
+@media (pointer: coarse) { .ui-splitter { flex-basis: 2.75rem; } }
+@media (forced-colors: active) {
+  .ui-splitter::before { background: CanvasText; }
+  .ui-splitter:hover::before, .ui-splitter[data-ui-dragging]::before { background: Highlight; }
+}
 @media (max-width: 40rem) {
   .ui-split-row { flex-direction: column; }
   .ui-split > .ui-share { flex-grow: 0; }
+  /* Stacked in reading order: no splitter (the "Layout" form still sizes the panes), the gap
+     back, and each child its content's height. */
+  .ui-split > .ui-splitter { display: none; }
+  .ui-split:has(> .ui-splitter) { gap: 1rem; }
+  .ui-split-column:has(> .ui-splitter) { min-height: 0; }
+  .ui-split > .ui-share { flex-basis: auto; min-height: 0; overflow: visible; }
 }
 .ui-share-50{flex-grow:50} .ui-share-60{flex-grow:60} .ui-share-70{flex-grow:70}
 .ui-share-80{flex-grow:80} .ui-share-90{flex-grow:90} .ui-share-100{flex-grow:100}
