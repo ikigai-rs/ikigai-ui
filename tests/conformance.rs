@@ -30,23 +30,48 @@ fn conforms() {
             Ok(ikigai_core::Representation::new(ikigai_core::ReprType::new("application/json"),
                 br#"{"renderer":"table","bound":10,"legend":"Probe","actions":{"extend":{"graph":"urn:probe:graph"},"connect":{"graph":"urn:probe:graph"}}}"#.to_vec()).cacheable())
         }).with_description(ikigai_core::Description::new("test-action-probe").title("Probe").summary("Gesture configuration for conformance.").verb(Verb::Source).output("application/json")));
-    let atom = ikigai_core::EndpointSpace::new().bind(
-        ikigai_core::Exact::new("urn:iki:ui:workspace:person:urn:person:probe:name:probe"),
-        ikigai_core::FnEndpoint::new("test-workspace-atom", |_: &ikigai_core::Invocation<'_>| {
-            Ok(ikigai_core::Representation::new(
-                ikigai_core::ReprType::new("application/json"),
-                include_bytes!("fixtures/workspace/item.json").to_vec(),
+    let atom = ikigai_core::EndpointSpace::new()
+        .bind(
+            // A workspace over the example lenses, whose panes resolve, for the workspace page.
+            ikigai_core::Exact::new("urn:iki:ui:workspace:person:urn:person:probe:name:contacts"),
+            ikigai_core::FnEndpoint::new(
+                "test-workspace-contacts",
+                |_: &ikigai_core::Invocation<'_>| {
+                    Ok(ikigai_core::Representation::new(
+                        ikigai_core::ReprType::new("application/json"),
+                        include_bytes!("fixtures/workspace/contacts.json").to_vec(),
+                    )
+                    .cacheable())
+                },
             )
-            .cacheable())
-        })
-        .with_description(
-            ikigai_core::Description::new("test-workspace-atom")
-                .title("A workspace atom")
-                .summary("The fixture workspace, for conformance.")
-                .verb(Verb::Source)
-                .output("application/json"),
-        ),
-    );
+            .with_description(
+                ikigai_core::Description::new("test-workspace-contacts")
+                    .title("A workspace atom")
+                    .summary("A workspace over the example lenses, for conformance.")
+                    .verb(Verb::Source)
+                    .output("application/json"),
+            ),
+        )
+        .bind(
+            ikigai_core::Exact::new("urn:iki:ui:workspace:person:urn:person:probe:name:probe"),
+            ikigai_core::FnEndpoint::new(
+                "test-workspace-atom",
+                |_: &ikigai_core::Invocation<'_>| {
+                    Ok(ikigai_core::Representation::new(
+                        ikigai_core::ReprType::new("application/json"),
+                        include_bytes!("fixtures/workspace/item.json").to_vec(),
+                    )
+                    .cacheable())
+                },
+            )
+            .with_description(
+                ikigai_core::Description::new("test-workspace-atom")
+                    .title("A workspace atom")
+                    .summary("The fixture workspace, for conformance.")
+                    .verb(Verb::Source)
+                    .output("application/json"),
+            ),
+        );
     let root = common::root(
         None,
         vec![
@@ -61,6 +86,17 @@ fn conforms() {
         .pure("test-action-probe")
         .pure("ui-lens-operations")
         .pure("test-workspace-atom")
+        .pure("test-workspace-contacts")
+        .fixture(
+            Fixture::new("ui-page-workspace-demo", Verb::Source).binding(
+                "iri",
+                "urn:iki:ui:workspace:person:urn:person:probe:name:contacts",
+            ),
+        )
+        .fixture(Fixture::new("ui-workspace-title", Verb::Source).binding(
+            "rest",
+            "resource:urn:iki:ui:workspace:person:urn:person:probe:name:probe",
+        ))
         .fixture(Fixture::new("ui-workspace-screen", Verb::Source).binding(
             "iri",
             "urn:iki:ui:workspace:person:urn:person:probe:name:probe",

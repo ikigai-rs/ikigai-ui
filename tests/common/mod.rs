@@ -34,6 +34,7 @@ pub fn demo_pages() -> ikigai_core::Alias {
         .stylesheet(DEMO_CSS_PATH)
         .push(PUSH_PATH)
         .lenses(true)
+        .workspaces(true)
         .build()
         .unwrap()
 }

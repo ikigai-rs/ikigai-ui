@@ -13,6 +13,8 @@
 //! | `urn:iki:uidemo:page:{name}` | composition | the shell over a fragment ([`ikigai_ui::Pages`]): `gallery`, `elements`, `contact`, `support` |
 //! | `urn:iki:uidemo:fragment:{name}` | composition | the page's body: a note and the screen it shows |
 //! | `urn:iki:uidemo:page:lens:{lens}:resource:{iri}` | composition | a lensed view of `{iri}` in the shell ([`ikigai_ui::Pages::lenses`]); the door's `/lens/name/{lens}/resource/{iri}` |
+//! | `urn:iki:ui:workspace:person:urn:person:demo:name:contacts` | data | the demo's one workspace atom ([`WORKSPACE`]), a fixture over the example lenses |
+//! | `urn:iki:uidemo:page:workspace:{iri}` | composition | a workspace in the shell ([`ikigai_ui::Pages::workspaces`]); the door's `/workspace/{iri}` ([`WORKSPACE_PATH`]) |
 //!
 //! The contact form is not written by hand: it is the `form` node ikigai-ui generates from the
 //! contact resource's own contract (the same model its OpenAPI description is projected from),
@@ -57,6 +59,15 @@ pub const PAGES: [(&str, &str); 4] = [
     ("contact", "Contact"),
     ("support", "Support"),
 ];
+/// The demo's one workspace (ledger #3967): one fixed person, as there is no sign-in yet
+/// (#2169). Its atom ([`WORKSPACE_ATOM`]) tiles the example lenses over the contact graph.
+pub const WORKSPACE: &str = "urn:iki:ui:workspace:person:urn:person:demo:name:contacts";
+/// The workspace atom: the contact list beside a tab list of the dashboard and the table, each
+/// pane following `graph`.
+pub const WORKSPACE_ATOM: &str = include_str!("../assets/workspace.json");
+/// Where the door serves [`WORKSPACE`]: the path its "Panes" list links to.
+pub const WORKSPACE_PATH: &str =
+    "/workspace/urn:iki:ui:workspace:person:urn:person:demo:name:contacts";
 /// The page family's base.
 pub const BASE: &str = "urn:iki:uidemo:";
 /// What the contact page says it demonstrates.
@@ -314,9 +325,30 @@ fn inbox(store: Store) -> FnEndpoint {
     )
 }
 
-/// The service: the contact Sink and the submissions, over `store`.
+fn workspace_atom() -> FnEndpoint {
+    FnEndpoint::new("uidemo-workspace", |_: &Invocation<'_>| {
+        Ok(
+            Representation::new(ReprType::new(JSON), WORKSPACE_ATOM.as_bytes().to_vec())
+                .cacheable(),
+        )
+    })
+    .with_description(
+        Description::new("uidemo-workspace")
+            .title("The demo's workspace")
+            .summary(
+                "A workspace atom (fixtures only): the contact list beside a tab list of the \
+                 dashboard and the table, each pane following the selected graph.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output(JSON),
+    )
+}
+
+/// The service: the contact Sink and the submissions, over `store`; and the workspace atom.
 pub fn service(store: Store) -> EndpointSpace {
     EndpointSpace::new()
+        .bind(Exact::new(WORKSPACE), workspace_atom())
         .bind(Exact::new(CONTACT), contact(store.clone()))
         .bind(Exact::new(INBOX), inbox(store.clone()))
         .bind(Exact::new(SUBMISSION), submissions(store.clone()))
@@ -552,6 +584,7 @@ pub async fn prefixes(kernel: &Kernel) -> Result<ikigai_core::Scope, ikigai_core
 pub fn root(store: Store) -> Arc<dyn Space> {
     let family = ikigai_ui::Pages::new("uidemo", BASE)
         .lenses(true)
+        .workspaces(true)
         // The demo has no look of its own, so it takes ikigai-ui's.
         .stylesheet("/ui/base.css")
         .build()
@@ -596,7 +629,8 @@ fn route(pattern: &str, iri_template: &str) -> Route {
 
 #[cfg(not(target_arch = "wasm32"))]
 /// The door's routes: `/` and `/page/{name}` to the pages, `/lens/name/{lens}/resource/{+iri}`
-/// to a lensed view's page ([`ikigai_ui::lens::html_href`]), `/ui/{…}` to ikigai-ui's
+/// to a lensed view's page ([`ikigai_ui::lens::html_href`]), `/workspace/{+iri}` to a
+/// workspace's page ([`WORKSPACE_PATH`]), `/ui/{…}` to ikigai-ui's
 /// artifacts (where the shell links them), and the html target's submit rule
 /// (`/resolution/iri/{+iri}`, [`ikigai_ui::target::SUBMIT`]).
 pub fn door() -> EdgeConfig {
@@ -608,6 +642,11 @@ pub fn door() -> EdgeConfig {
             route(
                 "/lens/name/{lens}/resource/{+iri}",
                 &format!("{BASE}page:lens:{{lens}}:resource:{{+iri}}"),
+            ),
+            // A workspace as a page in the shell (ledger #3967), where its "Panes" list links.
+            route(
+                "/workspace/{+iri}",
+                &format!("{BASE}page:workspace:{{+iri}}"),
             ),
             route("/ui/{+rest}", "urn:iki:ui:{+rest}"),
             route("/img/{name}", &format!("{BASE}img:{{name}}")),

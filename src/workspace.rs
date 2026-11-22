@@ -1174,6 +1174,78 @@ pub(crate) fn face_endpoint() -> ikigai_core::AsyncFnEndpoint {
     )
 }
 
+/// `urn:iki:ui:workspace:title:{rest}`: a workspace page's title, `{rest}` as in
+/// [`parse_face_name`]: the atom's `label`, read under the caller's capability, or "Workspace"
+/// when it cannot be read or is not a workspace (the page's main content says why).
+pub const TITLE: &str = "urn:iki:ui:workspace:title:";
+
+/// The screen a workspace PAGE shows (`{base}page:workspace:{iri}`, [`crate::Pages::workspaces`]):
+/// the IRI as the door gave it, percent-encoded or not, decoded and checked (an absolute IRI with
+/// no `?`, `#`, `%`, `<`, `>`, `"` or space, naming a workspace), as its face name
+/// (`workspace:resource:{iri}`, [`face_name`]) with the request's `select.{role}` parameters
+/// folded in ([`fold`]). Anything else is refused with `InvalidArgument` before anything is read.
+pub fn page_screen(inv: &ikigai_core::Invocation<'_>, given: &str) -> Result<String, Error> {
+    let iri = crate::lens::unpct(given)?;
+    if iri
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '?' | '#' | '%' | '<' | '>' | '"'))
+    {
+        return Err(refuse(format!(
+            "`{iri}`: a workspace page's IRI carries no ? # % < > \" or space"
+        )));
+    }
+    if parse_name(&iri).is_none() && !iri.contains(":version:") {
+        return Err(refuse(format!("`{iri}` is not a workspace")));
+    }
+    Iri::parse(iri.as_str()).map_err(|e| refuse(e.to_string()))?;
+    fold(inv, &face_name(&iri, &BTreeMap::new()))
+}
+
+/// [`TITLE`]`{rest}`: the atom's label, as text, for the page's `<title>`.
+pub(crate) fn title_endpoint() -> ikigai_core::AsyncFnEndpoint {
+    use ikigai_core::{
+        ArgSpec, AsyncFnEndpoint, Description, Invocation, InvokeFuture, ReprType, Representation,
+        Request, Verb,
+    };
+    AsyncFnEndpoint::new(
+        "ui-workspace-title",
+        |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let rest = inv.bindings.get("rest").unwrap_or_default();
+                let (iri, _) = parse_face_name(rest)
+                    .ok_or_else(|| Error::NotFound(format!("{TITLE}{rest}")))??;
+                let label = match Iri::parse(iri.as_str()) {
+                    Ok(at) => match inv.issue(Request::new(Verb::Source, at)).await {
+                        Ok(atom) => validate(&atom.bytes).ok().map(|w| w.label),
+                        Err(_) => None,
+                    },
+                    Err(_) => None,
+                };
+                let label = label.unwrap_or_else(|| "Workspace".to_string());
+                Ok(Representation::new(ReprType::new(crate::HTML), label.into_bytes()).cacheable())
+            })
+        },
+    )
+    .with_description(
+        Description::new("ui-workspace-title")
+            .title("A workspace page's title")
+            .summary(
+                "The title a workspace page's shell shows: the atom's label, read under the \
+                 caller's capability, as text; Workspace when it cannot be read.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(
+                ArgSpec::new("rest")
+                    .summary("resource:{iri}, or select:{role}={pct-iri}&…:resource:{iri}")
+                    .class("http://www.w3.org/2001/XMLSchema#string")
+                    .binding()
+                    .example("resource:urn:iki:ui:workspace:person:urn:person:probe:name:probe"),
+            )
+            .output(crate::HTML),
+    )
+}
+
 /// [`SHAPE`]: the atom's closed SHACL shape, [`SHAPE_TTL`].
 pub(crate) fn shape_endpoint() -> ikigai_core::FnEndpoint {
     use ikigai_core::{Description, Verb};

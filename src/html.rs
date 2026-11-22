@@ -103,8 +103,9 @@ pub const HINT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:hint:";
 /// plain GET navigation forms, which must not swap a page into the form alone; and the
 /// workspace's layout hints (ledger #3950, [`crate::workspace::HINTS`]): a split as a flex row
 /// or column sized by its shares, tabs as a real tab list, and a pane as a section with its
-/// fragment id.
-pub const HINT_TEMPLATES: [crate::Artifact; 8] = [
+/// fragment id; and a field whose `input` is `hidden` as the hidden input alone, with no label,
+/// hint or note (ledger #3967), since there is no control for a label to name.
+pub const HINT_TEMPLATES: [crate::Artifact; 9] = [
     crate::Artifact {
         iri: "urn:iki:ui:template:hint:choice-radio",
         id: "ui-template-hint",
@@ -160,6 +161,13 @@ pub const HINT_TEMPLATES: [crate::Artifact; 8] = [
         file: "template/hint/group-pane.html",
         media_type: crate::HTML,
         bytes: include_bytes!("../assets/template/hint/group-pane.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:field-hidden",
+        id: "ui-template-hint",
+        file: "template/hint/field-hidden.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/field-hidden.html"),
     },
 ];
 
@@ -487,6 +495,7 @@ async fn view(
         "group" if layout(node, crate::workspace::SPLIT).is_some() => "group-split",
         "group" if layout(node, crate::workspace::TABS).is_some() => "group-tabs",
         "group" if layout(node, crate::workspace::PANE).is_some() => "group-pane",
+        "field" if property(node, "input").as_deref() == Some("hidden") => "field-hidden",
         // A read-only form without a Sink resource navigates. Enhancing it with
         // hx-target=this would put the returned page inside the controls alone.
         "form"
