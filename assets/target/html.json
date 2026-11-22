@@ -41,6 +41,6 @@
   ],
   "hints": [
     "urn:iki:ui:hint:choice:", "urn:iki:ui:hint:group:",
-    "urn:iki:ui:hint:role:"
+    "urn:iki:ui:hint:role:", "urn:iki:ui:hint:layout:"
   ]
 }

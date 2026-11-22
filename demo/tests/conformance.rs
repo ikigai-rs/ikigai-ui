@@ -29,14 +29,42 @@ fn conforms() {
             Ok(ikigai_core::Representation::new(ikigai_core::ReprType::new("application/json"),
                 br#"{"renderer":"table","bound":10,"legend":"Probe","actions":{"extend":{"graph":"urn:probe:graph"},"connect":{"graph":"urn:probe:graph"}}}"#.to_vec()).cacheable())
         }).with_description(ikigai_core::Description::new("test-action-probe").title("Probe").summary("Gesture configuration for conformance.").verb(Verb::Source).output("application/json")));
+    let atom = ikigai_core::EndpointSpace::new().bind(
+        ikigai_core::Exact::new("urn:iki:ui:workspace:person:urn:person:probe:name:probe"),
+        ikigai_core::FnEndpoint::new("test-workspace-atom", |_: &ikigai_core::Invocation<'_>| {
+            Ok(ikigai_core::Representation::new(
+                ikigai_core::ReprType::new("application/json"),
+                include_bytes!("../../tests/fixtures/workspace/item.json").to_vec(),
+            )
+            .cacheable())
+        })
+        .with_description(
+            ikigai_core::Description::new("test-workspace-atom")
+                .title("A workspace atom")
+                .summary("The fixture workspace, for conformance.")
+                .verb(Verb::Source)
+                .output("application/json"),
+        ),
+    );
     let root: Arc<dyn ikigai_core::Space> = Arc::new(ikigai_core::Fallback::new(vec![
         Arc::new(probe),
+        Arc::new(atom),
         ikigai_ui_demo::root(store),
     ]));
     let kernel = ikigai_ui_demo::kernel(root.clone());
     let mut suite = Suite::new()
         .pure("test-action-probe")
         .pure("ui-lens-operations")
+        .pure("test-workspace-atom")
+        .fixture(Fixture::new("ui-workspace-screen", Verb::Source).binding(
+            "iri",
+            "urn:iki:ui:workspace:person:urn:person:probe:name:probe",
+        ))
+        .fixture(Fixture::new("ui-workspace-face", Verb::Source).binding(
+            "rest",
+            "resource:urn:iki:ui:workspace:person:urn:person:probe:name:probe",
+        ))
+        .pure("ui-shape-workspace")
         .cacheable("test-action-probe")
         .cacheable("ui-lens-extend")
         .cacheable("ui-lens-connect");

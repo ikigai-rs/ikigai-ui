@@ -4,7 +4,7 @@
 // paint. It touches only <html> while it runs; everything else waits for htmx's events, which
 // bubble to `document`.
 //
-// It does six things htmx does not (2 includes riding out a restart: a GET that gets a 502,
+// It does seven things htmx does not (2 includes riding out a restart: a GET that gets a 502,
 // 503 or 504 or no answer is sent again, with backoff, before it is shown; see 2a):
 // 1. The theme (D12). `theme=` in the URL wins and is remembered; with none, a remembered choice
 //    replaces the server's `auto`. A chooser is a real <select name="theme" data-ui-theme> in a
@@ -52,6 +52,7 @@
 //    only reconnecting says nothing. Nothing from the stream is parsed as markup.
 // 6. Write that lapses (ledger #3822). With the host's session answer named in <head>, a control
 //    marked data-ui-write is disabled, with a note saying why, once its `writeSeconds` is 0.
+// 7. Workspace tabs (ledger #3950): the ARIA tabs pattern over a [data-ui-tabs] tab list.
 (function () {
   "use strict";
   var KEY = "ikigai-ui:theme";
@@ -718,4 +719,70 @@
     var elt = e.detail && e.detail.elt;
     if (writeOff && elt && elt.closest && elt.closest("[data-ui-write]")) e.preventDefault();
   });
+})();
+
+// 7. Workspace tabs (ledger #3950). A [data-ui-tabs] group is a real tab list with no script:
+// each tab a link to its pane, the pane shown by :target. With the script it follows the ARIA
+// tabs pattern: one tab in the tab order (roving tabindex), Left/Right (and Home/End) move
+// between tabs and show the one focused, the others' panels `hidden`, and a link into a hidden
+// pane (the "Panes" list) shows its tab first. It changes no state on the server.
+(function () {
+  "use strict";
+  function tabsOf(group) {
+    return Array.prototype.slice.call(group.querySelectorAll('[role="tablist"] > [role="tab"]'));
+  }
+  function show(group, tab, focus) {
+    tabsOf(group).forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.setAttribute("tabindex", on ? "0" : "-1");
+      var panel = document.getElementById(t.getAttribute("aria-controls"));
+      if (panel) panel.hidden = !on;
+    });
+    if (focus) tab.focus();
+  }
+  function ready(root) {
+    var groups = root.querySelectorAll ? root.querySelectorAll("[data-ui-tabs]") : [];
+    Array.prototype.forEach.call(groups, function (group) {
+      if (group.hasAttribute("data-ui-tabs-ready")) return;
+      var tabs = tabsOf(group);
+      if (!tabs.length) return;
+      var active = tabs.filter(function (t) { return t.getAttribute("aria-selected") === "true"; })[0] || tabs[0];
+      group.setAttribute("data-ui-tabs-ready", "");
+      show(group, active, false);
+      group.addEventListener("click", function (e) {
+        var tab = e.target.closest && e.target.closest('[role="tab"]');
+        if (!tab || !group.contains(tab)) return;
+        e.preventDefault();
+        show(group, tab, true);
+      });
+      group.addEventListener("keydown", function (e) {
+        var tab = e.target.closest && e.target.closest('[role="tab"]');
+        if (!tab) return;
+        var all = tabsOf(group);
+        var i = all.indexOf(tab);
+        var next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: all.length - 1 }[e.key];
+        if (next === undefined) return;
+        e.preventDefault();
+        show(group, all[(next + all.length) % all.length], true);
+      });
+    });
+  }
+  function reveal() {
+    var id = decodeURIComponent(location.hash.slice(1));
+    var target = id && document.getElementById(id);
+    var panel = target && target.closest && target.closest('[role="tabpanel"]');
+    var group = panel && panel.closest("[data-ui-tabs-ready]");
+    if (!group) return;
+    var tab = document.getElementById(panel.getAttribute("aria-labelledby"));
+    if (tab) show(group, tab, false);
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    ready(document);
+    reveal();
+  });
+  document.addEventListener("htmx:load", function (e) {
+    ready(e.target);
+  });
+  window.addEventListener("hashchange", reveal);
 })();

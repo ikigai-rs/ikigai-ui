@@ -169,3 +169,61 @@ meter { width: 12rem; height: 1rem; vertical-align: middle; }
 .ui-disclosure { margin: 0 0 1rem; padding: 0.5rem 1rem; border: 1px solid var(--rule); border-radius: var(--radius); }
 .ui-disclosure > summary { font-weight: 600; padding: 0.25rem 0; }
 .ui-disclosure[open] > summary { margin-bottom: 0.5rem; border-bottom: 1px solid var(--rule); }
+
+/* --- the workspace's layout (ledger #3950) ---------------------------------------------- */
+
+/* A split: its children side by side (row) or stacked (column), each as wide as its share of
+   1000. The door's CSP allows no inline style, so a share is a class from a fixed set, to the
+   nearest ten thousandths. Below 40rem (320 CSS px included) every split is one column in
+   reading order, so nothing scrolls sideways. */
+.ui-split { display: flex; gap: 1rem; margin: 0 0 1rem; }
+.ui-split-row { flex-direction: row; align-items: stretch; }
+.ui-split-column { flex-direction: column; }
+.ui-share { flex-basis: 0; flex-shrink: 1; min-width: 0; }
+.ui-pane { margin: 0; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; overflow-wrap: anywhere; }
+.ui-pane > :last-child { margin-bottom: 0; }
+@media (max-width: 40rem) {
+  .ui-split-row { flex-direction: column; }
+  .ui-split > .ui-share { flex-grow: 0; }
+}
+.ui-share-50{flex-grow:50} .ui-share-60{flex-grow:60} .ui-share-70{flex-grow:70}
+.ui-share-80{flex-grow:80} .ui-share-90{flex-grow:90} .ui-share-100{flex-grow:100}
+.ui-share-110{flex-grow:110} .ui-share-120{flex-grow:120} .ui-share-130{flex-grow:130}
+.ui-share-140{flex-grow:140} .ui-share-150{flex-grow:150} .ui-share-160{flex-grow:160}
+.ui-share-170{flex-grow:170} .ui-share-180{flex-grow:180} .ui-share-190{flex-grow:190}
+.ui-share-200{flex-grow:200} .ui-share-210{flex-grow:210} .ui-share-220{flex-grow:220}
+.ui-share-230{flex-grow:230} .ui-share-240{flex-grow:240} .ui-share-250{flex-grow:250}
+.ui-share-260{flex-grow:260} .ui-share-270{flex-grow:270} .ui-share-280{flex-grow:280}
+.ui-share-290{flex-grow:290} .ui-share-300{flex-grow:300} .ui-share-310{flex-grow:310}
+.ui-share-320{flex-grow:320} .ui-share-330{flex-grow:330} .ui-share-340{flex-grow:340}
+.ui-share-350{flex-grow:350} .ui-share-360{flex-grow:360} .ui-share-370{flex-grow:370}
+.ui-share-380{flex-grow:380} .ui-share-390{flex-grow:390} .ui-share-400{flex-grow:400}
+.ui-share-410{flex-grow:410} .ui-share-420{flex-grow:420} .ui-share-430{flex-grow:430}
+.ui-share-440{flex-grow:440} .ui-share-450{flex-grow:450} .ui-share-460{flex-grow:460}
+.ui-share-470{flex-grow:470} .ui-share-480{flex-grow:480} .ui-share-490{flex-grow:490}
+.ui-share-500{flex-grow:500} .ui-share-510{flex-grow:510} .ui-share-520{flex-grow:520}
+.ui-share-530{flex-grow:530} .ui-share-540{flex-grow:540} .ui-share-550{flex-grow:550}
+.ui-share-560{flex-grow:560} .ui-share-570{flex-grow:570} .ui-share-580{flex-grow:580}
+.ui-share-590{flex-grow:590} .ui-share-600{flex-grow:600} .ui-share-610{flex-grow:610}
+.ui-share-620{flex-grow:620} .ui-share-630{flex-grow:630} .ui-share-640{flex-grow:640}
+.ui-share-650{flex-grow:650} .ui-share-660{flex-grow:660} .ui-share-670{flex-grow:670}
+.ui-share-680{flex-grow:680} .ui-share-690{flex-grow:690} .ui-share-700{flex-grow:700}
+.ui-share-710{flex-grow:710} .ui-share-720{flex-grow:720} .ui-share-730{flex-grow:730}
+.ui-share-740{flex-grow:740} .ui-share-750{flex-grow:750} .ui-share-760{flex-grow:760}
+.ui-share-770{flex-grow:770} .ui-share-780{flex-grow:780} .ui-share-790{flex-grow:790}
+.ui-share-800{flex-grow:800} .ui-share-810{flex-grow:810} .ui-share-820{flex-grow:820}
+.ui-share-830{flex-grow:830} .ui-share-840{flex-grow:840} .ui-share-850{flex-grow:850}
+.ui-share-860{flex-grow:860} .ui-share-870{flex-grow:870} .ui-share-880{flex-grow:880}
+.ui-share-890{flex-grow:890} .ui-share-900{flex-grow:900} .ui-share-910{flex-grow:910}
+.ui-share-920{flex-grow:920} .ui-share-930{flex-grow:930} .ui-share-940{flex-grow:940}
+.ui-share-950{flex-grow:950} .ui-share-960{flex-grow:960} .ui-share-970{flex-grow:970}
+.ui-share-980{flex-grow:980} .ui-share-990{flex-grow:990} .ui-share-1000{flex-grow:1000}
+
+/* Tabs: a real tab list. With no script each tab is a link to its pane, and the pane a link or
+   the "Panes" list points at is the one shown (:target); the shell's script then keeps
+   aria-selected, the roving tabindex, the arrow keys and `hidden` instead. */
+.ui-tabs [role="tablist"] { display: flex; flex-wrap: wrap; gap: 0.25rem; border-bottom: 1px solid var(--line); margin: 0 0 0.75rem; }
+.ui-tabs [role="tab"] { padding: 0.5rem 0.75rem; border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0; text-decoration: none; }
+.ui-tabs [role="tab"][aria-selected="true"] { border-color: var(--line); font-weight: 600; text-decoration: underline; text-underline-offset: 0.3em; }
+.ui-tabs:not([data-ui-tabs-ready]):not(:has(.ui-tabpanel :target)) > .ui-tabpanel-inactive { display: none; }
+.ui-tabs:not([data-ui-tabs-ready]):has(.ui-tabpanel :target) > .ui-tabpanel:not(:has(:target)) { display: none; }

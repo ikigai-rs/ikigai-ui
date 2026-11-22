@@ -1,0 +1,91 @@
+# The workspace atom's closed shape (ledger #3950, docs/design/workspace.md section 1), served at
+# urn:iki:ui:shape:workspace. ikigai_ui::workspace::validate says the same in Rust, with the
+# bounds this shape cannot: the shares in a split add up to 1000, every pane is in the layout
+# once, at most 16 panes, a layout at most 4 deep, at most 8 tabs and 8 selection roles.
+#
+# The graph has no blank nodes: every property shape, and each cell of the one RDF list (the
+# layout's three forms, sh:xone), is named under the shape's own IRI, so the names are stable
+# and a report can point at one. A closed set of values is a pattern, not an sh:in list.
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ws: <urn:iki:ui:workspace:property:name:> .
+@prefix s: <urn:iki:ui:shape:workspace:> .
+
+# --- the workspace ---------------------------------------------------------------------------
+
+<urn:iki:ui:shape:workspace> a sh:NodeShape ;
+  sh:closed true ;
+  sh:property s:label , s:layout-property , s:panes , s:selection .
+
+s:label a sh:PropertyShape ;
+  sh:path ws:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+  sh:minLength 1 ; sh:maxLength 256 .
+s:layout-property a sh:PropertyShape ;
+  sh:path ws:layout ; sh:minCount 1 ; sh:maxCount 1 ; sh:node s:layout .
+s:panes a sh:PropertyShape ;
+  sh:path ws:panes ; sh:minCount 1 ; sh:maxCount 16 ; sh:node s:pane .
+s:selection a sh:PropertyShape ;
+  sh:path ws:selection ; sh:maxCount 8 ; sh:nodeKind sh:IRI .
+
+# --- a layout node: a split, tabs, or one pane ----------------------------------------------
+
+s:layout a sh:NodeShape ;
+  sh:closed true ;
+  sh:xone s:layout-forms ;
+  sh:property s:layout-share , s:layout-collapsed .
+
+s:layout-forms rdf:first s:split ; rdf:rest s:layout-forms-2 .
+s:layout-forms-2 rdf:first s:tabs ; rdf:rest s:layout-forms-3 .
+s:layout-forms-3 rdf:first s:one-pane ; rdf:rest rdf:nil .
+
+s:split a sh:NodeShape ;
+  sh:property s:split-axis , s:split-children .
+s:split-axis a sh:PropertyShape ;
+  sh:path ws:split ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^(row|column)$" .
+s:split-children a sh:PropertyShape ;
+  sh:path ws:children ; sh:minCount 2 ; sh:node s:layout .
+
+s:tabs a sh:NodeShape ;
+  sh:property s:tabs-keys , s:tabs-active .
+s:tabs-keys a sh:PropertyShape ;
+  sh:path ws:tabs ; sh:minCount 1 ; sh:maxCount 8 ; sh:pattern "^[a-z0-9-]{1,32}$" .
+s:tabs-active a sh:PropertyShape ;
+  sh:path ws:active ; sh:maxCount 1 ; sh:pattern "^[a-z0-9-]{1,32}$" .
+
+s:one-pane a sh:NodeShape ;
+  sh:property s:one-pane-key .
+s:one-pane-key a sh:PropertyShape ;
+  sh:path ws:pane ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[a-z0-9-]{1,32}$" .
+
+s:layout-share a sh:PropertyShape ;
+  sh:path ws:share ; sh:maxCount 1 ; sh:datatype xsd:integer ;
+  sh:minInclusive 50 ; sh:maxInclusive 1000 .
+s:layout-collapsed a sh:PropertyShape ;
+  sh:path ws:collapsed ; sh:maxCount 1 ; sh:datatype xsd:boolean .
+
+# --- a pane ----------------------------------------------------------------------------------
+
+s:pane a sh:NodeShape ;
+  sh:closed true ;
+  sh:property s:pane-label , s:pane-content , s:pane-follows , s:pane-emits , s:pane-accepts ,
+    s:pane-live , s:pane-as-of , s:pane-scopes .
+
+s:pane-label a sh:PropertyShape ;
+  sh:path ws:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+  sh:minLength 1 ; sh:maxLength 256 .
+s:pane-content a sh:PropertyShape ;
+  sh:path ws:content ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+  sh:pattern "^(lens:[^ ]+:resource:|view:resource:|urn:iki:ui:screen:name:)" .
+s:pane-follows a sh:PropertyShape ;
+  sh:path ws:follows ; sh:maxCount 1 ; sh:datatype xsd:string .
+s:pane-emits a sh:PropertyShape ;
+  sh:path ws:emits ; sh:maxCount 1 ; sh:pattern "^[a-z0-9-]{1,32}$" .
+s:pane-accepts a sh:PropertyShape ;
+  sh:path ws:accepts ; sh:maxCount 1 ; sh:datatype xsd:string .
+s:pane-live a sh:PropertyShape ;
+  sh:path ws:live ; sh:maxCount 1 ; sh:datatype xsd:boolean .
+s:pane-as-of a sh:PropertyShape ;
+  sh:path ws:as-of ; sh:maxCount 1 ; sh:datatype xsd:boolean .
+s:pane-scopes a sh:PropertyShape ;
+  sh:path ws:scopes ; sh:maxCount 1 ; sh:datatype xsd:string .
