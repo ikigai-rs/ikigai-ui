@@ -257,3 +257,27 @@ meter { width: 12rem; height: 1rem; vertical-align: middle; }
 .ui-tabs [role="tab"][aria-selected="true"] { border-color: var(--line); font-weight: 600; text-decoration: underline; text-underline-offset: 0.3em; }
 .ui-tabs:not([data-ui-tabs-ready]):not(:has(.ui-tabpanel :target)) > .ui-tabpanel-inactive { display: none; }
 .ui-tabs:not([data-ui-tabs-ready]):has(.ui-tabpanel :target) > .ui-tabpanel:not(:has(:target)) { display: none; }
+
+/* Workspace rearrange (ledger #3952, design section 5A "Rearrange"). A pane's heading is its
+   drag handle once the shell's script marks it; touch-action is off on the handle only, so the
+   page still scrolls. The "Pane" menu is a <details> of the edit forms. While a pane is dragged,
+   the pane under the pointer shows one drop target, outlined and labelled in words, never by
+   colour alone; the dragged pane is marked with a dashed outline. Nothing animates. */
+.ui-pane > h2[data-ui-handle] { cursor: grab; touch-action: none; user-select: none; }
+.ui-pane > h2[data-ui-handle]:focus { outline: none; }
+.ui-pane > h2[data-ui-handle]:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.ui-tabs [role="tab"][data-ui-handle] { touch-action: none; }
+.ui-pane-menu { margin: 0 0 0.75rem; }
+.ui-pane-menu > summary { display: inline-flex; align-items: center; min-height: 1.5rem; min-width: 1.5rem; padding: 0.25rem 0.5rem; border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; }
+.ui-pane-menu-body { margin-top: 0.5rem; padding: 0.75rem; border: 1px solid var(--line); border-radius: var(--radius); }
+.ui-pane-menu-body .ui-form { margin: 0 0 0.75rem; }
+.ui-pane-menu-body .ui-form:last-child { margin-bottom: 0; }
+.ui-pane-menu-body h3 { font-size: 1rem; }
+.ui-pane[data-ui-dragged] { outline: 3px dashed var(--focus); outline-offset: -3px; }
+.ui-drop { position: fixed; z-index: 10; pointer-events: none; box-sizing: border-box; border: 3px solid var(--focus); border-radius: var(--radius); background: transparent; display: flex; align-items: center; justify-content: center; }
+.ui-drop > span { background: var(--bg, Canvas); color: var(--fg, CanvasText); border: 2px solid var(--focus); border-radius: var(--radius); padding: 0.25rem 0.5rem; font-weight: 600; }
+.ui-tab-drop { position: fixed; z-index: 10; pointer-events: none; width: 0; border-left: 3px solid var(--focus); }
+@media (forced-colors: active) {
+  .ui-drop, .ui-drop > span, .ui-tab-drop, .ui-pane[data-ui-dragged] { border-color: Highlight; outline-color: Highlight; }
+  .ui-drop > span { background: Canvas; color: CanvasText; }
+}

@@ -175,13 +175,15 @@ fn a_selection_never_writes() {
     );
     assert!(refs.contains(&"urn:iki:ui:screen:name:lens:dashboard:resource:urn:iki:ledger:default"));
 
-    // The only form is the "Layout" form, posting to the edit Sink. The selection is in none
-    // of its fields.
+    // Every form is an edit form (the "Layout" form, and each pane's "Pane" menu, ledger
+    // #3952), posting to the edit Sink. The selection is in none of their fields.
     let forms = all(&screen, "form");
-    assert_eq!(forms.len(), 1);
-    assert_eq!(text(forms[0], "resource"), format!("{WORKSPACE}:edit"));
-    for field in all(forms[0], "field") {
-        assert!(!text(field, "value").contains(chosen), "{field:?}");
+    assert_eq!(forms.len(), 11);
+    for form in forms {
+        assert_eq!(text(form, "resource"), format!("{WORKSPACE}:edit"));
+        for field in all(form, "field") {
+            assert!(!text(field, "value").contains(chosen), "{field:?}");
+        }
     }
 }
 
@@ -223,12 +225,15 @@ fn a_selection_never_writes_through_the_face() {
     ));
     assert_eq!(html.matches("A pane&#39;s content.").count(), 4, "{html}");
 
-    assert_eq!(html.matches("<form").count(), 1, "{html}");
-    let form = &html[html.find("<form").unwrap()..];
-    let form = &form[..form.find("</form>").unwrap()];
-    assert!(!form.contains(chosen), "{form}");
-    assert!(form.contains("name%3Aitem%3Aedit\""), "{form}");
-    assert!(form.contains("name=\"if-version\""), "{form}");
+    // The Layout form and the "Pane" menus' forms (ledger #3952): every one an edit.
+    assert_eq!(html.matches("<form").count(), 11, "{html}");
+    for (at, _) in html.match_indices("<form") {
+        let form = &html[at..];
+        let form = &form[..form.find("</form>").unwrap()];
+        assert!(!form.contains(chosen), "{form}");
+        assert!(form.contains("name%3Aitem%3Aedit\""), "{form}");
+        assert!(form.contains("name=\"if-version\""), "{form}");
+    }
 }
 
 /// Proposal 3, the html face for the layout hints: a split is a flex row or column sized by
@@ -250,7 +255,7 @@ fn the_html_face_renders_the_layout_hints() {
     let html = String::from_utf8(rep.bytes).unwrap();
     for part in [
         r##"<div class="ui-split ui-split-row" role="group" aria-label="Side by side: Dashboard, Session">"##,
-        r##"<div class="ui-share ui-share-300"><section class="ui-group ui-pane" id="pane-dashboard" aria-label="Dashboard">"##,
+        r##"<div class="ui-share ui-share-300"><section class="ui-group ui-pane" id="pane-dashboard" aria-label="Dashboard" data-ui-drop="left right above below tabs">"##,
         r##"<div class="ui-share ui-share-700"><div class="ui-split ui-split-column""##,
         r##"<div class="ui-tabs" data-ui-tabs role="group""##,
         r##"<div role="tablist" aria-label="Tabs: Item, Trail">"##,
@@ -540,7 +545,7 @@ fn the_workspace_is_an_ordinary_screen() {
     assert!(refs.contains(&"urn:iki:ui:screen:name:lens:dashboard:resource:urn:iki:ledger:default"));
 
     // The "Layout" form posts one resize to the edit Sink, with if-version.
-    let form = &all(&screen, "form")[0];
+    let form = all(&screen, "form").into_iter().last().unwrap();
     assert_eq!(text(form, "label"), "Layout");
     let fields: BTreeMap<&str, &str> = all(form, "field")
         .iter()
@@ -899,7 +904,8 @@ fn a_shared_workspace_shows_each_viewer_only_their_own_reads() {
 #[test]
 fn a_hidden_field_renders_no_label() {
     let html = face_html();
-    let form = &html[html.find("<form").unwrap()..];
+    // The Layout form, the page's last.
+    let form = &html[html.rfind("<form").unwrap()..];
     let form = &form[..form.find("</form>").unwrap()];
     assert!(!form.contains(">Edit</label>"), "{form}");
     assert!(!form.contains(">Made against version</label>"), "{form}");
@@ -1020,4 +1026,392 @@ fn a_workspace_page_refuses_what_is_not_a_workspace() {
         &[]
     )
     .is_err());
+}
+
+// --- workspace 3: rearrange and tabs (ledger #3952, section 5A "Rearrange") -------------------
+
+/// The layout of an atom as JSON, to compare whole trees.
+fn tree(ws: &workspace::Workspace) -> serde_json::Value {
+    let json: serde_json::Value = serde_json::from_slice(&workspace::atom(ws)).unwrap();
+    json["layout"].clone()
+}
+
+fn moved(
+    ws: &workspace::Workspace,
+    pane: &str,
+    to: &str,
+    place: &str,
+) -> (workspace::Workspace, String) {
+    workspace::apply(
+        ws,
+        &args(&[
+            ("op", "move"),
+            ("if-version", "1"),
+            ("pane", pane),
+            ("to", to),
+            ("place", place),
+        ]),
+    )
+    .unwrap()
+}
+
+/// The atom a host stores after an edit reads back as the same workspace.
+#[test]
+fn the_atom_round_trips() {
+    let ws = workspace::validate(ITEM).unwrap();
+    assert_eq!(workspace::validate(&workspace::atom(&ws)).unwrap(), ws);
+}
+
+/// Each of the five places, from the fixture (Dashboard 300 beside a column of Session 600 over
+/// the tabs Item and Trail): beside a pane in a split of the same axis it takes half that pane's
+/// share; across the axis the two make a new split; out of tabs it leaves its group (a group of
+/// one becomes the pane alone); into tabs it is the active tab. Only the layout changes.
+#[test]
+fn a_move_to_each_place() {
+    let ws = workspace::validate(ITEM).unwrap();
+    use serde_json::json;
+    let cases = [
+        (
+            ("session", "dashboard", "right"),
+            "Moved Session to the right of Dashboard.",
+            json!({"split": "row", "children": [
+                {"share": 150, "pane": "dashboard"},
+                {"share": 150, "pane": "session"},
+                {"share": 700, "tabs": ["item", "trail"], "active": "item"}
+            ]}),
+        ),
+        (
+            ("trail", "session", "left"),
+            "Moved Trail to the left of Session.",
+            json!({"split": "row", "children": [
+                {"share": 300, "pane": "dashboard"},
+                {"share": 700, "split": "column", "children": [
+                    {"share": 600, "split": "row", "children": [
+                        {"share": 500, "pane": "trail"}, {"share": 500, "pane": "session"}
+                    ]},
+                    {"share": 400, "pane": "item"}
+                ]}
+            ]}),
+        ),
+        (
+            ("item", "session", "below"),
+            "Moved Item below Session.",
+            json!({"split": "row", "children": [
+                {"share": 300, "pane": "dashboard"},
+                {"share": 700, "split": "column", "children": [
+                    {"share": 300, "pane": "session"},
+                    {"share": 300, "pane": "item"},
+                    {"share": 400, "pane": "trail"}
+                ]}
+            ]}),
+        ),
+        (
+            ("item", "dashboard", "above"),
+            "Moved Item above Dashboard.",
+            json!({"split": "row", "children": [
+                {"share": 300, "split": "column", "children": [
+                    {"share": 500, "pane": "item"}, {"share": 500, "pane": "dashboard"}
+                ]},
+                {"share": 700, "split": "column", "children": [
+                    {"share": 600, "pane": "session"},
+                    {"share": 400, "pane": "trail"}
+                ]}
+            ]}),
+        ),
+        (
+            ("dashboard", "trail", "tabs"),
+            "Put Dashboard in tabs with Trail.",
+            json!({"split": "column", "children": [
+                {"share": 600, "pane": "session"},
+                {"share": 400, "tabs": ["item", "trail", "dashboard"], "active": "dashboard"}
+            ]}),
+        ),
+        (
+            ("session", "dashboard", "tabs"),
+            "Put Session in tabs with Dashboard.",
+            json!({"split": "row", "children": [
+                {"share": 300, "tabs": ["dashboard", "session"], "active": "session"},
+                {"share": 700, "tabs": ["item", "trail"], "active": "item"}
+            ]}),
+        ),
+    ];
+    for ((pane, to, place), sentence, want) in cases {
+        let (done, said) = moved(&ws, pane, to, place);
+        assert_eq!(said, sentence);
+        assert_eq!(tree(&done), want, "{pane} {place} {to}");
+        assert_eq!(done.panes, ws.panes, "a move changes no pane");
+        assert_eq!(done.selection, ws.selection, "a move changes no selection");
+        assert_eq!(done.label, ws.label);
+    }
+}
+
+fn eight_tabs() -> workspace::Workspace {
+    let keys: Vec<String> = (1..=8).map(|n| format!("t{n}")).collect();
+    let mut panes = serde_json::Map::new();
+    for k in keys
+        .iter()
+        .map(String::as_str)
+        .chain(["solo", "deep", "t-x"])
+    {
+        panes.insert(k.to_string(), pane(k));
+    }
+    // `deep` is four deep: root row, column, row, pane.
+    let json = serde_json::json!({
+        "label": "Bounds",
+        "layout": {"split": "row", "children": [
+            {"share": 500, "tabs": keys, "active": "t1"},
+            {"share": 500, "split": "column", "children": [
+                {"share": 500, "pane": "solo"},
+                {"share": 500, "split": "row", "children": [
+                    {"share": 500, "pane": "deep"},
+                    {"share": 500, "pane": "t-x"}
+                ]}
+            ]}
+        ]},
+        "panes": panes,
+    });
+    workspace::validate(&serde_json::to_vec(&json).unwrap()).unwrap()
+}
+
+/// What would break a bound is not offered for a drop and is refused by the edit, saying why
+/// in words: a ninth tab, and a split that would nest the layout five deep.
+#[test]
+fn an_over_bound_place_is_not_offered_and_is_refused() {
+    let ws = eight_tabs();
+    // The full tab group takes no ninth tab; its edges are still offered.
+    assert_eq!(
+        workspace::offered(&ws, "t3"),
+        ["left", "right", "above", "below"]
+    );
+    // `deep` is four deep in a row: left and right sit beside it, above and below would nest
+    // a fifth level.
+    assert_eq!(workspace::offered(&ws, "deep"), ["left", "right", "tabs"]);
+    assert_eq!(
+        workspace::offered(&ws, "solo"),
+        ["left", "right", "above", "below", "tabs"]
+    );
+    let refuse = |pairs: &[(&str, &str)]| {
+        let mut all = vec![("op", "move"), ("if-version", "1")];
+        all.extend_from_slice(pairs);
+        format!("{:?}", workspace::apply(&ws, &args(&all)).unwrap_err())
+    };
+    let says = refuse(&[("pane", "solo"), ("to", "t1"), ("place", "tabs")]);
+    assert!(says.contains("A tab group holds at most 8 panes"), "{says}");
+    let says = refuse(&[("pane", "t1"), ("to", "deep"), ("place", "below")]);
+    assert!(says.contains("A layout nests at most 4 deep"), "{says}");
+    let says = refuse(&[("pane", "solo"), ("to", "solo"), ("place", "left")]);
+    assert!(
+        says.contains("solo cannot be moved beside itself"),
+        "{says}"
+    );
+    let says = refuse(&[("pane", "t1"), ("to", "t2"), ("place", "tabs")]);
+    assert!(says.contains("t1 is already in tabs with t2"), "{says}");
+    let says = refuse(&[("pane", "nobody"), ("to", "t2"), ("place", "tabs")]);
+    assert!(says.contains("there is no pane `nobody`"), "{says}");
+    let says = refuse(&[("pane", "solo"), ("to", "t2"), ("place", "middle")]);
+    assert!(says.contains("`middle` is not a place"), "{says}");
+    let says = refuse(&[
+        ("pane", "solo"),
+        ("to", "t2"),
+        ("place", "tabs"),
+        ("label", "Mine"),
+    ]);
+    assert!(
+        says.contains("`label` is not an argument of a move edit"),
+        "{says}"
+    );
+    // Right of `deep` is fine: it takes half of deep's share.
+    let (done, _) = moved(&ws, "solo", "deep", "right");
+    assert_eq!(
+        workspace::reading_order(&done.layout)[8..],
+        ["deep", "solo", "t-x"]
+    );
+}
+
+/// A `reorder` moves a tab within its group and makes it the active tab.
+#[test]
+fn a_reorder_moves_a_tab_along_its_list() {
+    let ws = workspace::validate(ITEM).unwrap();
+    let (done, said) = workspace::apply(
+        &ws,
+        &args(&[
+            ("op", "reorder"),
+            ("if-version", "1"),
+            ("pane", "trail"),
+            ("index", "0"),
+        ]),
+    )
+    .unwrap();
+    assert_eq!(said, "Moved Trail to tab 1 of 2.");
+    assert_eq!(
+        tree(&done)["children"][1]["children"][1],
+        serde_json::json!({"share": 400, "tabs": ["trail", "item"], "active": "trail"})
+    );
+    for (pairs, says) in [
+        (
+            vec![("pane", "session"), ("index", "0")],
+            "Session is not in tabs",
+        ),
+        (vec![("pane", "trail"), ("index", "2")], "there is no tab 3"),
+        (
+            vec![("pane", "trail"), ("index", "first")],
+            "`index` is not a whole number",
+        ),
+    ] {
+        let mut all = vec![("op", "reorder")];
+        all.extend(pairs);
+        let err = format!("{:?}", workspace::apply(&ws, &args(&all)).unwrap_err());
+        assert!(err.contains(says), "{err}");
+    }
+    let err = format!(
+        "{:?}",
+        workspace::apply(&ws, &args(&[("op", "close")])).unwrap_err()
+    );
+    assert!(
+        err.contains("`close` is not an edit this workspace makes yet"),
+        "{err}"
+    );
+}
+
+/// The "Pane" menu (section 5A "Equivalents"): on every pane, the edit forms that do what a drag
+/// does. "Move…" lists the other panes and the five places; "Put in tabs with…" lists the panes
+/// not already in its group; a tab has "Move tab earlier" or "later" where there is room. Every
+/// form posts to the edit Sink with the version, and its fields are the edit a drag sends.
+#[test]
+fn every_pane_has_a_pane_menu_of_edits() {
+    let ws = workspace::validate(ITEM).unwrap();
+    let screen = workspace::compose(&ws, WORKSPACE, 12, &BTreeMap::new()).unwrap();
+    model::validate(&screen).unwrap();
+    let menus: Vec<&Node> = all(&screen, "group")
+        .into_iter()
+        .filter(|g| g.hint.contains_key(workspace::MENU))
+        .collect();
+    assert_eq!(menus.len(), 4);
+    let fields = |form: &Node| -> BTreeMap<String, String> {
+        form.children
+            .iter()
+            .filter(|c| c.kind == "field")
+            .map(|c| (text(c, "name").to_string(), text(c, "value").to_string()))
+            .collect()
+    };
+    let options = |form: &Node, name: &str| -> Vec<String> {
+        all(form, "choice")
+            .into_iter()
+            .filter(|c| text(c, "name") == name)
+            .flat_map(|c| c.children.iter().map(|o| text(o, "value").to_string()))
+            .collect()
+    };
+    let menu = |label: &str| *menus.iter().find(|m| text(m, "label") == label).unwrap();
+    let forms = |m: &Node| -> Vec<String> {
+        m.children
+            .iter()
+            .filter(|c| c.kind == "form")
+            .map(|f| text(f, "label").to_string())
+            .collect()
+    };
+    assert_eq!(
+        forms(menu("Dashboard")),
+        ["Move Dashboard…", "Put Dashboard in tabs with…"]
+    );
+    assert_eq!(
+        forms(menu("Item")),
+        [
+            "Move Item…",
+            "Put Item in tabs with…",
+            "Move Item tab later"
+        ]
+    );
+    assert_eq!(
+        forms(menu("Trail")),
+        [
+            "Move Trail…",
+            "Put Trail in tabs with…",
+            "Move Trail tab earlier"
+        ]
+    );
+    let item = menu("Item");
+    let mv = &item.children[0];
+    assert_eq!(text(mv, "resource"), workspace::edit(WORKSPACE));
+    assert_eq!(text(mv, "method"), "post");
+    assert_eq!(fields(mv)["if-version"], "12");
+    assert_eq!(fields(mv)["op"], "move");
+    assert_eq!(fields(mv)["pane"], "item");
+    assert_eq!(options(mv, "to"), ["dashboard", "session", "trail"]);
+    assert_eq!(options(mv, "place"), workspace::PLACES);
+    // Into tabs: not Trail, already in Item's group.
+    assert_eq!(options(&item.children[1], "to"), ["dashboard", "session"]);
+    assert_eq!(fields(&item.children[2])["index"], "1");
+
+    // The Move form's fields, with a choice made, are the edit the drag sends.
+    let mut posted = fields(mv);
+    posted.insert("to".into(), "dashboard".into());
+    posted.insert("place".into(), "below".into());
+    assert_eq!(
+        workspace::apply(&ws, &posted).unwrap(),
+        moved(&ws, "item", "dashboard", "below")
+    );
+
+    // Each pane's region says where a drop may land.
+    let regions = all(&screen, "region");
+    for r in regions {
+        assert_eq!(
+            r.hint.get(workspace::DROP),
+            Some(&Hint::Plain(Value::Text(
+                "left right above below tabs".into()
+            )))
+        );
+    }
+
+    // A full tab group is said in words in "Put in tabs with…", not offered.
+    let bounds = eight_tabs();
+    let screen = workspace::compose(&bounds, WORKSPACE, 1, &BTreeMap::new()).unwrap();
+    let solo = all(&screen, "group")
+        .into_iter()
+        .find(|g| g.hint.contains_key(workspace::MENU) && text(g, "label") == "solo")
+        .unwrap();
+    let tabs = &solo.children[1];
+    assert_eq!(options(tabs, "to"), ["deep", "t-x"]);
+    assert!(text(tabs, "description").contains("A tab group holds at most 8 panes"));
+}
+
+/// The html face: each pane's section carries its drop places, and its "Pane" menu is a
+/// `<details>` whose summary is named for the pane; its forms post to the edit Sink.
+#[test]
+fn the_html_face_renders_the_pane_menu() {
+    let html = face_html();
+    assert!(
+        html.contains(
+            r#"id="pane-session" aria-label="Session" data-ui-drop="left right above below tabs">"#
+        ),
+        "{html}"
+    );
+    assert!(html.contains(
+        r#"<details class="ui-pane-menu" data-ui-pane-menu="session"><summary>Pane<span class="ui-sr-only"> menu: Session</span></summary>"#
+    ));
+    assert_eq!(html.matches("<details class=\"ui-pane-menu\"").count(), 4);
+    assert!(html.contains("<option value=\"tabs\">Into tabs with it</option>"));
+}
+
+/// A host's store may say the version in the atom's type; the edit forms carry it.
+#[test]
+fn the_version_the_store_answers_is_the_forms_if_version() {
+    let atom = FnEndpoint::new("atom", |_: &Invocation<'_>| {
+        Ok(Representation::new(
+            ReprType::new("application/json").with_param("version", "7"),
+            ITEM.to_vec(),
+        ))
+    });
+    let space = EndpointSpace::new().bind(Exact::new(WORKSPACE), atom);
+    let kernel = common::host_with(None, vec![Arc::new(space)]);
+    let screen = Iri::parse(workspace::screen(WORKSPACE)).unwrap();
+    let rep =
+        block_on(kernel.issue(Request::new(Verb::Source, screen), &Capability::root())).unwrap();
+    let node: Node = serde_json::from_slice(&rep.bytes).unwrap();
+    let versions: Vec<&str> = all(&node, "field")
+        .into_iter()
+        .filter(|f| text(f, "name") == "if-version")
+        .map(|f| text(f, "value"))
+        .collect();
+    assert!(versions.len() > 4);
+    assert!(versions.iter().all(|v| *v == "7"), "{versions:?}");
 }
