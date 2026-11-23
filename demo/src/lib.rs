@@ -14,6 +14,7 @@
 //! | `urn:iki:uidemo:fragment:{name}` | composition | the page's body: a note and the screen it shows |
 //! | `urn:iki:uidemo:page:lens:{lens}:resource:{iri}` | composition | a lensed view of `{iri}` in the shell ([`ikigai_ui::Pages::lenses`]); the door's `/lens/name/{lens}/resource/{iri}` |
 //! | `urn:iki:ui:workspace:person:urn:person:demo:name:contacts` | data | the demo's one workspace atom ([`WORKSPACE`]), a fixture over the example lenses |
+//! | `…:name:contacts:edit`, `…:revert`, `…:version:{n}` | service, data | the workspace's edit and revert Sinks over an in-memory store of every version ([`Layouts`], ledger #3952), and each version |
 //! | `urn:iki:uidemo:page:workspace:{iri}` | composition | a workspace in the shell ([`ikigai_ui::Pages::workspaces`]); the door's `/workspace/{iri}` ([`WORKSPACE_PATH`]) |
 //!
 //! The contact form is not written by hand: it is the `form` node ikigai-ui generates from the
@@ -325,19 +326,46 @@ fn inbox(store: Store) -> FnEndpoint {
     )
 }
 
-fn workspace_atom() -> FnEndpoint {
-    FnEndpoint::new("uidemo-workspace", |_: &Invocation<'_>| {
-        Ok(
-            Representation::new(ReprType::new(JSON), WORKSPACE_ATOM.as_bytes().to_vec())
-                .cacheable(),
-        )
+/// The demo's workspace store (ledger #3952): every version of [`WORKSPACE`]'s atom, version
+/// `n` at `n - 1`, never rewritten. It starts at [`WORKSPACE_ATOM`] as version 1. In memory: a
+/// restart starts again from the fixture.
+pub type Layouts = Arc<Mutex<Vec<Vec<u8>>>>;
+
+/// What a write to the demo's workspace requires (design section 1): the person's own
+/// partition. The door grants it, as the demo has one fixed person and no sign-in (#2169).
+pub const WORKSPACE_WRITE: &str = "urn:cap:ui:workspace:write:person:urn:person:demo";
+
+fn layouts() -> Layouts {
+    Arc::new(Mutex::new(vec![WORKSPACE_ATOM.as_bytes().to_vec()]))
+}
+
+fn held(layouts: &Layouts) -> Result<std::sync::MutexGuard<'_, Vec<Vec<u8>>>, Error> {
+    layouts
+        .lock()
+        .map_err(|_| Error::Endpoint("poisoned".into()))
+}
+
+/// One version as the store answers it: the atom, its type saying which version it is, never
+/// cached (the next edit changes the bare name's answer).
+fn version_rep(n: usize, bytes: &[u8]) -> Representation {
+    Representation::new(
+        ReprType::new(JSON).with_param("version", n.to_string()),
+        bytes.to_vec(),
+    )
+}
+
+fn workspace_atom(layouts: Layouts) -> FnEndpoint {
+    FnEndpoint::new("uidemo-workspace", move |_: &Invocation<'_>| {
+        let held = held(&layouts)?;
+        Ok(version_rep(held.len(), held.last().expect("version 1")))
     })
     .with_description(
         Description::new("uidemo-workspace")
             .title("The demo's workspace")
             .summary(
                 "A workspace atom (fixtures only): the contact list beside a tab list of the \
-                 dashboard and the table, each pane following the selected graph.",
+                 dashboard and the table, each pane following the selected graph. The latest \
+                 version, its type saying which (application/json; version=n).",
             )
             .verb(Verb::Source)
             .verb(Verb::Meta)
@@ -345,10 +373,144 @@ fn workspace_atom() -> FnEndpoint {
     )
 }
 
+fn workspace_version(layouts: Layouts) -> FnEndpoint {
+    FnEndpoint::new("uidemo-workspace-version", move |inv: &Invocation<'_>| {
+        let n = inv.bindings.get("n").unwrap_or_default();
+        let held = held(&layouts)?;
+        let at = n
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=held.len()).contains(n))
+            .ok_or_else(|| Error::NotFound(format!("no version `{n}`")))?;
+        Ok(version_rep(at, &held[at - 1]))
+    })
+    .with_description(
+        Description::new("uidemo-workspace-version")
+            .title("One version of the demo's workspace")
+            .summary("One saved version of the workspace atom, never rewritten.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(ArgSpec::new("n").class(XSD_INTEGER).binding())
+            .output(JSON),
+    )
+}
+
+/// A Sink's form body, as pairs.
+fn body_pairs(inv: &Invocation<'_>) -> Result<std::collections::BTreeMap<String, String>, Error> {
+    let body = inv
+        .inline_arg("content")
+        .map_err(|_| invalid("content", "no body"))?;
+    let body = std::str::from_utf8(body).map_err(|_| invalid("content", "not UTF-8"))?;
+    Ok(form_pairs(body)
+        .map_err(|e| invalid("content", e.to_string()))?
+        .into_iter()
+        .collect())
+}
+
+/// `if-version` against the latest: an edit made against an older version is refused.
+fn check_version(
+    args: &std::collections::BTreeMap<String, String>,
+    latest: usize,
+) -> Result<(), Error> {
+    match args.get("if-version").map(|v| v.trim().parse::<usize>()) {
+        Some(Ok(n)) if n == latest => Ok(()),
+        Some(Ok(_)) => Err(invalid(
+            "if-version",
+            "This workspace changed in another window. Showing the latest; your last change \
+             was not saved.",
+        )),
+        _ => Err(invalid(
+            "if-version",
+            "the edit says no version it was made against",
+        )),
+    }
+}
+
+fn workspace_edit(layouts: Layouts) -> FnEndpoint {
+    FnEndpoint::new("uidemo-workspace-edit", move |inv: &Invocation<'_>| {
+        let args = body_pairs(inv)?;
+        let mut held = held(&layouts)?;
+        check_version(&args, held.len())?;
+        let latest = ikigai_ui::workspace::validate(held.last().expect("version 1"))?;
+        let (next, said) = ikigai_ui::workspace::apply(&latest, &args)?;
+        held.push(ikigai_ui::workspace::atom(&next));
+        let body = ikigai_ui::workspace::edited_html(
+            WORKSPACE,
+            args.get("pane").map(String::as_str),
+            &said,
+        );
+        Ok(Representation::new(ReprType::new(HTML), body.into_bytes()))
+    })
+    .with_description(edit_description(
+        "uidemo-workspace-edit",
+        "Edit the workspace's layout",
+        "Applies one edit (resize, move or reorder) to the latest version and writes the next \
+         one; refused, naming why, when if-version is not the latest or the result breaks a \
+         bound.",
+    ))
+}
+
+fn workspace_revert(layouts: Layouts) -> FnEndpoint {
+    FnEndpoint::new("uidemo-workspace-revert", move |inv: &Invocation<'_>| {
+        let args = body_pairs(inv)?;
+        let mut held = held(&layouts)?;
+        let to = args
+            .get("to-version")
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .filter(|n| (1..=held.len()).contains(n))
+            .ok_or_else(|| invalid("to-version", "not a version of this workspace"))?;
+        let bytes = held[to - 1].clone();
+        held.push(bytes);
+        let body = ikigai_ui::workspace::edited_html(
+            WORKSPACE,
+            None,
+            &format!("Reverted to version {to}, saved as version {}.", held.len()),
+        );
+        Ok(Representation::new(ReprType::new(HTML), body.into_bytes()))
+    })
+    .with_description(edit_description(
+        "uidemo-workspace-revert",
+        "Revert the workspace",
+        "Writes the next version with the layout of an earlier one, to-version. History is \
+         never rewritten.",
+    ))
+}
+
+fn edit_description(id: &str, title: &str, summary: &str) -> Description {
+    Description::new(id)
+        .title(title)
+        .summary(summary)
+        .verb(Verb::Sink)
+        .verb(Verb::Meta)
+        .action(
+            ActionSpec::new(Verb::Sink)
+                .summary(summary)
+                .requires(WORKSPACE_WRITE)
+                .input(ArgSpec::new("content").class(XSD_STRING).summary(
+                    "the edit: a urlencoded body with op, if-version and the op's own arguments",
+                ))
+                .envelope("content")
+                .output(HTML),
+        )
+}
+
 /// The service: the contact Sink and the submissions, over `store`; and the workspace atom.
 pub fn service(store: Store) -> EndpointSpace {
+    let layouts = layouts();
     EndpointSpace::new()
-        .bind(Exact::new(WORKSPACE), workspace_atom())
+        .bind(Exact::new(WORKSPACE), workspace_atom(layouts.clone()))
+        .bind(
+            Exact::new(format!("{WORKSPACE}:edit")),
+            workspace_edit(layouts.clone()),
+        )
+        .bind(
+            Exact::new(format!("{WORKSPACE}:revert")),
+            workspace_revert(layouts.clone()),
+        )
+        .bind(
+            UriTemplate::parse(format!("{WORKSPACE}:version:{{n}}")).expect("a template"),
+            workspace_version(layouts),
+        )
         .bind(Exact::new(CONTACT), contact(store.clone()))
         .bind(Exact::new(INBOX), inbox(store.clone()))
         .bind(Exact::new(SUBMISSION), submissions(store.clone()))
@@ -657,9 +819,10 @@ pub fn door() -> EdgeConfig {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-/// What the door grants every request: a write to the contact service, nothing more.
+/// What the door grants every request: a write to the contact service and to the demo
+/// person's workspaces, nothing more.
 pub fn cap() -> CapFn {
-    fixed_cap(vec![CONTACT_WRITE.to_string()])
+    fixed_cap(vec![CONTACT_WRITE.to_string(), WORKSPACE_WRITE.to_string()])
 }
 
 #[cfg(not(target_arch = "wasm32"))]

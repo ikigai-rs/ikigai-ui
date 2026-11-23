@@ -272,3 +272,139 @@ async fn the_door_serves_the_workspace_as_a_page() {
     let refused = call(addr, "GET", "/workspace/urn:iki:uidemo:contact", "").await;
     assert!(!refused.starts_with("HTTP/1.1 200"), "{refused}");
 }
+
+/// The panes' ids in the page's order: the DOM's reading order.
+fn pane_order(page: &str) -> Vec<&str> {
+    page.match_indices("<section class=\"ui-group ui-pane\" id=\"pane-")
+        .map(|(at, m)| {
+            let rest = &page[at + m.len()..];
+            &rest[..rest.find('"').unwrap()]
+        })
+        .collect()
+}
+
+/// Every rearrangement is a write to the atom (ledger #3952, design section 5A): a `move` and a
+/// `reorder` posted to the edit Sink, as the "Pane" menu's forms post them with no script, each
+/// write the next version, answer the one sentence with a link back to the pane, and a second
+/// viewer's next read shows the new layout, its DOM order and its "Panes" list matching. An edit
+/// made against an old version is refused and writes nothing; a revert writes the first layout
+/// again as a new version.
+#[tokio::test(flavor = "current_thread")]
+async fn a_rearrangement_is_a_write_a_second_viewer_sees() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(ikigai_ui_demo::serve(listener, Store::default()));
+    let edit = format!(
+        "/resolution/iri/{}",
+        format!("{}:edit", ikigai_ui_demo::WORKSPACE).replace(':', "%3A")
+    );
+    let first = call(addr, "GET", ikigai_ui_demo::WORKSPACE_PATH, "").await;
+    assert_eq!(pane_order(&first), ["list", "dashboard", "table"]);
+    assert!(first.contains("name=\"if-version\" value=\"1\""), "{first}");
+
+    let answer = call(
+        addr,
+        "POST",
+        &edit,
+        "if-version=1&op=move&pane=table&to=list&place=below",
+    )
+    .await;
+    assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+    assert!(
+        answer.contains("<p role=\"status\" data-ui-said>Moved Table below Contacts.</p>"),
+        "{answer}"
+    );
+    assert!(
+        answer.contains(&format!(
+            "href=\"{}#pane-table\"",
+            ikigai_ui_demo::WORKSPACE_PATH
+        )),
+        "{answer}"
+    );
+
+    // Another viewer, a new connection: the new layout, at version 2.
+    let second = call(addr, "GET", ikigai_ui_demo::WORKSPACE_PATH, "").await;
+    assert!(
+        second.contains("aria-label=\"Stacked: Contacts, Table\""),
+        "{second}"
+    );
+    assert!(
+        !second.contains("aria-label=\"Tabs:"),
+        "a tab group of one is the pane alone"
+    );
+    assert_eq!(pane_order(&second), ["list", "table", "dashboard"]);
+    let listed: Vec<&str> = second
+        .match_indices("#pane-")
+        .map(|(at, _)| {
+            let rest = &second[at + 6..];
+            &rest[..rest.find('"').unwrap()]
+        })
+        .take(3)
+        .collect();
+    assert_eq!(
+        listed,
+        ["list", "table", "dashboard"],
+        "the Panes list matches"
+    );
+    assert!(second.contains("name=\"if-version\" value=\"2\""));
+
+    // Made against version 1 again: refused, and nothing is written.
+    let stale = call(
+        addr,
+        "POST",
+        &edit,
+        "if-version=1&op=move&pane=dashboard&to=list&place=tabs",
+    )
+    .await;
+    assert!(!stale.starts_with("HTTP/1.1 200"), "{stale}");
+    assert!(
+        stale.contains("This workspace changed in another window."),
+        "{stale}"
+    );
+    let still = call(addr, "GET", ikigai_ui_demo::WORKSPACE_PATH, "").await;
+    assert_eq!(pane_order(&still), ["list", "table", "dashboard"]);
+
+    // Into tabs, then a reorder: version 4.
+    let tabs = call(
+        addr,
+        "POST",
+        &edit,
+        "if-version=2&op=move&pane=dashboard&to=list&place=tabs",
+    )
+    .await;
+    assert!(
+        tabs.contains("Put Dashboard in tabs with Contacts."),
+        "{tabs}"
+    );
+    let reorder = call(
+        addr,
+        "POST",
+        &edit,
+        "if-version=3&op=reorder&pane=dashboard&index=0",
+    )
+    .await;
+    assert!(
+        reorder.contains("Moved Dashboard to tab 1 of 2."),
+        "{reorder}"
+    );
+    let fourth = call(addr, "GET", ikigai_ui_demo::WORKSPACE_PATH, "").await;
+    assert_eq!(pane_order(&fourth), ["dashboard", "list", "table"]);
+    assert!(
+        fourth.contains("aria-label=\"Tabs: Dashboard, Contacts\""),
+        "{fourth}"
+    );
+
+    // The first version, written again as version 5.
+    let revert = format!(
+        "/resolution/iri/{}",
+        format!("{}:revert", ikigai_ui_demo::WORKSPACE).replace(':', "%3A")
+    );
+    let back = call(addr, "POST", &revert, "to-version=1").await;
+    assert!(
+        back.contains("Reverted to version 1, saved as version 5."),
+        "{back}"
+    );
+    let fifth = call(addr, "GET", ikigai_ui_demo::WORKSPACE_PATH, "").await;
+    assert_eq!(pane_order(&fifth), ["list", "dashboard", "table"]);
+    assert!(fifth.contains("name=\"if-version\" value=\"5\""));
+}

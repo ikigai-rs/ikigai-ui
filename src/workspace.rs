@@ -638,11 +638,190 @@ fn says(pane: &Pane, selection: &BTreeMap<String, String>) -> String {
     words.join(", ")
 }
 
+/// What every pane's composition needs to know of the whole: the atom, its IRI and version.
+struct Whole<'a> {
+    workspace: &'a Workspace,
+    iri: &'a str,
+    version: u64,
+}
+
+fn hidden(label: &str, name: &str, value: impl Into<String>) -> Node {
+    node(
+        "field",
+        vec![
+            text("label", label),
+            text("name", name),
+            text("input", "hidden"),
+            text("value", value),
+        ],
+        vec![],
+    )
+}
+
+fn edit_form(
+    whole: &Whole<'_>,
+    label: String,
+    description: Option<String>,
+    mut fields: Vec<Node>,
+) -> Node {
+    let mut properties = vec![
+        text("label", label),
+        text("method", "post"),
+        text("resource", edit(whole.iri)),
+        text("verb", "sink"),
+    ];
+    if let Some(d) = description {
+        properties.push(text("description", d));
+    }
+    fields.insert(
+        0,
+        hidden(
+            "Made against version",
+            "if-version",
+            whole.version.to_string(),
+        ),
+    );
+    node("form", properties, fields)
+}
+
+fn choice(label: &str, name: &str, options: Vec<(String, String)>) -> Node {
+    node(
+        "choice",
+        vec![text("label", label), text("name", name)],
+        options
+            .into_iter()
+            .map(|(value, label)| {
+                node(
+                    "option",
+                    vec![text("label", label), text("value", value)],
+                    vec![],
+                )
+            })
+            .collect(),
+    )
+}
+
+/// A pane's "Pane" menu (section 5A "Rearrange", ledger #3952): the edit forms that do what a
+/// drag does, by keyboard alone and with no script. "Move…" (another pane, and left, right,
+/// above, below or into tabs with it), "Put in tabs with…" (the panes whose tab group has room;
+/// a full one is said in words), and on a tab "Move tab earlier" and "Move tab later". Each is
+/// one edit posted to the edit Sink with `if-version`. `None` for a workspace of one pane.
+fn pane_menu(key: &str, whole: &Whole<'_>) -> Option<Node> {
+    let ws = whole.workspace;
+    let label = &ws.panes[key].label;
+    let others: Vec<&str> = reading_order(&ws.layout)
+        .into_iter()
+        .filter(|k| *k != key)
+        .collect();
+    if others.is_empty() {
+        return None;
+    }
+    let mut forms = Vec::new();
+    let names = |keys: &[&str]| -> Vec<(String, String)> {
+        keys.iter()
+            .map(|k| (k.to_string(), ws.panes[*k].label.clone()))
+            .collect()
+    };
+    forms.push(edit_form(
+        whole,
+        format!("Move {label}…"),
+        Some(format!(
+            "Puts {label} beside another pane, or into tabs with it. Saving writes a new version."
+        )),
+        vec![
+            hidden("Edit", "op", "move"),
+            hidden("Pane", "pane", key),
+            choice("Next to", "to", names(&others)),
+            choice(
+                "Where",
+                "place",
+                [
+                    ("left", "To its left"),
+                    ("right", "To its right"),
+                    ("above", "Above it"),
+                    ("below", "Below it"),
+                    ("tabs", "Into tabs with it"),
+                ]
+                .into_iter()
+                .map(|(v, l)| (v.to_string(), l.to_string()))
+                .collect(),
+            ),
+            node("button", vec![text("label", "Move")], vec![]),
+        ],
+    ));
+    let own = tab_group(&ws.layout, key);
+    let mut full = Vec::new();
+    let room: Vec<&str> = others
+        .iter()
+        .copied()
+        .filter(|k| match tab_group(&ws.layout, k) {
+            Some((tabs, _)) if tabs.iter().any(|t| t == key) => false,
+            Some((tabs, _)) if tabs.len() >= MAX_TABS => {
+                full.push(ws.panes[*k].label.as_str());
+                false
+            }
+            _ => true,
+        })
+        .collect();
+    let why = (!full.is_empty()).then(|| {
+        format!(
+            "Not offered: {}, in a full tab group. A tab group holds at most {MAX_TABS} panes.",
+            full.join(", ")
+        )
+    });
+    if !room.is_empty() {
+        forms.push(edit_form(
+            whole,
+            format!("Put {label} in tabs with…"),
+            why,
+            vec![
+                hidden("Edit", "op", "move"),
+                hidden("Pane", "pane", key),
+                hidden("Where", "place", "tabs"),
+                choice("Tabs with", "to", names(&room)),
+                node("button", vec![text("label", "Put in tabs")], vec![]),
+            ],
+        ));
+    } else if let Some(why) = why {
+        forms.push(node("text", vec![text("content", why)], vec![]));
+    }
+    if let Some((tabs, i)) = own {
+        for (to, word) in [
+            (i.checked_sub(1), "earlier"),
+            (Some(i + 1).filter(|n| *n < tabs.len()), "later"),
+        ] {
+            if let Some(to) = to {
+                forms.push(edit_form(
+                    whole,
+                    format!("Move {label} tab {word}"),
+                    None,
+                    vec![
+                        hidden("Edit", "op", "reorder"),
+                        hidden("Pane", "pane", key),
+                        hidden("To position", "index", to.to_string()),
+                        node(
+                            "button",
+                            vec![text("label", format!("Move tab {word}"))],
+                            vec![],
+                        ),
+                    ],
+                ));
+            }
+        }
+    }
+    Some(hinted(
+        node("group", vec![text("label", label)], forms),
+        MENU,
+        key,
+    ))
+}
+
 fn pane_region(
     key: &str,
     pane: &Pane,
     selection: &BTreeMap<String, String>,
     collapsed: bool,
+    whole: &Whole<'_>,
 ) -> Node {
     let mut children = vec![
         node(
@@ -655,6 +834,7 @@ fn pane_region(
         ),
         node("text", vec![text("content", says(pane, selection))], vec![]),
     ];
+    children.extend(pane_menu(key, whole));
     let mut properties = vec![text("label", &pane.label)];
     match content(pane, selection) {
         Ok(screen) => {
@@ -695,6 +875,7 @@ fn pane_region(
         properties.push(text(crate::region::SCOPES, scopes));
     }
     let mut region = hinted(node(crate::region::KIND, properties, children), PANE, key);
+    region = hinted(region, DROP, offered(whole.workspace, key).join(" "));
     if collapsed {
         region = hinted(region, COLLAPSED, "collapsed");
     }
@@ -715,12 +896,13 @@ fn alone_href(screen: &str) -> String {
 
 fn compose_layout(
     layout: &Layout,
-    workspace: &Workspace,
+    whole: &Whole<'_>,
     selection: &BTreeMap<String, String>,
     collapsed: bool,
 ) -> Node {
+    let workspace = whole.workspace;
     match layout {
-        Layout::Pane(key) => pane_region(key, &workspace.panes[key], selection, collapsed),
+        Layout::Pane(key) => pane_region(key, &workspace.panes[key], selection, collapsed, whole),
         Layout::Tabs { tabs, active } => {
             let label = tabs
                 .iter()
@@ -729,7 +911,7 @@ fn compose_layout(
                 .join(", ");
             let children = tabs
                 .iter()
-                .map(|k| pane_region(k, &workspace.panes[k], selection, collapsed))
+                .map(|k| pane_region(k, &workspace.panes[k], selection, collapsed, whole))
                 .collect();
             let mut group = node(
                 "group",
@@ -755,7 +937,7 @@ fn compose_layout(
                 .join(", ");
             let composed = children
                 .iter()
-                .map(|c| compose_layout(&c.node, workspace, selection, c.collapsed))
+                .map(|c| compose_layout(&c.node, whole, selection, c.collapsed))
                 .collect();
             let word = match axis {
                 Axis::Row => "Side by side",
@@ -985,7 +1167,16 @@ pub fn compose(
                 vec![],
             ),
             node("nav", vec![text("label", "Panes")], list),
-            compose_layout(&workspace.layout, workspace, &selection, false),
+            compose_layout(
+                &workspace.layout,
+                &Whole {
+                    workspace,
+                    iri,
+                    version,
+                },
+                &selection,
+                false,
+            ),
             layout_form(workspace, iri, version),
         ],
     ))
@@ -1026,6 +1217,18 @@ pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
                         Iri::parse(iri.as_str()).map_err(|e| refuse(e.to_string()))?,
                     ))
                     .await?;
+                // A host's store may say which version it answered (`application/json;
+                // version=3`, ledger #3952), so the edit forms carry the right `if-version`.
+                if !inv.request.args.contains_key("version") {
+                    if let Some(n) = atom
+                        .repr_type
+                        .params
+                        .get("version")
+                        .and_then(|v| v.parse().ok())
+                    {
+                        version = n;
+                    }
+                }
                 let workspace = validate(&atom.bytes)?;
                 let node = compose(&workspace, &iri, version, &address)?;
                 crate::model::validate(&node)?;
@@ -1259,5 +1462,491 @@ pub(crate) fn shape_endpoint() -> ikigai_core::FnEndpoint {
             .verb(Verb::Source)
             .verb(Verb::Meta)
             .output(crate::TURTLE),
+    )
+}
+
+/// A rearrange hint on a pane's region (ledger #3952): the places a pane dragged onto it may go,
+/// `left right above below tabs` or fewer ([`offered`]). The shell's drag shows only these.
+pub const DROP: &str = "urn:iki:ui:hint:layout:drop";
+/// A pane's "Pane" menu (ledger #3952): a group of the edit forms that rearrange it.
+pub const MENU: &str = "urn:iki:ui:hint:layout:menu";
+
+/// Where a `move` edit puts a pane, relative to another (section 5A "Rearrange").
+pub const PLACES: [&str; 5] = ["left", "right", "above", "below", "tabs"];
+
+/// The atom as JSON, in the shape [`validate`] reads: `validate(&atom(ws))` gives `ws` back.
+pub fn atom(workspace: &Workspace) -> Vec<u8> {
+    fn node(layout: &Layout, out: &mut Map<String, Json>) {
+        match layout {
+            Layout::Pane(k) => {
+                out.insert("pane".into(), Json::String(k.clone()));
+            }
+            Layout::Tabs { tabs, active } => {
+                out.insert(
+                    "tabs".into(),
+                    Json::Array(tabs.iter().cloned().map(Json::String).collect()),
+                );
+                out.insert("active".into(), Json::String(active.clone()));
+            }
+            Layout::Split { axis, children } => {
+                out.insert("split".into(), Json::String(axis.as_str().into()));
+                let kids = children
+                    .iter()
+                    .map(|c| {
+                        let mut m = Map::new();
+                        m.insert("share".into(), Json::from(c.share));
+                        if c.collapsed {
+                            m.insert("collapsed".into(), Json::Bool(true));
+                        }
+                        node(&c.node, &mut m);
+                        Json::Object(m)
+                    })
+                    .collect();
+                out.insert("children".into(), Json::Array(kids));
+            }
+        }
+    }
+    let mut layout = Map::new();
+    node(&workspace.layout, &mut layout);
+    let json = serde_json::json!({
+        "label": workspace.label,
+        "layout": Json::Object(layout),
+        "panes": workspace.panes,
+        "selection": workspace.selection,
+    });
+    serde_json::to_vec(&json).expect("a workspace is JSON")
+}
+
+fn depth_of(layout: &Layout) -> usize {
+    match layout {
+        Layout::Split { children, .. } => {
+            1 + children
+                .iter()
+                .map(|c| depth_of(&c.node))
+                .max()
+                .unwrap_or(0)
+        }
+        _ => 1,
+    }
+}
+
+/// Whether `layout` is the unit a drop on `key` lands beside: the pane leaf itself, or the
+/// tabs node holding it (a pane in tabs is placed beside its whole tab group).
+fn is_unit(layout: &Layout, key: &str) -> bool {
+    match layout {
+        Layout::Pane(k) => k == key,
+        Layout::Tabs { tabs, .. } => tabs.iter().any(|t| t == key),
+        Layout::Split { .. } => false,
+    }
+}
+
+/// The tabs node holding `key`, and its position there.
+fn tab_group<'a>(layout: &'a Layout, key: &str) -> Option<(&'a [String], usize)> {
+    match layout {
+        Layout::Tabs { tabs, .. } => tabs.iter().position(|t| t == key).map(|i| (&tabs[..], i)),
+        Layout::Pane(_) => None,
+        Layout::Split { children, .. } => children.iter().find_map(|c| tab_group(&c.node, key)),
+    }
+}
+
+/// A unit, its depth (the root is 1), and the axis and share it has in the split around it.
+type Unit<'a> = (&'a Layout, usize, Option<(Axis, u32)>);
+
+/// The unit holding `key`, its depth (the root is 1), and the axis and share it has in the split
+/// around it, if any.
+fn unit_of<'a>(
+    layout: &'a Layout,
+    key: &str,
+    depth: usize,
+    around: Option<(Axis, u32)>,
+) -> Option<Unit<'a>> {
+    if is_unit(layout, key) {
+        return Some((layout, depth, around));
+    }
+    if let Layout::Split { axis, children } = layout {
+        for c in children {
+            if let Some(found) = unit_of(&c.node, key, depth + 1, Some((*axis, c.share))) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+fn axis_of(place: &str) -> Axis {
+    if matches!(place, "left" | "right") {
+        Axis::Row
+    } else {
+        Axis::Column
+    }
+}
+
+/// The places a pane may be dropped on `target` without breaking a bound (section 5A
+/// "Bounds"): `tabs` unless its tab group holds [`MAX_TABS`]; an edge unless the split it makes
+/// would nest the layout deeper than [`MAX_DEPTH`]. The edit Sink checks again, whatever is
+/// offered.
+pub fn offered(workspace: &Workspace, target: &str) -> Vec<&'static str> {
+    let Some((unit, depth, around)) = unit_of(&workspace.layout, target, 1, None) else {
+        return Vec::new();
+    };
+    PLACES
+        .into_iter()
+        .filter(|place| match *place {
+            "tabs" => !matches!(unit, Layout::Tabs { tabs, .. } if tabs.len() >= MAX_TABS),
+            edge => {
+                let beside = matches!(around, Some((a, share)) if a == axis_of(edge) && share / 2 >= MIN_SHARE);
+                beside || depth < MAX_DEPTH
+            }
+        })
+        .collect()
+}
+
+fn args_get<'a>(args: &'a BTreeMap<String, String>, name: &str) -> Result<&'a str, Error> {
+    args.get(name)
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| refuse(format!("the edit has no `{name}`")))
+}
+
+fn closed_args(args: &BTreeMap<String, String>, op: &str, known: &[&str]) -> Result<(), Error> {
+    match args
+        .keys()
+        .find(|k| !known.contains(&k.as_str()) && *k != "op" && *k != "if-version")
+    {
+        Some(k) => Err(refuse(format!("`{k}` is not an argument of a {op} edit"))),
+        None => Ok(()),
+    }
+}
+
+/// `layout` with pane `key` taken out: its tab group loses it (a group of one becomes the pane
+/// alone), its split loses it and the neighbor before it (or after it) takes its share, and a
+/// split left with one child becomes that child. `None` when nothing is left.
+fn take(layout: Layout, key: &str) -> Option<Layout> {
+    match layout {
+        Layout::Pane(k) if k == key => None,
+        Layout::Pane(k) => Some(Layout::Pane(k)),
+        Layout::Tabs { mut tabs, active } => {
+            let Some(i) = tabs.iter().position(|t| t == key) else {
+                return Some(Layout::Tabs { tabs, active });
+            };
+            tabs.remove(i);
+            match tabs.len() {
+                0 => None,
+                1 => Some(Layout::Pane(tabs.remove(0))),
+                _ => {
+                    let active = if active == key {
+                        tabs[i.saturating_sub(1)].clone()
+                    } else {
+                        active
+                    };
+                    Some(Layout::Tabs { tabs, active })
+                }
+            }
+        }
+        Layout::Split { axis, children } => {
+            let mut out: Vec<Child> = Vec::new();
+            let mut freed = 0;
+            let mut gone_at = None;
+            for (i, c) in children.into_iter().enumerate() {
+                match take(c.node, key) {
+                    Some(node) => out.push(Child { node, ..c }),
+                    None => {
+                        freed = c.share;
+                        gone_at = Some(i);
+                    }
+                }
+            }
+            if let Some(i) = gone_at {
+                let n = if i > 0 { i - 1 } else { 0 };
+                if let Some(c) = out.get_mut(n) {
+                    c.share += freed;
+                }
+            }
+            match out.len() {
+                0 => None,
+                1 => Some(out.remove(0).node),
+                _ => Some(Layout::Split {
+                    axis,
+                    children: out,
+                }),
+            }
+        }
+    }
+}
+
+/// `layout` with pane `moved` put at `place` of the unit holding `target`.
+fn put(layout: Layout, moved: &str, target: &str, place: &str) -> Layout {
+    if is_unit(&layout, target) {
+        if place == "tabs" {
+            return match layout {
+                Layout::Tabs { mut tabs, .. } => {
+                    tabs.push(moved.to_string());
+                    Layout::Tabs {
+                        tabs,
+                        active: moved.to_string(),
+                    }
+                }
+                unit => Layout::Tabs {
+                    tabs: vec![reading_order(&unit)[0].to_string(), moved.to_string()],
+                    active: moved.to_string(),
+                },
+            };
+        }
+        let new = Child {
+            share: WHOLE / 2,
+            collapsed: false,
+            node: Layout::Pane(moved.to_string()),
+        };
+        let old = Child {
+            share: WHOLE / 2,
+            collapsed: false,
+            node: layout,
+        };
+        let children = if matches!(place, "left" | "above") {
+            vec![new, old]
+        } else {
+            vec![old, new]
+        };
+        return Layout::Split {
+            axis: axis_of(place),
+            children,
+        };
+    }
+    match layout {
+        Layout::Split { axis, children } => {
+            let mut out = Vec::new();
+            for c in children {
+                let beside = place != "tabs"
+                    && is_unit(&c.node, target)
+                    && axis == axis_of(place)
+                    && c.share / 2 >= MIN_SHARE;
+                if beside {
+                    let half = c.share / 2;
+                    let new = Child {
+                        share: half,
+                        collapsed: false,
+                        node: Layout::Pane(moved.to_string()),
+                    };
+                    let old = Child {
+                        share: c.share - half,
+                        ..c
+                    };
+                    if matches!(place, "left" | "above") {
+                        out.extend([new, old]);
+                    } else {
+                        out.extend([old, new]);
+                    }
+                } else if c.collapsed && is_unit(&c.node, target) && place != "tabs" {
+                    // A collapsed unit stays collapsed inside the split it now shares.
+                    let share = c.share;
+                    let inner = Child {
+                        share: WHOLE / 2,
+                        collapsed: true,
+                        node: c.node,
+                    };
+                    let new = Child {
+                        share: WHOLE / 2,
+                        collapsed: false,
+                        node: Layout::Pane(moved.to_string()),
+                    };
+                    let children = if matches!(place, "left" | "above") {
+                        vec![new, inner]
+                    } else {
+                        vec![inner, new]
+                    };
+                    out.push(Child {
+                        share,
+                        collapsed: false,
+                        node: Layout::Split {
+                            axis: axis_of(place),
+                            children,
+                        },
+                    });
+                } else {
+                    out.push(Child {
+                        node: put(c.node, moved, target, place),
+                        ..c
+                    });
+                }
+            }
+            Layout::Split {
+                axis,
+                children: out,
+            }
+        }
+        other => other,
+    }
+}
+
+/// The sentence `#status` says after a move (section 5A "Accessibility of the interaction").
+fn moved_sentence(moved: &str, target: &str, place: &str) -> String {
+    match place {
+        "left" => format!("Moved {moved} to the left of {target}."),
+        "right" => format!("Moved {moved} to the right of {target}."),
+        "above" => format!("Moved {moved} above {target}."),
+        "below" => format!("Moved {moved} below {target}."),
+        _ => format!("Put {moved} in tabs with {target}."),
+    }
+}
+
+/// One `move` edit (section 5A "Rearrange"): `pane` taken out of where it is and put at
+/// `place` (`left`, `right`, `above`, `below` or `tabs`, [`PLACES`]) of `to`. A pane in tabs is
+/// placed beside, or added to, its whole tab group. Beside a pane in a split of the same axis
+/// it takes half that pane's share; otherwise the two make a new split, half each. Into tabs, it
+/// joins the tab group (or makes one of the two) and is its active tab. Out of tabs to an edge,
+/// it leaves its group (a group of one becomes the pane alone). Refused, naming why, when a pane
+/// is not in the workspace, the move is onto itself, or the result breaks a bound. It moves only
+/// keys the atom already holds: no pane, address or selection is added (decision 10).
+pub fn move_pane(
+    workspace: &Workspace,
+    args: &BTreeMap<String, String>,
+) -> Result<(Workspace, String), Error> {
+    closed_args(args, "move", &["pane", "to", "place"])?;
+    let pane = args_get(args, "pane")?;
+    let to = args_get(args, "to")?;
+    let place = args_get(args, "place")?;
+    let label = |k: &str| {
+        workspace
+            .panes
+            .get(k)
+            .map(|p| p.label.clone())
+            .ok_or_else(|| refuse(format!("there is no pane `{k}` in this workspace")))
+    };
+    let (moved, target) = (label(pane)?, label(to)?);
+    if !PLACES.contains(&place) {
+        return Err(refuse(format!(
+            "`{place}` is not a place: left, right, above, below or tabs"
+        )));
+    }
+    if pane == to {
+        return Err(refuse(format!("{moved} cannot be moved beside itself")));
+    }
+    if place == "tabs" {
+        if let Some((tabs, _)) = tab_group(&workspace.layout, to) {
+            if tabs.iter().any(|t| t == pane) {
+                return Err(refuse(format!("{moved} is already in tabs with {target}")));
+            }
+            if tabs.len() >= MAX_TABS {
+                return Err(refuse(format!(
+                    "A tab group holds at most {MAX_TABS} panes"
+                )));
+            }
+        }
+    }
+    let rest = take(workspace.layout.clone(), pane)
+        .ok_or_else(|| refuse("a workspace keeps at least one pane"))?;
+    let layout = put(rest, pane, to, place);
+    if depth_of(&layout) > MAX_DEPTH {
+        return Err(refuse(format!(
+            "A layout nests at most {MAX_DEPTH} deep: {moved} cannot go there"
+        )));
+    }
+    let out = Workspace {
+        layout,
+        ..workspace.clone()
+    };
+    // The bounds and every share, checked as the atom is read back.
+    let out = validate(&atom(&out))?;
+    Ok((out, moved_sentence(&moved, &target, place)))
+}
+
+/// One `reorder` edit (section 5A "Reorder tabs"): pane `pane` moved to position `index` (from
+/// 0) of its tab group, and made its active tab. Refused when the pane is not in tabs or the
+/// position is not in the group.
+pub fn reorder(
+    workspace: &Workspace,
+    args: &BTreeMap<String, String>,
+) -> Result<(Workspace, String), Error> {
+    closed_args(args, "reorder", &["pane", "index"])?;
+    let pane = args_get(args, "pane")?;
+    let index: usize = args_get(args, "index")?
+        .parse()
+        .map_err(|_| refuse("`index` is not a whole number"))?;
+    let label = workspace
+        .panes
+        .get(pane)
+        .map(|p| p.label.clone())
+        .ok_or_else(|| refuse(format!("there is no pane `{pane}` in this workspace")))?;
+    fn walk(layout: &mut Layout, pane: &str, index: usize) -> Option<Result<usize, usize>> {
+        match layout {
+            Layout::Tabs { tabs, active } => {
+                let i = tabs.iter().position(|t| t == pane)?;
+                if index >= tabs.len() {
+                    return Some(Err(tabs.len()));
+                }
+                let key = tabs.remove(i);
+                tabs.insert(index, key);
+                *active = pane.to_string();
+                Some(Ok(tabs.len()))
+            }
+            Layout::Pane(_) => None,
+            Layout::Split { children, .. } => children
+                .iter_mut()
+                .find_map(|c| walk(&mut c.node, pane, index)),
+        }
+    }
+    let mut layout = workspace.layout.clone();
+    let count = match walk(&mut layout, pane, index) {
+        None => return Err(refuse(format!("{label} is not in tabs"))),
+        Some(Err(n)) => {
+            return Err(refuse(format!(
+                "{label}'s tab group has {n} tabs: there is no tab {}",
+                index + 1
+            )))
+        }
+        Some(Ok(n)) => n,
+    };
+    let out = Workspace {
+        layout,
+        ..workspace.clone()
+    };
+    Ok((
+        out,
+        format!("Moved {label} to tab {} of {count}.", index + 1),
+    ))
+}
+
+/// One edit applied (section 5A "The edit"): `op` is `resize` ([`resize`]), `move`
+/// ([`move_pane`]) or `reorder` ([`reorder`]); the result and the one sentence `#status` says
+/// for it (empty for a resize, whose splitter says it). `if-version` is the host's to check.
+/// The result is validated as the atom: a host stores [`atom`] of it as the next version.
+pub fn apply(
+    workspace: &Workspace,
+    args: &BTreeMap<String, String>,
+) -> Result<(Workspace, String), Error> {
+    match args.get("op").map(String::as_str) {
+        Some("resize") => Ok((resize(workspace, args)?, String::new())),
+        Some("move") => move_pane(workspace, args),
+        Some("reorder") => reorder(workspace, args),
+        Some(op) => Err(refuse(format!(
+            "`{op}` is not an edit this workspace makes yet (resize, move or reorder)"
+        ))),
+        None => Err(refuse("the edit has no `op`")),
+    }
+}
+
+/// What an edit Sink answers a form that posted with no script (section 5A): the sentence, in
+/// a status paragraph marked `data-ui-said` (which the shell's script reads, as text), and a
+/// link back to the workspace at the pane that changed.
+pub fn edited_html(workspace: &str, pane: Option<&str>, sentence: &str) -> String {
+    fn esc(s: &str) -> String {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    }
+    let said = if sentence.is_empty() {
+        "Saved."
+    } else {
+        sentence
+    };
+    let at = pane
+        .filter(|k| is_key(k))
+        .map(|k| format!("#pane-{k}"))
+        .unwrap_or_default();
+    format!(
+        "<p role=\"status\" data-ui-said>{}</p><p><a href=\"/workspace/{}{at}\">Back to the workspace</a></p>",
+        esc(said),
+        esc(workspace)
     )
 }

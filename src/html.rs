@@ -104,8 +104,9 @@ pub const HINT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:hint:";
 /// workspace's layout hints (ledger #3950, [`crate::workspace::HINTS`]): a split as a flex row
 /// or column sized by its shares, tabs as a real tab list, and a pane as a section with its
 /// fragment id; and a field whose `input` is `hidden` as the hidden input alone, with no label,
-/// hint or note (ledger #3967), since there is no control for a label to name.
-pub const HINT_TEMPLATES: [crate::Artifact; 9] = [
+/// hint or note (ledger #3967), since there is no control for a label to name; and a pane's
+/// "Pane" menu as a `<details>` of its edit forms (ledger #3952).
+pub const HINT_TEMPLATES: [crate::Artifact; 10] = [
     crate::Artifact {
         iri: "urn:iki:ui:template:hint:choice-radio",
         id: "ui-template-hint",
@@ -168,6 +169,13 @@ pub const HINT_TEMPLATES: [crate::Artifact; 9] = [
         file: "template/hint/field-hidden.html",
         media_type: crate::HTML,
         bytes: include_bytes!("../assets/template/hint/field-hidden.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:group-menu",
+        id: "ui-template-hint",
+        file: "template/hint/group-menu.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/group-menu.html"),
     },
 ];
 
@@ -495,6 +503,7 @@ async fn view(
         "group" if layout(node, crate::workspace::SPLIT).is_some() => "group-split",
         "group" if layout(node, crate::workspace::TABS).is_some() => "group-tabs",
         "group" if layout(node, crate::workspace::PANE).is_some() => "group-pane",
+        "group" if layout(node, crate::workspace::MENU).is_some() => "group-menu",
         "field" if property(node, "input").as_deref() == Some("hidden") => "field-hidden",
         // A read-only form without a Sink resource navigates. Enhancing it with
         // hx-target=this would put the returned page inside the controls alone.
@@ -779,6 +788,23 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                         .filter(|a| ["row", "column"].contains(a))
                         .map(str::to_string),
                     ("group", "pane-key") => Some(pane_key(node)?.to_string()),
+                    // The places a drag may drop on this pane (ledger #3952): only the words of
+                    // [`crate::workspace::PLACES`] enter markup.
+                    ("group", "drop") => Some(
+                        layout(node, crate::workspace::DROP)
+                            .unwrap_or_default()
+                            .split_whitespace()
+                            .filter(|p| crate::workspace::PLACES.contains(p))
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                    ),
+                    ("group", "menu-key") => {
+                        let key = layout(node, crate::workspace::MENU).unwrap_or_default();
+                        if !crate::workspace::is_key(key) {
+                            return Err(Error::Endpoint(format!("`{key}` is not a pane key")));
+                        }
+                        Some(key.to_string())
+                    }
                     ("form", "method") => Some(form_method(node)?),
                     ("scene", "datum-url") => match text_of(node, "datum") {
                         Some(datum) => crate::target::read_descriptor(inv, "html")

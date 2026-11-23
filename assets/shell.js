@@ -4,7 +4,7 @@
 // paint. It touches only <html> while it runs; everything else waits for htmx's events, which
 // bubble to `document`.
 //
-// It does eight things htmx does not (2 includes riding out a restart: a GET that gets a 502,
+// It does nine things htmx does not (2 includes riding out a restart: a GET that gets a 502,
 // 503 or 504 or no answer is sent again, with backoff, before it is shown; see 2a):
 // 1. The theme (D12). `theme=` in the URL wins and is remembered; with none, a remembered choice
 //    replaces the server's `auto`. A chooser is a real <select name="theme" data-ui-theme> in a
@@ -55,6 +55,9 @@
 // 7. Workspace tabs (ledger #3950): the ARIA tabs pattern over a [data-ui-tabs] tab list.
 // 8. Workspace splitters (ledger #3951): a [data-ui-splitter] separator resized by any pointer,
 //    live, and by the keyboard, saved as one `resize` edit through the workspace's "Layout" form.
+// 9. Workspace rearrange (ledger #3952): a pane dragged by its heading onto one of five drop
+//    targets, a tab dragged along its tab list, and the "Pane" menu's forms, each saved as one
+//    `move` or `reorder` edit; the layout then rebuilt around the panes' own elements.
 (function () {
   "use strict";
   var KEY = "ikigai-ui:theme";
@@ -1117,5 +1120,347 @@
   });
   window.addEventListener("pagehide", function () {
     flush(null, true);
+  });
+})();
+
+// 9. Workspace rearrange (ledger #3952, docs/design/workspace.md section 5A "Rearrange"). The
+// html face gives each pane a "Pane" menu (a <details> of edit forms: "Move…", "Put in tabs
+// with…", and on a tab "Move tab earlier" and "Move tab later"), each posting one `move` or
+// `reorder` edit to the workspace's edit Sink with if-version; with no script the Sink answers a
+// page that says what changed and links back. Here:
+// - a pane's heading is its drag handle (Pointer Events with capture, so a finger works too).
+//   Past a few pixels, the pane under the pointer shows one of five drop targets: left, right,
+//   above, below (the outer quarter of the part of it on screen) or into tabs (its middle), outlined and labelled in words ("Right of
+//   Dashboard"), and only those its data-ui-drop offers (the server leaves out what would break
+//   a bound) and never tabs with a pane of its own tab group. Letting go there sends the `move`
+//   edit the "Move…" form would; letting go anywhere else, Escape, or pointercancel sends nothing.
+// - a tab dragged along its tab list shows where it would go; letting go sends one `reorder`.
+//   A press that does not move is a click, as before.
+// - the menu's forms are sent the same way, not by htmx: one edit at a time.
+// - an edit that is saved is shown without composing pane content anew on the screen: the page's
+//   workspace is fetched again, and each pane's EXISTING element (its content, its live
+//   subscription) is moved into the new layout in the DOM, so the reading order and the "Panes"
+//   list match the screen. Only its menu and its drop places are taken from the new markup.
+//   Focus goes to the moved pane's heading, and #status says the Sink's one sentence (read as
+//   text from its answer's [data-ui-said]). An edit that is refused changes nothing on the
+//   screen and says why once in #status.
+(function () {
+  "use strict";
+  if (!window.fetch || !window.DOMParser || !window.URLSearchParams) return;
+  var THRESHOLD = 6;
+  var EDGE = 0.25;
+  var busy = false;
+  var drag = null;
+  var swallowClick = false;
+  function workspaceOf(el) {
+    for (var at = el; at; at = at.parentElement) {
+      if (at.querySelector && at.querySelector(':scope > nav[aria-label="Panes"]')) return at;
+    }
+    return null;
+  }
+  function editForm(root) {
+    return root && root.querySelector("details[data-ui-pane-menu] form");
+  }
+  function paneOf(el) {
+    return el && el.closest && el.closest("section.ui-pane[id^='pane-']");
+  }
+  function keyOf(pane) {
+    return pane.id.slice(5);
+  }
+  function labelOf(pane) {
+    return pane.getAttribute("aria-label") || keyOf(pane);
+  }
+  function say(text, seen) {
+    var area = document.getElementById("status");
+    if (!area) return;
+    area.textContent = "";
+    if (!text) return;
+    var p = document.createElement("p");
+    p.className = seen ? "ui-note" : "ui-sr-only";
+    p.textContent = text;
+    area.appendChild(p);
+  }
+  // The newest if-version any form of this workspace carries (the splitter moves the Layout
+  // form's on as it saves).
+  function version(root) {
+    var n = 0;
+    Array.prototype.forEach.call(root.querySelectorAll('input[name="if-version"]'), function (f) {
+      var v = parseInt(f.value, 10);
+      if (v > n) n = v;
+    });
+    return n;
+  }
+  function heading(key) {
+    var h = document.querySelector("#pane-" + key + " > h2");
+    if (!h) return null;
+    h.setAttribute("tabindex", "-1");
+    return h;
+  }
+  // The page's workspace fetched again, each pane's existing element moved into it.
+  function rebuild(root) {
+    var url = location.href.split("#")[0];
+    return window.fetch(url, { credentials: "same-origin" }).then(function (r) {
+      if (!r.ok) throw new Error("the workspace could not be read again (" + r.status + ")");
+      return r.text();
+    }).then(function (html) {
+      var doc = new DOMParser().parseFromString(html, "text/html");
+      var nav = doc.querySelector('main nav[aria-label="Panes"]');
+      if (!nav) throw new Error("the workspace could not be read again");
+      var fresh = document.importNode(nav.parentElement, true);
+      Array.prototype.forEach.call(root.querySelectorAll("section.ui-pane[id^='pane-']"), function (old) {
+        var next = fresh.querySelector("#" + old.id);
+        if (!next) return;
+        var menu = old.querySelector(":scope > details[data-ui-pane-menu]");
+        var nextMenu = next.querySelector(":scope > details[data-ui-pane-menu]");
+        if (menu && nextMenu) menu.replaceWith(nextMenu);
+        else if (nextMenu) old.insertBefore(nextMenu, old.children[2] || null);
+        old.setAttribute("data-ui-drop", next.getAttribute("data-ui-drop") || "");
+        old.removeAttribute("data-ui-dragged");
+        next.replaceWith(old);
+      });
+      root.replaceWith(fresh);
+      if (window.htmx && window.htmx.process) window.htmx.process(fresh);
+      fresh.dispatchEvent(new CustomEvent("htmx:load", { bubbles: true }));
+      return fresh;
+    });
+  }
+  // One edit, then the layout rebuilt, focus on `key`'s heading and the one sentence said.
+  function send(root, fields, key) {
+    var form = editForm(root);
+    if (busy || !form) return;
+    busy = true;
+    var body = new URLSearchParams();
+    Object.keys(fields).forEach(function (k) {
+      body.set(k, fields[k]);
+    });
+    body.set("if-version", String(version(root)));
+    var said = "";
+    window.fetch(form.action, {
+      method: "POST",
+      body: body,
+      credentials: "same-origin",
+      headers: { "HX-Request": "true" },
+    }).then(function (r) {
+      return r.text().then(function (t) {
+        if (!r.ok) throw new Error(t || "the server answered " + r.status);
+        var answer = new DOMParser().parseFromString(t, "text/html").querySelector("[data-ui-said]");
+        said = answer ? answer.textContent : "";
+        return rebuild(root);
+      });
+    }).then(function () {
+      var h = heading(key);
+      if (h) h.focus({ preventScroll: false });
+      say(said, false);
+    }).catch(function (e) {
+      say("The layout was not changed: " + (e && e.message ? e.message : "no answer") + ".", true);
+    }).then(function () {
+      busy = false;
+    });
+  }
+  function fieldsOf(form) {
+    var out = {};
+    new FormData(form).forEach(function (v, k) {
+      out[k] = String(v);
+    });
+    return out;
+  }
+  // The menu's forms: sent here, not by htmx (capture, before htmx hears the submit).
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    var menu = form && form.closest && form.closest("details[data-ui-pane-menu]");
+    var root = menu && workspaceOf(menu);
+    if (!root) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var fields = fieldsOf(form);
+    menu.open = false;
+    send(root, fields, fields.pane || menu.getAttribute("data-ui-pane-menu"));
+  }, true);
+  // Escape in an open menu closes it and puts focus back on its summary.
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    if (drag) {
+      e.preventDefault();
+      return cancel();
+    }
+    var menu = e.target.closest && e.target.closest("details[data-ui-pane-menu][open]");
+    if (!menu) return;
+    e.preventDefault();
+    menu.open = false;
+    menu.querySelector("summary").focus();
+  });
+  function off(el) {
+    return !!(el.closest && el.closest("[data-ui-write-off]"));
+  }
+  function marker(cls) {
+    var m = document.createElement("div");
+    m.className = cls;
+    m.setAttribute("aria-hidden", "true");
+    m.hidden = true;
+    document.body.appendChild(m);
+    return m;
+  }
+  // The drop target under (x, y), or null.
+  function target(x, y) {
+    var under = document.elementFromPoint(x, y);
+    var pane = paneOf(under);
+    if (!pane || pane === drag.pane || workspaceOf(pane) !== drag.root) return null;
+    // The part of the pane on screen: a pane taller than the viewport has its edges there.
+    var b = pane.getBoundingClientRect();
+    var r = { left: Math.max(b.left, 0), top: Math.max(b.top, 0) };
+    r.width = Math.min(b.right, window.innerWidth) - r.left;
+    r.height = Math.min(b.bottom, window.innerHeight) - r.top;
+    if (r.width <= 0 || r.height <= 0) return null;
+    var fx = (x - r.left) / r.width;
+    var fy = (y - r.top) / r.height;
+    var near = [["left", fx], ["right", 1 - fx], ["above", fy], ["below", 1 - fy]].sort(function (a, b) {
+      return a[1] - b[1];
+    })[0];
+    var place = near[1] < EDGE ? near[0] : "tabs";
+    var offered = (pane.getAttribute("data-ui-drop") || "").split(/\s+/);
+    if (offered.indexOf(place) < 0) return null;
+    var group = drag.pane.closest("[data-ui-tabs]");
+    if (place === "tabs" && group && group.contains(pane)) return null;
+    var box = { left: r.left, top: r.top, width: r.width, height: r.height };
+    if (place === "left" || place === "right") box.width = r.width / 2;
+    if (place === "right") box.left = r.left + r.width / 2;
+    if (place === "above" || place === "below") box.height = r.height / 2;
+    if (place === "below") box.top = r.top + r.height / 2;
+    var name = labelOf(pane);
+    var words = { left: "Left of ", right: "Right of ", above: "Above ", below: "Below ", tabs: "Into tabs with " }[place] + name;
+    return { key: keyOf(pane), place: place, box: box, words: words };
+  }
+  function show(t) {
+    var m = drag.marker;
+    if (!t) {
+      m.hidden = true;
+      return;
+    }
+    m.hidden = false;
+    m.style.left = t.box.left + "px";
+    m.style.top = t.box.top + "px";
+    m.style.width = t.box.width + "px";
+    m.style.height = t.box.height + "px";
+    if (!m.firstChild) m.appendChild(document.createElement("span"));
+    m.firstChild.textContent = t.words;
+  }
+  function tabs(list) {
+    return Array.prototype.slice.call(list.querySelectorAll(':scope > [role="tab"]'));
+  }
+  function tabIndex(x) {
+    var others = tabs(drag.list).filter(function (t) {
+      return t !== drag.handle;
+    });
+    var i = 0;
+    others.forEach(function (t) {
+      var r = t.getBoundingClientRect();
+      if (x > r.left + r.width / 2) i++;
+    });
+    var at = others[i] || others[others.length - 1];
+    var r = at.getBoundingClientRect();
+    return { index: i, x: others[i] ? r.left - 2 : r.right + 2, top: r.top, height: r.height };
+  }
+  function cleanup() {
+    if (!drag) return;
+    var d = drag;
+    drag = null;
+    if (d.marker) d.marker.remove();
+    if (d.pane) d.pane.removeAttribute("data-ui-dragged");
+    if (d.handle.hasPointerCapture && d.handle.hasPointerCapture(d.pointer)) d.handle.releasePointerCapture(d.pointer);
+  }
+  function cancel() {
+    if (drag && drag.started) swallowClick = drag.kind === "tab";
+    cleanup();
+  }
+  document.addEventListener("pointerdown", function (e) {
+    if (drag || busy || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+    var handle = e.target.closest && e.target.closest("[data-ui-handle]");
+    var root = handle && workspaceOf(handle);
+    if (!root || !editForm(root) || off(handle)) return;
+    var kind = handle.getAttribute("role") === "tab" ? "tab" : "pane";
+    var pane = kind === "tab" ? document.getElementById("pane-" + handle.id.slice(4)) : paneOf(handle);
+    if (!pane) return;
+    // No text selection, and no native drag of a tab's link, which would cancel the pointer.
+    e.preventDefault();
+    drag = {
+      kind: kind,
+      root: root,
+      handle: handle,
+      pane: pane,
+      list: handle.parentElement,
+      pointer: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      started: false,
+      at: null,
+    };
+    handle.setPointerCapture(e.pointerId);
+  });
+  document.addEventListener("pointermove", function (e) {
+    if (!drag || e.pointerId !== drag.pointer) return;
+    if (!drag.started) {
+      if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < THRESHOLD) return;
+      drag.started = true;
+      drag.marker = marker(drag.kind === "tab" ? "ui-tab-drop" : "ui-drop");
+      if (drag.kind === "pane") drag.pane.setAttribute("data-ui-dragged", "");
+    }
+    e.preventDefault();
+    if (drag.kind === "tab") {
+      var t = tabIndex(e.clientX);
+      drag.at = t;
+      var m = drag.marker;
+      m.hidden = false;
+      m.style.left = t.x + "px";
+      m.style.top = t.top + "px";
+      m.style.height = t.height + "px";
+      return;
+    }
+    drag.at = target(e.clientX, e.clientY);
+    show(drag.at);
+  });
+  document.addEventListener("pointerup", function (e) {
+    if (!drag || e.pointerId !== drag.pointer) return;
+    var d = drag;
+    if (!d.started) {
+      cleanup();
+      return;
+    }
+    if (d.kind === "tab") swallowClick = true;
+    cleanup();
+    var key = keyOf(d.pane);
+    if (d.kind === "tab") {
+      var now = tabs(d.list).indexOf(d.handle);
+      if (d.at && d.at.index !== now) send(d.root, { op: "reorder", pane: key, index: String(d.at.index) }, key);
+      return;
+    }
+    if (d.at) send(d.root, { op: "move", pane: key, to: d.at.key, place: d.at.place }, key);
+  });
+  document.addEventListener("pointercancel", function (e) {
+    if (drag && e.pointerId === drag.pointer) cancel();
+  });
+  document.addEventListener("dragstart", function (e) {
+    if (e.target.closest && e.target.closest("[data-ui-handle]")) e.preventDefault();
+  });
+  // A tab dragged is not also followed as a link.
+  document.addEventListener("click", function (e) {
+    if (!swallowClick) return;
+    swallowClick = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+  function ready(root) {
+    var all = root.querySelectorAll ? root.querySelectorAll("section.ui-pane[id^='pane-'] > h2, [data-ui-tabs] [role='tab']") : [];
+    Array.prototype.forEach.call(all, function (h) {
+      var ws = workspaceOf(h);
+      if (!ws || !editForm(ws)) return;
+      h.setAttribute("data-ui-handle", "");
+      h.setAttribute("draggable", "false");
+    });
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    ready(document);
+  });
+  document.addEventListener("htmx:load", function (e) {
+    ready(e.target);
   });
 })();
