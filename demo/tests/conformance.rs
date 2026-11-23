@@ -56,7 +56,6 @@ fn conforms() {
         .pure("test-action-probe")
         .pure("ui-lens-operations")
         .pure("test-workspace-atom")
-        .pure("uidemo-workspace")
         .fixture(
             Fixture::new("ui-page-workspace-uidemo", Verb::Source)
                 .binding("iri", ikigai_ui_demo::WORKSPACE),
@@ -189,6 +188,16 @@ fn conforms() {
             "content",
             "name=Ada&email=ada%40example.org&topic=question&message=Hi",
         ))
+        // The workspace's Sinks (ledger #3952): a revert to version 1 is always accepted; an
+        // edit is made against the latest version, which each accepted edit moves on.
+        .fixture(Fixture::new("uidemo-workspace-revert", Verb::Sink).arg("content", "to-version=1"))
+        .opt_out_check(
+            "uidemo-workspace-edit",
+            Check::Resolves,
+            "An edit names the version it was made against (if-version) and each accepted edit \
+             moves the latest on, so no fixed body is accepted twice. demo/tests/door.rs posts \
+             real edits through the door and reads every version back.",
+        )
         .fixture(Fixture::new("ui-page-uidemo", Verb::Source).binding("name", "gallery"))
         .pure("uidemo-header")
         .pure("uidemo-title")

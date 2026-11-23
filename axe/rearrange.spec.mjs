@@ -73,6 +73,11 @@ async function orders(page) {
   }));
 }
 
+// The middle of the part of a box on screen (900 px tall).
+function mid(box) {
+  return (Math.max(box.y, 0) + Math.min(box.y + box.height, 900)) / 2;
+}
+
 async function status(page) {
   return page.evaluate(() => [...document.querySelectorAll("#status p")].map((p) => p.textContent));
 }
@@ -87,13 +92,16 @@ async function axe(page, what) {
   await page.emulateMedia(MODES[0].media);
 }
 
+// An edit is saved, then the page's workspace read again (the demo's debug build composes
+// every pane's lens for it, which takes seconds on a CI runner).
 async function waitSettled(page) {
-  await expect(page.locator("#status p")).toHaveCount(1);
+  await expect(page.locator("#status p")).toHaveCount(1, { timeout: 30000 });
 }
 
 let menuLayout = null;
 let tabLayout = null;
 
+test.setTimeout(120000);
 test.beforeEach(async ({ request }) => revert(request));
 test.afterAll(async ({ request }) => revert(request));
 
@@ -140,7 +148,9 @@ test("the same move by pointer: a labelled drop target, the same version", async
   const target = await page.locator("#pane-dashboard").boundingBox();
   await page.mouse.move(handle.x + 20, handle.y + handle.height / 2);
   await page.mouse.down();
-  await page.mouse.move(target.x + target.width / 2, target.y + target.height - 20, { steps: 8 });
+  // Dashboard's lower edge on screen: it is taller than the viewport.
+  const bottom = Math.min(target.y + target.height, 900);
+  await page.mouse.move(target.x + target.width / 2, bottom - 20, { steps: 8 });
   const drop = page.locator(".ui-drop:not([hidden])");
   await expect(drop).toHaveText("Below Dashboard");
   await expect(page.locator("#pane-list")).toHaveAttribute("data-ui-dragged", "");
@@ -179,7 +189,7 @@ test("a drag let go off any target, or ended with Escape, sends nothing", async 
   // Over a target, then Escape.
   await page.mouse.move(handle.x + 20, handle.y + handle.height / 2);
   await page.mouse.down();
-  await page.mouse.move(target.x + 10, target.y + target.height / 2, { steps: 6 });
+  await page.mouse.move(target.x + 10, mid(target), { steps: 6 });
   await expect(page.locator(".ui-drop:not([hidden])")).toHaveText("Left of Dashboard");
   await page.keyboard.press("Escape");
   await expect(page.locator(".ui-drop")).toHaveCount(0);
@@ -199,12 +209,12 @@ test("a place the pane does not offer (a bound) is not shown and not sent", asyn
   const target = await page.locator("#pane-dashboard").boundingBox();
   await page.mouse.move(handle.x + 20, handle.y + handle.height / 2);
   await page.mouse.down();
-  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 8 });
+  await page.mouse.move(target.x + target.width / 2, mid(target), { steps: 8 });
   await expect(page.locator(".ui-drop:not([hidden])")).toHaveCount(0);
   // Its edges still are.
-  await page.mouse.move(target.x + target.width - 10, target.y + target.height / 2, { steps: 4 });
+  await page.mouse.move(target.x + target.width - 10, mid(target), { steps: 4 });
   await expect(page.locator(".ui-drop:not([hidden])")).toHaveText("Right of Dashboard");
-  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 4 });
+  await page.mouse.move(target.x + target.width / 2, mid(target), { steps: 4 });
   await page.mouse.up();
   await page.waitForTimeout(300);
   expect(edits).toEqual([]);

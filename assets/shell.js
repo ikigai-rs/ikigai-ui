@@ -1130,7 +1130,7 @@
 // page that says what changed and links back. Here:
 // - a pane's heading is its drag handle (Pointer Events with capture, so a finger works too).
 //   Past a few pixels, the pane under the pointer shows one of five drop targets: left, right,
-//   above, below (its edges) or into tabs (its middle), outlined and labelled in words ("Right of
+//   above, below (the outer quarter of the part of it on screen) or into tabs (its middle), outlined and labelled in words ("Right of
 //   Dashboard"), and only those its data-ui-drop offers (the server leaves out what would break
 //   a bound) and never tabs with a pane of its own tab group. Letting go there sends the `move`
 //   edit the "Move…" form would; letting go anywhere else, Escape, or pointercancel sends nothing.
@@ -1305,8 +1305,12 @@
     var under = document.elementFromPoint(x, y);
     var pane = paneOf(under);
     if (!pane || pane === drag.pane || workspaceOf(pane) !== drag.root) return null;
-    var r = pane.getBoundingClientRect();
-    if (!r.width || !r.height) return null;
+    // The part of the pane on screen: a pane taller than the viewport has its edges there.
+    var b = pane.getBoundingClientRect();
+    var r = { left: Math.max(b.left, 0), top: Math.max(b.top, 0) };
+    r.width = Math.min(b.right, window.innerWidth) - r.left;
+    r.height = Math.min(b.bottom, window.innerHeight) - r.top;
+    if (r.width <= 0 || r.height <= 0) return null;
     var fx = (x - r.left) / r.width;
     var fy = (y - r.top) / r.height;
     var near = [["left", fx], ["right", 1 - fx], ["above", fy], ["below", 1 - fy]].sort(function (a, b) {
