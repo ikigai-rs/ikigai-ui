@@ -486,7 +486,7 @@ has no terms yet for these fields:
 
 ## The test kit
 
-`ikigai-ui = { version = "0.5", features = ["testkit"] }` as a dev-dependency gives a UI repo:
+`ikigai-ui = { version = "0.6", features = ["testkit"] }` as a dev-dependency gives a UI repo:
 
 - `snapshot`: pages held to files in the repo (written once, never re-blessed by a switch);
   `snapshot::assert_snapshots` checks every page, writes all missing files, then fails once

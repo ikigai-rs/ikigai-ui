@@ -126,10 +126,13 @@ async fn write(inv: &Invocation<'_>, lens: &str, action: &str) -> Result<Represe
     }
     let a = definition(inv, lens, action).await?;
     if !writable(inv, &a.graph).await? {
-        return Err(Error::Denied(format!(
-            "{action}: writing {} is not offered under your capability",
-            a.graph
-        )));
+        return Err(Error::Denied(
+            format!(
+                "{action}: writing {} is not offered under your capability",
+                a.graph
+            )
+            .into(),
+        ));
     }
     let selected = graph_term(inv.inline_str("selected")?)?;
     let target = graph_term(inv.inline_str("target")?)?;

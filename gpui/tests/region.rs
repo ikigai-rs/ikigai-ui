@@ -67,7 +67,7 @@ fn datum(reached: Arc<AtomicU32>) -> FnEndpoint {
     FnEndpoint::new("demo-scene", move |inv: &Invocation<'_>| {
         reached.fetch_add(1, Ordering::SeqCst);
         if !inv.capability.allows(SCOPE) {
-            return Err(Error::Denied(format!("{SCOPE} is needed")));
+            return Err(Error::Denied(format!("{SCOPE} is needed").into()));
         }
         Ok(Representation::new(
             ReprType::new(ikigai_ui::scene::SCENE_MEDIA_TYPE),
@@ -97,7 +97,7 @@ fn card_field(reached: Arc<AtomicU32>) -> FnEndpoint {
     FnEndpoint::new("demo-card-field", move |inv: &Invocation<'_>| {
         reached.fetch_add(1, Ordering::SeqCst);
         if !inv.capability.allows(SCOPE) {
-            return Err(Error::Denied(format!("{SCOPE} is needed")));
+            return Err(Error::Denied(format!("{SCOPE} is needed").into()));
         }
         Ok(Representation::new(ReprType::new(model::MEDIA_TYPE), bytes.clone()).cacheable())
     })

@@ -36,7 +36,7 @@ fn json(id: &'static str, body: serde_json::Value, sink: bool) -> FnEndpoint {
     }
     FnEndpoint::new(id, move |inv: &Invocation<'_>| {
         if id == "card" && !inv.capability.allows(CARD) {
-            return Err(Error::Denied(format!("{CARD} is needed")));
+            return Err(Error::Denied(format!("{CARD} is needed").into()));
         }
         Ok(Representation::new(ReprType::new("application/json"), bytes.clone()).cacheable())
     })

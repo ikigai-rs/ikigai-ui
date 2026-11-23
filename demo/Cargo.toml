@@ -13,33 +13,33 @@ publish = false
 # The library this repo publishes, by path: the one copy in the build.
 ikigai-ui = { path = ".." }
 # The same floors the library holds.
-ikigai-core = "0.3.0"
-ikigai-fn = "0.10.0"
+ikigai-core = "0.4.0"
+ikigai-fn = "0.12.0"
 serde_json = "1.0"
 # The Meta renderer, so a contract reads as `application/json` and the form is generated from it.
-ikigai-vocab = "0.3"
+ikigai-vocab = "0.4"
 # Lenses (ledger #3518): `urn:sparql:select`/`construct` over the demo's own data, so the
-# example lenses answer. 0.5.0 is the release on ikigai-core 0.3.0.
-ikigai-sparql = "0.5.0"
+# example lenses answer. 0.6.0 is the release on ikigai-core 0.4.0.
+ikigai-sparql = "0.6.0"
 # The door is a socket server: not on wasm32, where CI's wasm32 lib job lints the workspace
 # (the service and the site still build there).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# The inbound-HTTP door (ecosystem's, not a server written here). 0.5.0 is the current
-# door release; a caret on it is <0.6.0. Its ikigai dependencies are ikigai-core 0.3,
-# ikigai-fn 0.10 and ikigai-http 0.6: one shared core, no second ikigai-ui or cli package.
-ikigai-web = "0.5.0"
+# The inbound-HTTP door (ecosystem's, not a server written here). 0.6.0 is the door's
+# release on ikigai-core 0.4; a caret on it is <0.7.0. Its ikigai dependencies are ikigai-core
+# 0.4.2, ikigai-fn 0.12 and ikigai-http 0.8: one shared core, no second ikigai-ui or cli package.
+ikigai-web = "0.6.0"
 tokio = { version = "1", features = ["rt", "net", "macros"] }
 # `DynamicSpace::refresh`, which binds a prefix table read through the kernel (ledger #3365).
-ikigai-core = { version = "0.3.0", features = ["declare"] }
+ikigai-core = { version = "0.4.0", features = ["declare"] }
 # Lenses 4 (ledger #3521): `shacl-violations` and `asserted-vs-derived` join
 # `urn:shacl:validate`'s report (the subset validator, no rudof) and `urn:reason:inferred`'s
 # entailments. Native only: the wasm32 lib job lints the
-# workspace, and the reasoner is not held to wasm32 here. The releases on ikigai-core 0.3.0.
-ikigai-shacl = { version = "0.6.0", default-features = false }
-ikigai-reason = "0.5.0"
+# workspace, and the reasoner is not held to wasm32 here. The releases on ikigai-core 0.4.
+ikigai-shacl = { version = "0.7.0", default-features = false }
+ikigai-reason = "0.6.0"
 
 [dev-dependencies]
 ikigai-ui = { path = "..", features = ["testkit"] }
-ikigai-conformance = "0.14.0"
+ikigai-conformance = "0.15.0"
 futures = "0.3"
 tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }

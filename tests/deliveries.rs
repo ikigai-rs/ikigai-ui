@@ -141,7 +141,7 @@ fn a_write_to_the_directory_recomputes_the_artifact_and_the_stylesheet() {
 #[test]
 fn a_refusal_from_the_directory_is_not_a_fallback() {
     let refusing = FnEndpoint::new("refusing-dir", |_: &Invocation<'_>| {
-        Err(Error::Denied("needs urn:cap:example:ui-dir".to_string()))
+        Err(Error::Denied("needs urn:cap:example:ui-dir".into()))
     })
     .with_description(
         Description::new("refusing-dir")
