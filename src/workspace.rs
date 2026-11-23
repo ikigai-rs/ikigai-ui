@@ -1549,6 +1549,9 @@ fn tab_group<'a>(layout: &'a Layout, key: &str) -> Option<(&'a [String], usize)>
     }
 }
 
+/// A unit, its depth (the root is 1), and the axis and share it has in the split around it.
+type Unit<'a> = (&'a Layout, usize, Option<(Axis, u32)>);
+
 /// The unit holding `key`, its depth (the root is 1), and the axis and share it has in the split
 /// around it, if any.
 fn unit_of<'a>(
@@ -1556,7 +1559,7 @@ fn unit_of<'a>(
     key: &str,
     depth: usize,
     around: Option<(Axis, u32)>,
-) -> Option<(&'a Layout, usize, Option<(Axis, u32)>)> {
+) -> Option<Unit<'a>> {
     if is_unit(layout, key) {
         return Some((layout, depth, around));
     }
@@ -1592,7 +1595,7 @@ pub fn offered(workspace: &Workspace, target: &str) -> Vec<&'static str> {
             "tabs" => !matches!(unit, Layout::Tabs { tabs, .. } if tabs.len() >= MAX_TABS),
             edge => {
                 let beside = matches!(around, Some((a, share)) if a == axis_of(edge) && share / 2 >= MIN_SHARE);
-                beside || depth + 1 <= MAX_DEPTH
+                beside || depth < MAX_DEPTH
             }
         })
         .collect()
