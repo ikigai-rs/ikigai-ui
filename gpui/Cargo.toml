@@ -25,7 +25,7 @@ x11 = ["gpui/x11", "gpui/font-kit"]
 
 [dependencies]
 ikigai-ui = { path = ".." }
-ikigai-core = "0.3.0"
+ikigai-core = "0.4.0"
 serde_json = "1"
 
 # Resource work is independent of the window platform.
@@ -40,7 +40,7 @@ unicode-segmentation = "1.12"
 # The demo's HTML door, beside its windows: one kernel, one store.
 ikigai-ui-demo = { path = "../demo" }
 tokio = { version = "1", features = ["rt", "net"] }
-ikigai-web = "0.5.0"
+ikigai-web = "0.6.0"
 # The `scene` feature's offscreen renderer (ledger #3516): a second GPU device beside GPUI's own.
 # Each backend is compiled only on its own platform (Metal on macOS, DX12 on Windows).
 wgpu = { version = "25", optional = true, default-features = false, features = ["metal", "vulkan", "dx12", "wgsl"] }

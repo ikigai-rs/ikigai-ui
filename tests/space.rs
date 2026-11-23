@@ -39,7 +39,7 @@ fn card(reached: Arc<AtomicU32>) -> FnEndpoint {
     FnEndpoint::new("demo-card", move |inv: &Invocation<'_>| {
         reached.fetch_add(1, Ordering::SeqCst);
         if !inv.capability.allows(SCOPE) {
-            return Err(Error::Denied(format!("{SCOPE} is needed")));
+            return Err(Error::Denied(format!("{SCOPE} is needed").into()));
         }
         Ok(Representation::new(ReprType::new(model::MEDIA_TYPE), bytes.clone()).cacheable())
     })
@@ -785,7 +785,7 @@ fn a_generated_view_inside_a_region_reads_no_linked_resource_the_region_does_not
         FnEndpoint::new(id, move |inv: &Invocation<'_>| {
             if let Some(g) = gate {
                 if !inv.capability.allows(g) {
-                    return Err(Error::Denied(format!("{g} is needed")));
+                    return Err(Error::Denied(format!("{g} is needed").into()));
                 }
             }
             Ok(Representation::new(ReprType::new("application/json"), bytes.clone()).cacheable())

@@ -39,7 +39,7 @@ fn card() -> FnEndpoint {
     .unwrap();
     FnEndpoint::new("demo-card", move |inv: &Invocation<'_>| {
         if !inv.capability.allows(SCOPE) {
-            return Err(Error::Denied(format!("{SCOPE} is needed")));
+            return Err(Error::Denied(format!("{SCOPE} is needed").into()));
         }
         Ok(Representation::new(ReprType::new(model::MEDIA_TYPE), bytes.clone()).cacheable())
     })

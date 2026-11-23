@@ -69,8 +69,8 @@ use std::sync::Arc;
 
 use ikigai_core::{
     ArgRef, ArgSpec, AsyncFnEndpoint, Bindings, Description, DynamicSpace, Endpoint, EndpointSpace,
-    Error, FnEndpoint, Grammar, Invocation, InvokeFuture, Iri, ReprType, Representation, Request,
-    Resolution, Resolved, Scope, Space, SpaceEntry, Topology, Verb,
+    Error, Expiry, FnEndpoint, Grammar, Invocation, InvokeFuture, Iri, ReprType, Representation,
+    Request, Resolution, Resolved, Scope, Space, SpaceEntry, Topology, Verb,
 };
 
 use crate::model::{self, Children, Node, Type, Value};
@@ -703,6 +703,12 @@ impl Build<'_> {
 /// Compile `outline` (the source of `screen`) in `inv`: check its prefix table is in force, read
 /// every reference once through the kernel (a referenced screen with `open` and this screen),
 /// and build and validate the model.
+///
+/// A chain of screens nests this future once per level (a screen, its compile, the screen it
+/// references), [`MAX_DEPTH`] deep. In a debug build every temporary of an async body takes its
+/// own stack slot in that body's frame, so the synchronous work is out of line
+/// (`#[inline(never)]` helpers below) and this body keeps only what crosses an await: a chain
+/// at the bound fits a 2 MiB thread in a debug build.
 pub async fn compile(
     inv: &Invocation<'_>,
     screen: &str,
@@ -710,38 +716,75 @@ pub async fn compile(
     open: &[String],
 ) -> Result<Node, Error> {
     if let Some((line, table)) = &outline.prefixes {
-        let door = in_force_iri(table).ok_or_else(|| {
-            at_unit(
-                screen,
-                outline.unit,
-                *line,
-                format!("`{table}` is not a prefix table's name (urn: and segments of [a-z0-9-])"),
-            )
-        })?;
+        let door = in_force_door(screen, outline, *line, table)?;
         // Ask, don't look (ledger #3870): the corridor's own door resolves only where the
         // table's space is in the scope, and answers cacheably (see `PrefixSpace`). In force
         // only when the answer's body is `true`: an Exists may answer Ok with `false` (a host's
         // fallback that answers Exists for every name, say). Unresolved is not in force too;
         // any other error is the caller's.
-        let door = Iri::parse(door).expect("a space name plus `:in-force`");
-        let in_force = match inv.issue(Request::new(Verb::Exists, door)).await {
-            Ok(answer) => answer.bytes.trim_ascii() == b"true",
-            Err(Error::Unresolved(_)) => false,
-            Err(other) => return Err(other),
-        };
-        if !in_force {
-            return Err(at_unit(
-                screen,
-                outline.unit,
-                *line,
-                format!(
-                    "the prefix table `{table}` is not in force: the host injects its space \
-                     (ikigai_ui::screen::prefix_space) as a corridor with Kernel::issue_in"
-                ),
-            ));
-        }
+        let answer = inv.issue(Request::new(Verb::Exists, door)).await;
+        in_force(screen, outline, *line, table, answer)?;
     }
     let this = screen.strip_prefix(SCREEN_PREFIX).unwrap_or(screen);
+    let mut references: BTreeMap<String, (Node, usize)> = BTreeMap::new();
+    for (line, name) in wanted(screen, outline)? {
+        if references.contains_key(name) {
+            continue;
+        }
+        let request = reference_request(screen, outline, this, open, &references, line, name)?;
+        let answer = inv.issue(request).await;
+        let node = referenced(screen, outline, line, name, answer)?;
+        let n = size(&node);
+        references.insert(name.to_string(), (node, n));
+    }
+    built(screen, outline, &references)
+}
+
+/// [`compile`]'s `:in-force` door for the prefix table named on `line`.
+#[inline(never)]
+fn in_force_door(screen: &str, outline: &Outline, line: usize, table: &str) -> Result<Iri, Error> {
+    let door = in_force_iri(table).ok_or_else(|| {
+        at_unit(
+            screen,
+            outline.unit,
+            line,
+            format!("`{table}` is not a prefix table's name (urn: and segments of [a-z0-9-])"),
+        )
+    })?;
+    Ok(Iri::parse(door).expect("a space name plus `:in-force`"))
+}
+
+/// [`compile`]'s reading of the `:in-force` door's answer.
+#[inline(never)]
+fn in_force(
+    screen: &str,
+    outline: &Outline,
+    line: usize,
+    table: &str,
+    answer: Result<Representation, Error>,
+) -> Result<(), Error> {
+    let in_force = match answer {
+        Ok(answer) => answer.bytes.trim_ascii() == b"true",
+        Err(Error::Unresolved(_)) => false,
+        Err(other) => return Err(other),
+    };
+    if in_force {
+        return Ok(());
+    }
+    Err(at_unit(
+        screen,
+        outline.unit,
+        line,
+        format!(
+            "the prefix table `{table}` is not in force: the host injects its space \
+             (ikigai_ui::screen::prefix_space) as a corridor with Kernel::issue_in"
+        ),
+    ))
+}
+
+/// Every reference `outline` makes, with its line, in line order; refused inside a region.
+#[inline(never)]
+fn wanted<'o>(screen: &str, outline: &'o Outline) -> Result<Vec<(usize, &'o str)>, Error> {
     let mut wanted: Vec<(usize, &str)> = Vec::new();
     let mut stack = vec![(&outline.root, false)];
     while let Some((line, in_region)) = stack.pop() {
@@ -766,72 +809,100 @@ pub async fn compile(
         stack.extend(line.replacement.as_deref().map(|r| (r, in_region)));
     }
     wanted.sort();
-    let mut references: BTreeMap<String, (Node, usize)> = BTreeMap::new();
-    for (line, name) in wanted {
-        if references.contains_key(name) {
-            continue;
-        }
-        if references.len() >= MAX_REFERENCES {
+    Ok(wanted)
+}
+
+/// The request that reads the reference `name` on `line`: a referenced screen carries the
+/// screens open above it, and a cycle or a chain past [`MAX_DEPTH`] is refused here.
+#[inline(never)]
+fn reference_request(
+    screen: &str,
+    outline: &Outline,
+    this: &str,
+    open: &[String],
+    references: &BTreeMap<String, (Node, usize)>,
+    line: usize,
+    name: &str,
+) -> Result<Request, Error> {
+    if references.len() >= MAX_REFERENCES {
+        return Err(at_unit(
+            screen,
+            outline.unit,
+            line,
+            format!("past {MAX_REFERENCES} references"),
+        ));
+    }
+    let mut request = Request::new(
+        Verb::Source,
+        Iri::parse(name).map_err(|e| at_unit(screen, outline.unit, line, e))?,
+    );
+    if let Some(other) = screen_of(name) {
+        if other == this || open.iter().any(|o| o == other) {
+            let chain: Vec<&str> = open
+                .iter()
+                .map(String::as_str)
+                .chain([this, other])
+                .collect();
             return Err(at_unit(
                 screen,
                 outline.unit,
                 line,
-                format!("past {MAX_REFERENCES} references"),
+                format!("a cycle of screens: {}", chain.join(" → ")),
             ));
         }
-        let mut request = Request::new(
-            Verb::Source,
-            Iri::parse(name).map_err(|e| at_unit(screen, outline.unit, line, e))?,
-        );
-        if let Some(other) = screen_of(name) {
-            if other == this || open.iter().any(|o| o == other) {
-                let chain: Vec<&str> = open
-                    .iter()
-                    .map(String::as_str)
-                    .chain([this, other])
-                    .collect();
-                return Err(at_unit(
-                    screen,
-                    outline.unit,
-                    line,
-                    format!("a cycle of screens: {}", chain.join(" → ")),
-                ));
-            }
-            if open.len() + 1 >= MAX_DEPTH {
-                return Err(at_unit(
-                    screen,
-                    outline.unit,
-                    line,
-                    format!("screens nested past the bound of {MAX_DEPTH}"),
-                ));
-            }
-            let chain: Vec<&str> = open.iter().map(String::as_str).chain([this]).collect();
-            request = request.with_arg("open", ArgRef::Inline(chain.join(" ").into_bytes()));
-        }
-        let rep = inv.issue(request).await.map_err(|e| match e {
-            Error::InvalidArgument { name: n, detail } if n == "screen" => {
-                at_unit(screen, outline.unit, line, format!("`{name}`: {detail}"))
-            }
-            other => other,
-        })?;
-        let node = model::parse(&rep.bytes).map_err(|e| {
-            at_unit(
+        if open.len() + 1 >= MAX_DEPTH {
+            return Err(at_unit(
                 screen,
                 outline.unit,
                 line,
-                format!(
-                    "`{name}` does not answer a UI node (an element is written by its full \
-                     IRI): {e}"
-                ),
-            )
-        })?;
-        let n = size(&node);
-        references.insert(name.to_string(), (node, n));
+                format!("screens nested past the bound of {MAX_DEPTH}"),
+            ));
+        }
+        let chain: Vec<&str> = open.iter().map(String::as_str).chain([this]).collect();
+        request = request.with_arg("open", ArgRef::Inline(chain.join(" ").into_bytes()));
     }
+    Ok(request)
+}
+
+/// The UI node the reference `name` on `line` answered.
+#[inline(never)]
+fn referenced(
+    screen: &str,
+    outline: &Outline,
+    line: usize,
+    name: &str,
+    answer: Result<Representation, Error>,
+) -> Result<Node, Error> {
+    let rep = answer.map_err(|e| match e {
+        Error::InvalidArgument { name: n, detail } if n == "screen" => {
+            at_unit(screen, outline.unit, line, format!("`{name}`: {detail}"))
+        }
+        other => other,
+    })?;
+    model::parse(&rep.bytes).map_err(|e| {
+        at_unit(
+            screen,
+            outline.unit,
+            line,
+            format!(
+                "`{name}` does not answer a UI node (an element is written by its full \
+                 IRI): {e}"
+            ),
+        )
+    })
+}
+
+/// The model `outline` builds over its read `references`, validated.
+#[inline(never)]
+fn built(
+    screen: &str,
+    outline: &Outline,
+    references: &BTreeMap<String, (Node, usize)>,
+) -> Result<Node, Error> {
     let mut build = Build {
         screen,
         unit: outline.unit,
-        references: &references,
+        references,
         produced: 0,
     };
     let root = build.node(&outline.root)?;
@@ -843,6 +914,22 @@ fn open_arg(inv: &Invocation<'_>) -> Vec<String> {
     inv.inline_str("open")
         .map(|s| s.split_whitespace().map(str::to_string).collect())
         .unwrap_or_default()
+}
+
+/// The compiler's screen name and parsed outline.
+#[inline(never)]
+fn compiler_input(inv: &Invocation<'_>) -> Result<(String, Outline), Error> {
+    let screen = inv.inline_str("screen").unwrap_or("outline").to_string();
+    let outline = parse(&screen, inv.inline_arg("content")?)?;
+    Ok((screen, outline))
+}
+
+/// The compiler's answer: the compiled model, as `application/vnd.ikigai.ui+json`.
+#[inline(never)]
+fn compiled_face(node: Result<Node, Error>) -> Result<Representation, Error> {
+    let bytes = serde_json::to_vec(&node?)
+        .map_err(|e| Error::Endpoint(format!("a model serializes: {e}")))?;
+    Ok(Representation::new(ReprType::new(model::MEDIA_TYPE), bytes).cacheable())
 }
 
 /// [`COMPILER`]: an outline in `content` to the model, `application/vnd.ikigai.ui+json`.
@@ -879,17 +966,63 @@ pub(crate) fn compiler_endpoint() -> AsyncFnEndpoint {
     AsyncFnEndpoint::new(
         "ui-outline-compile",
         |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            // Synchronous work out of line, as in [`compile`]: this body is one frame of
+            // every level of a chain of screens.
             Box::pin(async move {
-                let screen = inv.inline_str("screen").unwrap_or("outline").to_string();
-                let outline = parse(&screen, inv.inline_arg("content")?)?;
-                let node = compile(inv, &screen, &outline, &open_arg(inv)).await?;
-                let bytes = serde_json::to_vec(&node)
-                    .map_err(|e| Error::Endpoint(format!("a model serializes: {e}")))?;
-                Ok(Representation::new(ReprType::new(model::MEDIA_TYPE), bytes).cacheable())
+                let (screen, outline) = compiler_input(inv)?;
+                let node = compile(inv, &screen, &outline, &open_arg(inv)).await;
+                compiled_face(node)
             })
         },
     )
     .with_description(description)
+}
+
+/// The request for a screen's source, `{screen}:source`.
+#[inline(never)]
+fn source_request(inv: &Invocation<'_>) -> Result<Request, Error> {
+    let source = Iri::parse(format!("{}{SOURCE_SUFFIX}", inv.request.target.as_str()))
+        .map_err(|e| Error::Endpoint(e.to_string()))?;
+    Ok(Request::new(Verb::Source, source))
+}
+
+/// The request that compiles a screen's `source`: the front end by what the source is (ledger
+/// #3367), every one compiling through the same step ([`compile`]).
+#[inline(never)]
+fn compile_request(inv: &Invocation<'_>, source: Representation) -> Request {
+    let screen = inv.request.target.as_str();
+    let compiler = match source.repr_type.media_type.as_str() {
+        crate::sexpr::MEDIA_TYPE => crate::sexpr::COMPILER,
+        crate::sexpr::LISP => crate::sexpr::PROGRAM,
+        _ => COMPILER,
+    };
+    let mut request = Request::new(Verb::Source, Iri::parse(compiler).expect("an IRI"))
+        .with_arg("as", ArgRef::Inline(model::MEDIA_TYPE.as_bytes().to_vec()))
+        .with_arg("content", ArgRef::Inline(source.bytes))
+        .with_arg("screen", ArgRef::Inline(screen.as_bytes().to_vec()));
+    if let Ok(open) = inv.inline_str("open") {
+        request = request.with_arg("open", ArgRef::Inline(open.as_bytes().to_vec()));
+    }
+    request
+}
+
+/// A screen's answer in the face asked for, from its `compiled` model.
+#[inline(never)]
+fn screen_face(
+    inv: &Invocation<'_>,
+    source_expiry: Expiry,
+    compiled: Representation,
+) -> Result<Representation, Error> {
+    let node: Node = serde_json::from_slice(&compiled.bytes)
+        .map_err(|e| Error::Endpoint(format!("the compiled model: {e}")))?;
+    // No fresher than its source and its compile (a program's eval is live unless it says
+    // otherwise, ledger #3367).
+    let mut face = crate::model_face(inv, &node)?;
+    face.expiry = face
+        .expiry
+        .most_restrictive(source_expiry)
+        .most_restrictive(compiled.expiry);
+    Ok(face)
 }
 
 /// `urn:iki:ui:screen:name:{screen}`: its source, read through the kernel and compiled by
@@ -927,37 +1060,13 @@ pub(crate) fn screen_endpoint(id: &'static str, binding: bool) -> AsyncFnEndpoin
         description
     };
     AsyncFnEndpoint::new(id, |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+        // Synchronous work out of line, as in [`compile`]: this body is one frame of every
+        // level of a chain of screens.
         Box::pin(async move {
-            let screen = inv.request.target.as_str();
-            let source = Iri::parse(format!("{screen}{SOURCE_SUFFIX}"))
-                .map_err(|e| Error::Endpoint(e.to_string()))?;
-            let source = inv.issue(Request::new(Verb::Source, source)).await?;
-            // The front end by what the source is (ledger #3367): every one compiles through
-            // the same step ([`compile`]).
+            let source = inv.issue(source_request(inv)?).await?;
             let source_expiry = source.expiry;
-            let compiler = match source.repr_type.media_type.as_str() {
-                crate::sexpr::MEDIA_TYPE => crate::sexpr::COMPILER,
-                crate::sexpr::LISP => crate::sexpr::PROGRAM,
-                _ => COMPILER,
-            };
-            let mut request = Request::new(Verb::Source, Iri::parse(compiler).expect("an IRI"))
-                .with_arg("as", ArgRef::Inline(model::MEDIA_TYPE.as_bytes().to_vec()))
-                .with_arg("content", ArgRef::Inline(source.bytes))
-                .with_arg("screen", ArgRef::Inline(screen.as_bytes().to_vec()));
-            if let Ok(open) = inv.inline_str("open") {
-                request = request.with_arg("open", ArgRef::Inline(open.as_bytes().to_vec()));
-            }
-            let compiled = inv.issue(request).await?;
-            let node: Node = serde_json::from_slice(&compiled.bytes)
-                .map_err(|e| Error::Endpoint(format!("the compiled model: {e}")))?;
-            // No fresher than its source and its compile (a program's eval is live unless it
-            // says otherwise, ledger #3367).
-            let mut face = crate::model_face(inv, &node)?;
-            face.expiry = face
-                .expiry
-                .most_restrictive(source_expiry)
-                .most_restrictive(compiled.expiry);
-            Ok(face)
+            let compiled = inv.issue(compile_request(inv, source)).await?;
+            screen_face(inv, source_expiry, compiled)
         })
     })
     .with_description(description)
