@@ -121,7 +121,9 @@ test("the Pane menu moves a pane by keyboard alone: focus, one sentence, DOM ord
   await to.focus();
   await expect(to).toHaveValue("dashboard");
   await place.focus();
-  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+  // Typeahead ("B" for "Below it") picks the option on a closed select on every platform;
+  // ArrowDown opens the picker instead on macOS.
+  await page.keyboard.press("b");
   await expect(place).toHaveValue("below");
   await page.keyboard.press("Tab");
   await expect(page.locator("#pane-list details button", { hasText: "Move" }).first()).toBeFocused();
