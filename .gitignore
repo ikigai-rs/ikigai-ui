@@ -1,3 +1,5 @@
 /target
 Cargo.lock
 /axe/node_modules
+/voiceover/node_modules
+/voiceover/results

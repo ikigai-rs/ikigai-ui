@@ -1,0 +1,11 @@
+{
+  "name": "ikigai-ui-voiceover",
+  "private": true,
+  "description": "Real VoiceOver over the gallery, driven by Guidepup on macOS: an informational CI job, never a gate (ledger #4278, from the #3545 spike).",
+  "type": "module",
+  "dependencies": {
+    "@guidepup/guidepup": "0.40.0",
+    "@guidepup/playwright": "0.21.0",
+    "@playwright/test": "1.64.0"
+  }
+}
