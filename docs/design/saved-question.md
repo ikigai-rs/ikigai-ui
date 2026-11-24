@@ -122,6 +122,10 @@ existing push `cut`/`resync` and refetch model; it does not assert that every do
 
 ## Decisions for Brian
 
+**Decided 2026-11-24 (Brian): all six accepted as recommended.** The questions are kept below
+as the record of what was accepted. English is the only natural language a version may carry
+for now; supporting other natural languages is to be revisited as its own item.
+
 1. Accept a named, versioned definition with a graph ceiling, independent of answer and lens?
 2. Accept English and read-only SPARQL as alternative texts, with explicit provenance for any
    translation and no automatic publication of NL drafts?
