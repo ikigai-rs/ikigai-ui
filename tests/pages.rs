@@ -73,9 +73,9 @@ fn the_shell_has_its_landmarks_and_one_status_region() {
 }
 
 #[test]
-fn a_title_is_text_and_an_unknown_theme_is_auto() {
+fn a_title_is_text_and_the_default_theme_is_auto() {
     let kernel = host(None);
-    let page = text(&kernel, "urn:demo:page:home", &[("theme", "\"><script>")]);
+    let page = text(&kernel, "urn:demo:page:home", &[]);
     assert!(page.contains("<html lang=\"en\" data-theme=\"auto\">"));
     assert!(page.contains("<title>Home &amp; &lt;welcome&gt;</title>"));
 }
@@ -350,4 +350,36 @@ fn a_family_can_turn_the_chooser_off_and_splice_it_itself() {
         text(&kernel, "urn:iki:ui:theme-chooser:dark", &[]),
         ikigai_ui::theme_chooser("dark").unwrap()
     );
+}
+
+#[test]
+fn pages_refuse_invalid_themes() {
+    use ikigai_core::{ArgRef, Capability, ContentId, Iri, Request, Verb};
+
+    let kernel = host(None);
+    for iri in [
+        "urn:demo:page:home",
+        "urn:demo:page:lens:contact-graph:resource:urn:iki:ui:example:graph:contact",
+        "urn:demo:page:workspace:urn:iki:ui:workspace:person:urn:person:alice:name:item",
+    ] {
+        for (value, reason) in [
+            (ArgRef::Inline(vec![0xff]), "UTF-8"),
+            (ArgRef::Content(ContentId::of(b"dark")), "inline"),
+            (ArgRef::Inline(b"sepia".to_vec()), "one of"),
+            (ArgRef::Inline(vec![]), "one of"),
+        ] {
+            let request =
+                Request::new(Verb::Source, Iri::parse(iri).unwrap()).with_arg("theme", value);
+            match futures::executor::block_on(kernel.issue(request, &Capability::root())) {
+                Err(Error::InvalidArgument { name, detail }) => {
+                    assert_eq!(name, "theme", "{iri}: {detail}");
+                    assert!(detail.contains(reason), "{iri}: {detail}");
+                }
+                other => panic!(
+                    "{iri}: expected invalid theme, got {:?}",
+                    other.map(|r| r.repr_type)
+                ),
+            }
+        }
+    }
 }

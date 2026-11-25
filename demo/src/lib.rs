@@ -125,15 +125,22 @@ fn invalid(name: &str, detail: impl Into<String>) -> Error {
 /// The fields of a call: named arguments, or the body (`content`) a form POST carries,
 /// `application/x-www-form-urlencoded` or a JSON object.
 fn fields(inv: &Invocation<'_>) -> Result<Vec<(String, String)>, Error> {
-    let named: Vec<(String, String)> = ["name", "email", "topic", "message"]
-        .iter()
-        .filter_map(|k| {
-            inv.inline_str(k)
-                .ok()
-                .map(|v| (k.to_string(), v.to_string()))
-        })
-        .collect();
-    let Ok(body) = inv.inline_arg("content") else {
+    let mut named = Vec::new();
+    for name in ["name", "email", "topic", "message"] {
+        if let Some(value) = inv.optional_str(name)? {
+            named.push((name.to_string(), value.to_string()));
+        }
+    }
+    const FORM: &str = "application/x-www-form-urlencoded";
+    let media_type = inv
+        .optional_str("content-type")?
+        .map(|s| s.split_once(';').map_or(s, |(base, _)| base).trim())
+        .unwrap_or(FORM);
+    let json = media_type.eq_ignore_ascii_case(JSON);
+    if !json && !media_type.eq_ignore_ascii_case(FORM) {
+        return Err(invalid("content-type", format!("use {FORM} or {JSON}")));
+    }
+    let Some(body) = inv.optional_str("content")? else {
         return Ok(named);
     };
     if !named.is_empty() {
@@ -142,10 +149,6 @@ fn fields(inv: &Invocation<'_>) -> Result<Vec<(String, String)>, Error> {
             "the body is given twice: as `content` and as its fields; give one",
         ));
     }
-    let body = std::str::from_utf8(body).map_err(|_| invalid("content", "not UTF-8"))?;
-    let json = inv
-        .inline_str("content-type")
-        .is_ok_and(|t| t.trim_start().starts_with(JSON));
     if json {
         let v: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(body).map_err(|e| invalid("content", format!("{e}")))?;
