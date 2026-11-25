@@ -910,16 +910,19 @@ fn built(
     Ok(root)
 }
 
-fn open_arg(inv: &Invocation<'_>) -> Vec<String> {
-    inv.inline_str("open")
-        .map(|s| s.split_whitespace().map(str::to_string).collect())
+pub(crate) fn open_arg(inv: &Invocation<'_>) -> Result<Vec<String>, Error> {
+    Ok(inv
+        .optional_str("open")?
         .unwrap_or_default()
+        .split_whitespace()
+        .map(str::to_string)
+        .collect())
 }
 
 /// The compiler's screen name and parsed outline.
 #[inline(never)]
 fn compiler_input(inv: &Invocation<'_>) -> Result<(String, Outline), Error> {
-    let screen = inv.inline_str("screen").unwrap_or("outline").to_string();
+    let screen = inv.optional_str("screen")?.unwrap_or("outline").to_string();
     let outline = parse(&screen, inv.inline_arg("content")?)?;
     Ok((screen, outline))
 }
@@ -970,7 +973,7 @@ pub(crate) fn compiler_endpoint() -> AsyncFnEndpoint {
             // every level of a chain of screens.
             Box::pin(async move {
                 let (screen, outline) = compiler_input(inv)?;
-                let node = compile(inv, &screen, &outline, &open_arg(inv)).await;
+                let node = compile(inv, &screen, &outline, &open_arg(inv)?).await;
                 compiled_face(node)
             })
         },
@@ -989,7 +992,7 @@ fn source_request(inv: &Invocation<'_>) -> Result<Request, Error> {
 /// The request that compiles a screen's `source`: the front end by what the source is (ledger
 /// #3367), every one compiling through the same step ([`compile`]).
 #[inline(never)]
-fn compile_request(inv: &Invocation<'_>, source: Representation) -> Request {
+fn compile_request(inv: &Invocation<'_>, source: Representation, open: Option<&str>) -> Request {
     let screen = inv.request.target.as_str();
     let compiler = match source.repr_type.media_type.as_str() {
         crate::sexpr::MEDIA_TYPE => crate::sexpr::COMPILER,
@@ -1000,7 +1003,7 @@ fn compile_request(inv: &Invocation<'_>, source: Representation) -> Request {
         .with_arg("as", ArgRef::Inline(model::MEDIA_TYPE.as_bytes().to_vec()))
         .with_arg("content", ArgRef::Inline(source.bytes))
         .with_arg("screen", ArgRef::Inline(screen.as_bytes().to_vec()));
-    if let Ok(open) = inv.inline_str("open") {
+    if let Some(open) = open {
         request = request.with_arg("open", ArgRef::Inline(open.as_bytes().to_vec()));
     }
     request
@@ -1063,9 +1066,10 @@ pub(crate) fn screen_endpoint(id: &'static str, binding: bool) -> AsyncFnEndpoin
         // Synchronous work out of line, as in [`compile`]: this body is one frame of every
         // level of a chain of screens.
         Box::pin(async move {
+            let open = inv.optional_str("open")?;
             let source = inv.issue(source_request(inv)?).await?;
             let source_expiry = source.expiry;
-            let compiled = inv.issue(compile_request(inv, source)).await?;
+            let compiled = inv.issue(compile_request(inv, source, open)).await?;
             screen_face(inv, source_expiry, compiled)
         })
     })

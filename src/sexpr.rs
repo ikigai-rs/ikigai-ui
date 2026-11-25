@@ -408,19 +408,14 @@ fn layout(datum: &Sexpr, indent: usize, out: &mut String) {
     out.push(')');
 }
 
-fn open_arg(inv: &Invocation<'_>) -> Vec<String> {
-    inv.inline_str("open")
-        .map(|s| s.split_whitespace().map(str::to_string).collect())
-        .unwrap_or_default()
-}
-
 async fn compiled(
     inv: &Invocation<'_>,
     screen: &str,
     datum: &[u8],
+    open: &[String],
 ) -> Result<Representation, Error> {
     let outline = read(screen, datum)?;
-    let node = screen::compile(inv, screen, &outline, &open_arg(inv)).await?;
+    let node = screen::compile(inv, screen, &outline, open).await?;
     let bytes = serde_json::to_vec(&node)
         .map_err(|e| Error::Endpoint(format!("a model serializes: {e}")))?;
     Ok(Representation::new(ReprType::new(model::MEDIA_TYPE), bytes).cacheable())
@@ -461,10 +456,16 @@ pub(crate) fn compiler_endpoint() -> AsyncFnEndpoint {
         |inv: &Invocation<'_>| -> InvokeFuture<'_> {
             Box::pin(async move {
                 let screen = inv
-                    .inline_str("screen")
+                    .optional_str("screen")?
                     .unwrap_or("s-expression")
                     .to_string();
-                compiled(inv, &screen, inv.inline_arg("content")?).await
+                compiled(
+                    inv,
+                    &screen,
+                    inv.inline_arg("content")?,
+                    &screen::open_arg(inv)?,
+                )
+                .await
             })
         },
     )
@@ -485,7 +486,8 @@ pub(crate) fn program_endpoint() -> AsyncFnEndpoint {
         "ui-lisp-compile",
         |inv: &Invocation<'_>| -> InvokeFuture<'_> {
             Box::pin(async move {
-                let screen = inv.inline_str("screen").unwrap_or("program").to_string();
+                let screen = inv.optional_str("screen")?.unwrap_or("program").to_string();
+                let open = screen::open_arg(inv)?;
                 let program = inv.inline_arg("content")?;
                 if program.len() > MAX_SOURCE_BYTES {
                     return Err(at(
@@ -509,7 +511,7 @@ pub(crate) fn program_endpoint() -> AsyncFnEndpoint {
                 })?;
                 // The screen is no fresher than the eval: live unless the program said
                 // `(cacheable …)`, and then no fresher than what it sourced.
-                let mut rep = compiled(inv, &screen, &result.bytes).await?;
+                let mut rep = compiled(inv, &screen, &result.bytes, &open).await?;
                 rep.expiry = rep.expiry.most_restrictive(result.expiry);
                 Ok(rep)
             })

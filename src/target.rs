@@ -505,6 +505,7 @@ fn a11y_words(tally: Option<&crate::criterion::Tally>) -> String {
 pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
     AsyncFnEndpoint::new("ui-support", |inv: &Invocation<'_>| -> InvokeFuture<'_> {
         Box::pin(async move {
+            let face = crate::requested_face(inv)?;
             let mut descriptors = Vec::new();
             for name in NAMES {
                 descriptors.push(read_descriptor(inv, name).await?);
@@ -518,9 +519,7 @@ pub(crate) fn support_endpoint() -> AsyncFnEndpoint {
                 let a11y = crate::criterion::kinds().filter_map(|name| Some((name, crate::criterion::tally(name, &descriptor.name)?))).collect();
                 (descriptor.name.as_str(), Support { kind, element, hints: &descriptor.hints, limits: &descriptor.limits, capabilities: &descriptor.capabilities, a11y })
             }).collect();
-            if inv.inline_str("as").ok().is_some_and(|as_type| {
-                as_type.split(';').next().unwrap_or_default().trim() == "text/html"
-            }) {
+            if face == Some("text/html") {
                 let mut html = String::from("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>UI target support</title></head><body><h1>UI target support</h1><p>What each target's descriptor says it renders. Where it does not, the fallback names the kind it renders instead; text is the kind's required fallback text.</p><p>Each target's accessibility column counts its face's acceptance criterion (urn:iki:ui:criterion:): the SEE checks a test verifies, of all of them, those blocked by the face's toolkit (they cannot pass today, whatever the face does), and the HEAR checks, which need a person with a screen reader and no test verifies. The html face's are verified against the rendered HTML in CI; the gpui face's run on GPUI's test platform, which CI does not run yet.</p><table><caption>Every target against every kind</caption><thead><tr><th scope=\"col\">Kind</th>");
                 for name in matrix.keys() {
                     let name = ikigai_fn::html::html_text(name);

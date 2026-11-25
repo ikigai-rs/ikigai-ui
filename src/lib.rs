@@ -379,10 +379,7 @@ fn palette_endpoint() -> FnEndpoint {
                 palette::PALETTES.map(|p| p.name).join(", ")
             )));
         };
-        let turtle = inv
-            .inline_str("as")
-            .ok()
-            .is_some_and(|t| t.split(';').next().unwrap_or_default().trim() == TURTLE);
+        let turtle = requested_face(inv)? == Some(TURTLE);
         Ok(if turtle {
             Representation::new(ReprType::new(TURTLE), p.turtle().into_bytes())
         } else {
@@ -1004,27 +1001,24 @@ fn the_kind(inv: &Invocation<'_>) -> Result<&'static model::Kind, Error> {
     })
 }
 
-/// Whether the request asked for the face `media_type`.
-fn wants(inv: &Invocation<'_>, media_type: &str) -> bool {
-    inv.inline_str("as")
-        .ok()
-        .is_some_and(|t| t.split(';').next().unwrap_or_default().trim() == media_type)
-}
-
-/// Whether the request asked for the JSON-LD face.
-fn wants_json_ld(inv: &Invocation<'_>) -> bool {
-    wants(inv, model::JSON_LD)
+/// The requested media type, without parameters. At this layer a face the endpoint
+/// does not offer is not a match; the door handles negotiation against the contract.
+fn requested_face<'a>(inv: &'a Invocation<'_>) -> Result<Option<&'a str>, Error> {
+    Ok(inv
+        .optional_str("as")?
+        .map(|t| t.split_once(';').map_or(t, |(base, _)| base).trim()))
 }
 
 /// A model in the face the request asked for.
 fn model_face(inv: &Invocation<'_>, node: &model::Node) -> Result<Representation, Error> {
-    if wants(inv, sexpr::MEDIA_TYPE) {
+    let face = requested_face(inv)?;
+    if face == Some(sexpr::MEDIA_TYPE) {
         let text = sexpr::print(node)?;
         return Ok(
             Representation::new(ReprType::new(sexpr::MEDIA_TYPE), text.into_bytes()).cacheable(),
         );
     }
-    let (media_type, bytes) = if wants_json_ld(inv) {
+    let (media_type, bytes) = if face == Some(model::JSON_LD) {
         (
             model::JSON_LD,
             serde_json::to_vec(&model::json_ld(node, inv.request.target.as_str())),
@@ -1287,8 +1281,8 @@ fn form_openapi_endpoint() -> AsyncFnEndpoint {
 /// the host's names only through this family's aliases. A request cannot name another
 /// resource to splice.
 ///
-/// `theme=` is the one request argument the page reads; a value [`THEMES`] does not hold is
-/// `auto`, so an unknown theme degrades to a readable page.
+/// The page defaults to `theme=auto` when no theme is given. A supplied theme must be one of
+/// [`THEMES`].
 ///
 /// **A page name reaches the title and the fragment whole** (`{+name}`, RFC 6570's reserved
 /// expansion, ikigai-fn 0.5.1): `page:item:5` shows `{base}title:item:5` and
@@ -1641,6 +1635,17 @@ fn page_name_ok(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b':' | b'.' | b'_' | b'~' | b'-'))
 }
 
+fn page_theme<'a>(inv: &'a Invocation<'_>) -> Result<&'a str, Error> {
+    let theme = inv.optional_str("theme")?.unwrap_or("auto");
+    if !THEMES.contains(&theme) {
+        return Err(Error::InvalidArgument {
+            name: "theme".into(),
+            detail: format!("choose one of {}", THEMES.join(", ")),
+        });
+    }
+    Ok(theme)
+}
+
 fn lens_page_endpoint(family: String) -> AsyncFnEndpoint {
     let id = format!("ui-page-lens-{family}");
     let composer =
@@ -1682,11 +1687,7 @@ fn lens_page_endpoint(family: String) -> AsyncFnEndpoint {
         Box::pin(async move {
             let name = lens::lensed_name(inv)?;
             let screen = lens::page_screen(inv, &name)?;
-            let theme = inv
-                .inline_str("theme")
-                .ok()
-                .filter(|t| THEMES.contains(t))
-                .unwrap_or("auto");
+            let theme = page_theme(inv)?;
             let mut vars = Bindings::new();
             vars.insert("family", family.as_str());
             vars.insert("name", screen.as_str());
@@ -1731,11 +1732,7 @@ fn workspace_page_endpoint(family: String) -> AsyncFnEndpoint {
         Box::pin(async move {
             let given = inv.bindings.get("iri").unwrap_or_default().to_string();
             let screen = workspace::page_screen(inv, &given)?;
-            let theme = inv
-                .inline_str("theme")
-                .ok()
-                .filter(|t| THEMES.contains(t))
-                .unwrap_or("auto");
+            let theme = page_theme(inv)?;
             let mut vars = Bindings::new();
             vars.insert("family", family.as_str());
             vars.insert("name", screen.as_str());
@@ -1790,11 +1787,7 @@ fn page_endpoint(family: String) -> AsyncFnEndpoint {
                     ),
                 });
             }
-            let theme = inv
-                .inline_str("theme")
-                .ok()
-                .filter(|t| THEMES.contains(t))
-                .unwrap_or("auto");
+            let theme = page_theme(inv)?;
             let mut vars = Bindings::new();
             vars.insert("family", family.as_str());
             vars.insert("name", name);

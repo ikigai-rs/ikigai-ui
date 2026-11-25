@@ -742,7 +742,7 @@ fn endpoint_for(elements: bool) -> FnEndpoint {
                     TARGETS.join(", ")
                 ))
             })?;
-        let (media_type, body) = if crate::wants(inv, TEXT) {
+        let (media_type, body) = if crate::requested_face(inv)? == Some(TEXT) {
             (TEXT, text(kind, c))
         } else {
             (crate::TURTLE, turtle(kind, c))

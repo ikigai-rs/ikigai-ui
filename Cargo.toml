@@ -8,7 +8,7 @@ resolver = "3"
 
 [package]
 name = "ikigai-ui"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 # ikigai-core needs 1.87 (`usize::is_multiple_of`); 1.88 since ledger #3367, for the
 # ikigai-lisp dev-dependency (`slice::as_chunks`, via Steel), which the shared CI's msrv job builds
@@ -35,10 +35,10 @@ testkit = ["dep:futures-executor"]
 # 0.4.0 is the core 0.4 cascade (ledger #4089): opaque scopes, which the screen compile already
 # asks through the prefix corridor's `:in-force` door rather than reads (ledger #3870), and
 # structured denials (`Error::Denied` carries a `Denial`, built from the message with `.into()`).
-# The library builds on exactly 0.4.0; the test build resolves 0.4.2, ikigai-web 0.6.0's floor.
+# 0.4.3 adds the optional readers, which distinguish absent arguments from unreadable ones.
 # 0.3.0's scoped content store (ledger #2965) still holds: this crate calls neither
-# `ContentStore::put` nor `put_replay`. A caret on 0.4.0 is <0.5.0.
-ikigai-core = "0.4.0"
+# `ContentStore::put` nor `put_replay`. A caret on 0.4.3 is <0.5.0.
+ikigai-core = "0.4.3"
 # The shell is an ikigai-fn compose template (`composeOver`, a named instance); the token
 # stylesheet fills its palette slots itself, from parsed tables (ledger #3529). 0.5.1 is the floor: `{+name}`, RFC 6570 reserved expansion in a marker IRI, which
 # the shell's title and main markers use so a page name with `:` reaches its fragment whole
@@ -97,7 +97,7 @@ ikigai-vocab = "0.4"
 ikigai-web = "0.6.0"
 tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
 # tests/screen.rs binds prefix tables with `DynamicSpace::refresh`, behind `declare` (ledger #3365).
-ikigai-core = { version = "0.4.0", features = ["declare"] }
+ikigai-core = { version = "0.4.3", features = ["declare"] }
 
 # tests/view.rs: a type's shape is read through the host's JSON-LD (ledger #3405): ikigai-rdf's
 # `urn:rdf:transrept` turns a Turtle shape into JSON-LD, and ikigai-jsonld's `urn:jsonld:compact`

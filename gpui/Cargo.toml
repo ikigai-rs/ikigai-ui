@@ -25,7 +25,7 @@ x11 = ["gpui/x11", "gpui/font-kit"]
 
 [dependencies]
 ikigai-ui = { path = ".." }
-ikigai-core = "0.4.0"
+ikigai-core = "0.4.3"
 serde_json = "1"
 
 # Resource work is independent of the window platform.

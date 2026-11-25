@@ -13,7 +13,7 @@ publish = false
 # The library this repo publishes, by path: the one copy in the build.
 ikigai-ui = { path = ".." }
 # The same floors the library holds.
-ikigai-core = "0.4.0"
+ikigai-core = "0.4.3"
 ikigai-fn = "0.12.0"
 serde_json = "1.0"
 # The Meta renderer, so a contract reads as `application/json` and the form is generated from it.
@@ -30,7 +30,7 @@ ikigai-sparql = "0.6.0"
 ikigai-web = "0.6.0"
 tokio = { version = "1", features = ["rt", "net", "macros"] }
 # `DynamicSpace::refresh`, which binds a prefix table read through the kernel (ledger #3365).
-ikigai-core = { version = "0.4.0", features = ["declare"] }
+ikigai-core = { version = "0.4.3", features = ["declare"] }
 # Lenses 4 (ledger #3521): `shacl-violations` and `asserted-vs-derived` join
 # `urn:shacl:validate`'s report (the subset validator, no rudof) and `urn:reason:inferred`'s
 # entailments. Native only: the wasm32 lib job lints the
