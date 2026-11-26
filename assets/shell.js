@@ -1219,6 +1219,12 @@
         var nextMenu = next.querySelector(":scope > details[data-ui-pane-menu]");
         if (menu && nextMenu) menu.replaceWith(nextMenu);
         else if (nextMenu) old.insertBefore(nextMenu, old.children[2] || null);
+        // The header toggles too (whether a Collapse is offered depends on the siblings).
+        var h2 = old.querySelector(":scope > h2");
+        Array.prototype.forEach.call(old.querySelectorAll(":scope > form.ui-pane-toggle"), function (f) { f.remove(); });
+        Array.prototype.slice.call(next.querySelectorAll(":scope > form.ui-pane-toggle")).reverse().forEach(function (f) {
+          if (h2) h2.after(f);
+        });
         old.setAttribute("data-ui-drop", next.getAttribute("data-ui-drop") || "");
         old.removeAttribute("data-ui-dragged");
         next.replaceWith(old);
@@ -1251,14 +1257,30 @@
         var parsed = new DOMParser().parseFromString(t, "text/html");
         var answer = parsed.querySelector("[data-ui-said]");
         said = answer ? answer.textContent : "";
-        // The pane focus goes to, as the Sink says it (after a close, the one that took its
-        // place; after an add, the new one).
-        var back = parsed.querySelector('a[href*="#pane-"]');
-        if (back) key = back.getAttribute("href").split("#pane-")[1] || key;
+        // The pane focus goes to, as the Sink marks it (after a close, the one that took its
+        // place; after an add, the new one): its own attribute, never any pane link.
+        var back = parsed.querySelector("[data-ui-focus-pane]");
+        if (back) key = back.getAttribute("data-ui-focus-pane") || key;
         return rebuild(root);
       });
     }).then(function (fresh) {
+      // After a Collapse or Expand, focus stays on the toggle (now Expand or Collapse, in the
+      // same place); after any other edit, on the pane's heading.
+      var toggle = (fields.op === "collapse" || fields.op === "expand") &&
+        document.querySelector("#pane-" + key + " > form.ui-pane-toggle > button[aria-expanded]");
+      if (toggle) {
+        toggle.focus();
+        say(said, false);
+        return;
+      }
       var h = heading(key) || (fresh && fresh.querySelector("section.ui-pane > h2"));
+      // A pane in a tab that is not shown (the one that took a closed pane's place may be)
+      // has its tab shown first, so focus lands on it and never on <body>.
+      var panel = h && h.closest('[role="tabpanel"]');
+      if (panel && (panel.hidden || panel.classList.contains("ui-tabpanel-inactive"))) {
+        var tab = document.getElementById(panel.getAttribute("aria-labelledby") || "");
+        if (tab) tab.click();
+      }
       if (h) {
         h.setAttribute("tabindex", "-1");
         h.focus({ preventScroll: false });
@@ -1281,9 +1303,11 @@
   document.addEventListener("submit", function (e) {
     var form = e.target;
     var menu = form && form.closest && form.closest("details[data-ui-pane-menu]");
-    // The workspace's "Add pane" form (ledger #3953) is sent the same way.
-    var adding = !menu && form && form.querySelector && form.querySelector('input[name="op"][value="add"]');
-    var root = (menu || adding) && workspaceOf(menu || form);
+    // The workspace's "Add pane" form, a pane's "Open in a new pane" and its header Collapse or
+    // Expand (ledger #3953) are sent the same way; Maximize and Restore are GETs, left to load.
+    var other = !menu && form && form.querySelector && (form.method || "").toLowerCase() === "post" &&
+      form.querySelector('input[name="op"][value="add"], input[name="op"][value="collapse"], input[name="op"][value="expand"]');
+    var root = (menu || other) && workspaceOf(menu || form);
     if (!root) return;
     e.preventDefault();
     e.stopPropagation();
@@ -1291,6 +1315,12 @@
     if (menu) menu.open = false;
     send(root, fields, fields.pane || fields.to || (menu && menu.getAttribute("data-ui-pane-menu")));
   }, true);
+  // A page that arrives with a sentence to say (a maximized workspace, ledger #3953) says it once
+  // in #status, after the region is in the tree, so a reader hears it.
+  document.addEventListener("DOMContentLoaded", function () {
+    var said = document.querySelector("main [data-ui-announce]");
+    if (said) window.setTimeout(function () { say(said.textContent, false); }, 300);
+  });
   // Escape in an open menu closes it and puts focus back on its summary.
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;

@@ -60,6 +60,12 @@ pub const TABS: &str = "urn:iki:ui:hint:layout:tabs";
 pub const PANE: &str = "urn:iki:ui:hint:layout:pane";
 /// A collapsed child of a split (section 5A): it keeps its share.
 pub const COLLAPSED: &str = "urn:iki:ui:hint:layout:collapsed";
+/// A pane's header toggle (ledger #3953): a one-button form whose button carries its state,
+/// `expanded true|false` (Collapse or Expand) or `pressed true|false` (Maximize or Restore).
+pub const TOGGLE: &str = "urn:iki:ui:hint:layout:toggle";
+/// A sentence the page says in `#status` when it arrives (ledger #3953): "Session maximized.
+/// Restore to see every pane."
+pub const SAID: &str = "urn:iki:ui:hint:layout:said";
 
 /// The most panes in one workspace.
 pub const MAX_PANES: usize = 16;
@@ -673,49 +679,88 @@ fn workspace_href(
     format!("/workspace/{iri}{query}#pane-{at}")
 }
 
+/// A pane's header toggles (section 5A "Collapse, maximize and restore"): "Collapse {pane}"
+/// (`aria-expanded="true"`) or "Expand {pane}" (`aria-expanded="false"`) in the same place, a
+/// `collapse` or `expand` edit; and "Maximize {pane}" (`aria-pressed="false"`) or "Restore
+/// every pane" (`aria-pressed="true"`) in the same place, a GET of the workspace's own address
+/// with `maximize={key}` or without it, so it works with no script and never writes. No
+/// Collapse where nothing would take the space; none while maximized.
+fn toggles(key: &str, whole: &Whole<'_>) -> Vec<Node> {
+    let ws = whole.workspace;
+    let label = &ws.panes[key].label;
+    let mut out = Vec::new();
+    let mut layout = ws.layout.clone();
+    if whole.maximized.is_none() {
+        if let Some((children, i)) = child_of(&mut layout, key) {
+            let collapsed = children[i].collapsed;
+            let last_open = !collapsed
+                && children
+                    .iter()
+                    .enumerate()
+                    .all(|(j, c)| j == i || c.collapsed);
+            if !last_open {
+                let (word, op, state) = if collapsed {
+                    ("Expand", "expand", "expanded false")
+                } else {
+                    ("Collapse", "collapse", "expanded true")
+                };
+                let form = edit_form(
+                    whole,
+                    format!("{word} {label}"),
+                    None,
+                    vec![hidden("Edit", "op", op), hidden("Pane", "pane", key)],
+                );
+                out.push(hinted(form, TOGGLE, state));
+            }
+        }
+    }
+    let maximized = whole.maximized == Some(key);
+    let mut fields: Vec<Node> = whole
+        .address
+        .iter()
+        .map(|(role, value)| hidden("Selected", &format!("select.{role}"), value))
+        .collect();
+    if !maximized {
+        fields.push(hidden("Maximize", "maximize", key));
+    }
+    let form = node(
+        "form",
+        vec![
+            text(
+                "label",
+                if maximized {
+                    "Restore every pane".to_string()
+                } else {
+                    format!("Maximize {label}")
+                },
+            ),
+            text("method", "get"),
+            text("action", format!("/workspace/{}#pane-{key}", whole.iri)),
+            text("verb", "source"),
+        ],
+        fields,
+    );
+    out.push(hinted(
+        form,
+        TOGGLE,
+        if maximized {
+            "pressed true"
+        } else {
+            "pressed false"
+        },
+    ));
+    out
+}
+
 fn button(label: impl Into<String>) -> Node {
     node("button", vec![text("label", label)], vec![])
 }
 
-/// The collapse or expand, close and "Open in a new pane" forms of a pane's menu (ledger #3953).
+/// The Close and "Open in a new pane" forms of a pane's menu (ledger #3953).
 fn structure_forms(key: &str, whole: &Whole<'_>) -> Vec<Node> {
     let ws = whole.workspace;
     let label = &ws.panes[key].label;
     let mut forms = Vec::new();
-    let mut layout = ws.layout.clone();
-    if let Some((children, i)) = child_of(&mut layout, key) {
-        let collapsed = children[i].collapsed;
-        let last_open = !collapsed
-            && children
-                .iter()
-                .enumerate()
-                .all(|(j, c)| j == i || c.collapsed);
-        if collapsed {
-            forms.push(edit_form(
-                whole,
-                format!("Expand {label}"),
-                None,
-                vec![
-                    hidden("Edit", "op", "expand"),
-                    hidden("Pane", "pane", key),
-                    button("Expand"),
-                ],
-            ));
-        } else if !last_open {
-            forms.push(edit_form(
-                whole,
-                format!("Collapse {label}"),
-                Some(format!(
-                    "Shrinks {label} to its heading; it keeps its size for when it is expanded."
-                )),
-                vec![
-                    hidden("Edit", "op", "collapse"),
-                    hidden("Pane", "pane", key),
-                    button("Collapse"),
-                ],
-            ));
-        }
-    }
     if ws.panes.len() > 1 {
         forms.push(edit_form(
             whole,
@@ -995,17 +1040,20 @@ fn pane_region(
     collapsed: bool,
     whole: &Whole<'_>,
 ) -> Node {
-    let mut children = vec![
-        node(
-            "heading",
-            vec![
-                text("content", &pane.label),
-                ("level".into(), Value::Number(2)),
-            ],
-            vec![],
-        ),
-        node("text", vec![text("content", says(pane, selection))], vec![]),
-    ];
+    let mut children = vec![node(
+        "heading",
+        vec![
+            text("content", &pane.label),
+            ("level".into(), Value::Number(2)),
+        ],
+        vec![],
+    )];
+    children.extend(toggles(key, whole));
+    children.push(node(
+        "text",
+        vec![text("content", says(pane, selection))],
+        vec![],
+    ));
     children.extend(pane_menu(key, whole));
     let mut properties = vec![text("label", &pane.label)];
     match content(pane, selection) {
@@ -1016,22 +1064,6 @@ fn pane_region(
                 vec![
                     text("label", format!("Open {} alone", pane.label)),
                     text("href", alone_href(alone)),
-                ],
-                vec![],
-            ));
-            let (word, maximize) = if whole.maximized == Some(key) {
-                ("Restore every pane".to_string(), None)
-            } else {
-                (format!("Maximize {}", pane.label), Some(key))
-            };
-            children.push(node(
-                "link",
-                vec![
-                    text("label", word),
-                    text(
-                        "href",
-                        workspace_href(whole.iri, whole.address, maximize, key),
-                    ),
                 ],
                 vec![],
             ));
@@ -1405,13 +1437,17 @@ pub fn compose_with(
     children.extend(add_form(&whole));
     match (maximize, &max_label) {
         (Some(k), Some(m)) => {
-            children.push(node(
-                "text",
-                vec![text(
-                    "content",
-                    format!("{m} maximized. Restore to see every pane."),
-                )],
-                vec![],
+            children.push(hinted(
+                node(
+                    "text",
+                    vec![text(
+                        "content",
+                        format!("{m} maximized. Restore to see every pane."),
+                    )],
+                    vec![],
+                ),
+                SAID,
+                "maximized",
             ));
             children.push(pane_region(
                 k,
@@ -1482,7 +1518,7 @@ pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
                     }
                 }
                 let workspace = validate(&atom.bytes)?;
-                let offered = readable_offers(inv, &iri, &workspace, &address).await;
+                let offered = readable_offers(inv, &iri, &workspace, &address).await?;
                 let node = compose_with(
                     &workspace,
                     &iri,
@@ -1519,37 +1555,56 @@ pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
 
 /// What can be opened in a new pane now (ledger #3953): the host's `{iri}:addable` list, read
 /// under the caller's capability, filled from the selection ([`offers`]), and only the entries
-/// whose content screen the caller can read (each is read once, here, under the same
-/// capability). Nothing, when the host binds no list or it cannot be read.
+/// the caller can read. Readability is asked with `Exists`, not by rendering each screen: of the
+/// selected IRI an accepting entry opens (once per IRI, however many entries accept it), and of
+/// a pinned entry's screen name. A denial (or a name concealed as not found) leaves the entry
+/// out; any other failure is the page's, named, never hidden. No list bound is nothing offered.
 async fn readable_offers(
     inv: &ikigai_core::Invocation<'_>,
     iri: &str,
     workspace: &Workspace,
     address: &BTreeMap<String, String>,
-) -> Vec<Offer> {
+) -> Result<Vec<Offer>, Error> {
     use ikigai_core::{Request, Verb};
-    let Ok(at) = Iri::parse(addable_iri(iri)) else {
-        return Vec::new();
+    fn withheld(e: &Error) -> bool {
+        matches!(
+            e,
+            Error::Denied(_) | Error::NotFound(_) | Error::Unresolved(_)
+        )
+    }
+    let at = Iri::parse(addable_iri(iri)).map_err(|e| refuse(e.to_string()))?;
+    let answer = match inv.issue(Request::new(Verb::Source, at)).await {
+        Ok(answer) => answer,
+        Err(e) if withheld(&e) => return Ok(Vec::new()),
+        Err(e) => return Err(e),
     };
-    let Ok(answer) = inv.issue(Request::new(Verb::Source, at)).await else {
-        return Vec::new();
-    };
-    let Ok(list) = addable(&answer.bytes) else {
-        return Vec::new();
-    };
-    let Ok(chosen) = selection(workspace, address) else {
-        return Vec::new();
-    };
+    let list = addable(&answer.bytes)?;
+    let chosen = selection(workspace, address)?;
+    let mut readable: BTreeMap<String, bool> = BTreeMap::new();
     let mut out = Vec::new();
     for offer in offers(&list, &chosen) {
-        let Ok(screen) = Iri::parse(format!("urn:iki:ui:screen:name:{}", offer.content)) else {
-            continue;
+        let target = match &offer.role {
+            Some(role) => chosen[role].clone(),
+            None => format!("urn:iki:ui:screen:name:{}", offer.content),
         };
-        if inv.issue(Request::new(Verb::Source, screen)).await.is_ok() {
+        let ok = match readable.get(&target) {
+            Some(ok) => *ok,
+            None => {
+                let name = Iri::parse(target.as_str()).map_err(|e| refuse(e.to_string()))?;
+                let ok = match inv.issue(Request::new(Verb::Exists, name)).await {
+                    Ok(_) => true,
+                    Err(e) if withheld(&e) => false,
+                    Err(e) => return Err(e),
+                };
+                readable.insert(target, ok);
+                ok
+            }
+        };
+        if ok {
             out.push(offer);
         }
     }
-    out
+    Ok(out)
 }
 
 /// The workspace screen's face name, without [`FACE`]'s `urn:iki:ui:screen:name:` part:
@@ -2270,7 +2325,8 @@ pub fn apply(
 
 /// What an edit Sink answers a form that posted with no script (section 5A): the sentence, in
 /// a status paragraph marked `data-ui-said` (which the shell's script reads, as text), and a
-/// link back to the workspace at the pane that changed.
+/// link back to the workspace at the pane that changed, marked `data-ui-focus-pane` with the
+/// pane's key (the one link the shell's script reads to know where focus goes, ledger #3953).
 pub fn edited_html(workspace: &str, pane: Option<&str>, sentence: &str) -> String {
     fn esc(s: &str) -> String {
         s.replace('&', "&amp;")
@@ -2283,12 +2339,13 @@ pub fn edited_html(workspace: &str, pane: Option<&str>, sentence: &str) -> Strin
     } else {
         sentence
     };
-    let at = pane
-        .filter(|k| is_key(k))
-        .map(|k| format!("#pane-{k}"))
+    let key = pane.filter(|k| is_key(k));
+    let at = key.map(|k| format!("#pane-{k}")).unwrap_or_default();
+    let marker = key
+        .map(|k| format!(" data-ui-focus-pane=\"{k}\""))
         .unwrap_or_default();
     format!(
-        "<p role=\"status\" data-ui-said>{}</p><p><a href=\"/workspace/{}{at}\">Back to the workspace</a></p>",
+        "<p role=\"status\" data-ui-said>{}</p><p><a href=\"/workspace/{}{at}\"{marker}>Back to the workspace</a></p>",
         esc(said),
         esc(workspace)
     )

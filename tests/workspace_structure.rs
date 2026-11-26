@@ -317,10 +317,31 @@ fn maximize_is_a_view_in_the_address() {
     // Only the maximized pane is in the layout: the others are not in the tab order or the
     // accessibility tree.
     assert_eq!(regions(&screen), ["Session"]);
-    let links = labels(&screen, "link");
+    // "Restore every pane" is the Maximize toggle's place: a GET of the address without
+    // `maximize`, its button pressed; and no Collapse while maximized.
+    let restore = nodes(&screen)
+        .into_iter()
+        .find(|n| n.kind == "form" && prop(n, "label") == "Restore every pane")
+        .expect("a Restore toggle");
+    assert_eq!(prop(restore, "method"), "get");
+    assert_eq!(
+        prop(restore, "action"),
+        format!("/workspace/{WS}#pane-session")
+    );
+    assert!(restore
+        .children
+        .iter()
+        .all(|f| prop(f, "name") != "maximize"));
+    assert_eq!(
+        restore.hint.get(workspace::TOGGLE),
+        Some(&ikigai_ui::model::Hint::Plain(
+            ikigai_ui::model::Value::Text("pressed true".into())
+        ))
+    );
+    let forms = labels(&screen, "form");
     assert!(
-        links.contains(&"Restore every pane".to_string()),
-        "{links:?}"
+        !forms.iter().any(|l| l.starts_with("Collapse")),
+        "{forms:?}"
     );
     // The pane list still lists every pane, the hidden ones said in words, each linking back
     // to every pane at itself.
@@ -351,16 +372,23 @@ fn maximize_is_a_view_in_the_address() {
         "urn:iki:ledger:default:item:7".to_string(),
     );
     let every = workspace::compose_with(&ws, WS, 3, &address, None, &[]).unwrap();
-    let hrefs: Vec<&str> = nodes(&every)
+    let max = nodes(&every)
         .into_iter()
-        .filter(|n| n.kind == "link" && prop(n, "label") == "Maximize Trail")
-        .map(|n| prop(n, "href"))
+        .find(|n| n.kind == "form" && prop(n, "label") == "Maximize Trail")
+        .expect("a Maximize toggle");
+    assert_eq!(prop(max, "method"), "get");
+    assert_eq!(prop(max, "action"), format!("/workspace/{WS}#pane-trail"));
+    let fields: Vec<(&str, &str)> = max
+        .children
+        .iter()
+        .map(|f| (prop(f, "name"), prop(f, "value")))
         .collect();
     assert_eq!(
-        hrefs,
-        [format!(
-            "/workspace/{WS}?select.item=urn%3Aiki%3Aledger%3Adefault%3Aitem%3A7&maximize=trail#pane-trail"
-        )]
+        fields,
+        [
+            ("select.item", "urn:iki:ledger:default:item:7"),
+            ("maximize", "trail")
+        ]
     );
     assert_eq!(regions(&every).len(), 4);
     // An unknown pane is refused, naming it.

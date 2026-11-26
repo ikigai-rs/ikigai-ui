@@ -175,15 +175,28 @@ fn a_selection_never_writes() {
     );
     assert!(refs.contains(&"urn:iki:ui:screen:name:lens:dashboard:resource:urn:iki:ledger:default"));
 
-    // Every form is an edit form (the "Layout" form, and each pane's "Pane" menu, ledger
-    // #3952), posting to the edit Sink. The selection is in none of their fields.
+    // Every form that writes is an edit form (the "Layout" form, each pane's "Pane" menu, ledger
+    // #3952, and its Collapse toggle, ledger #3953), posting to the edit Sink: 1 + 4 × (move,
+    // tabs, close) + 4 collapse + the 2 reorders. The selection is in none of their fields. The
+    // rest are the four Maximize toggles, GETs of the workspace's own address that keep the
+    // selection and write nothing.
     let forms = all(&screen, "form");
-    assert_eq!(forms.len(), 11);
-    for form in forms {
+    let (edits, views): (Vec<&Node>, Vec<&Node>) =
+        forms.into_iter().partition(|f| text(f, "method") == "post");
+    assert_eq!(edits.len(), 19);
+    for form in edits {
         assert_eq!(text(form, "resource"), format!("{WORKSPACE}:edit"));
         for field in all(form, "field") {
             assert!(!text(field, "value").contains(chosen), "{field:?}");
         }
+    }
+    assert_eq!(views.len(), 4);
+    for form in views {
+        assert!(text(form, "label").starts_with("Maximize "), "{form:?}");
+        assert!(text(form, "action").starts_with(&format!("/workspace/{WORKSPACE}#pane-")));
+        assert!(all(form, "field")
+            .iter()
+            .any(|f| text(f, "value") == chosen));
     }
 }
 
@@ -225,11 +238,17 @@ fn a_selection_never_writes_through_the_face() {
     ));
     assert_eq!(html.matches("A pane&#39;s content.").count(), 4, "{html}");
 
-    // The Layout form and the "Pane" menus' forms (ledger #3952): every one an edit.
-    assert_eq!(html.matches("<form").count(), 11, "{html}");
+    // The Layout form, the "Pane" menus' forms (ledger #3952) and the Collapse toggles (ledger
+    // #3953): every one an edit. The four Maximize toggles are GETs that write nothing.
+    assert_eq!(html.matches("<form").count(), 23, "{html}");
+    assert_eq!(html.matches("method=\"get\"").count(), 4, "{html}");
     for (at, _) in html.match_indices("<form") {
         let form = &html[at..];
         let form = &form[..form.find("</form>").unwrap()];
+        if form.contains("method=\"get\"") {
+            assert!(form.contains("aria-pressed=\"false\">Maximize "), "{form}");
+            continue;
+        }
         assert!(!form.contains(chosen), "{form}");
         assert!(form.contains("name%3Aitem%3Aedit\""), "{form}");
         assert!(form.contains("name=\"if-version\""), "{form}");
@@ -255,7 +274,7 @@ fn the_html_face_renders_the_layout_hints() {
     let html = String::from_utf8(rep.bytes).unwrap();
     for part in [
         r##"<div class="ui-split ui-split-row" role="group" aria-label="Side by side: Dashboard, Session">"##,
-        r##"<div class="ui-share ui-share-300"><section class="ui-group ui-pane" id="pane-dashboard" aria-label="Dashboard" data-ui-drop="left right above below tabs">"##,
+        r##"<div class="ui-share ui-share-300"><section class="ui-group ui-pane" id="pane-dashboard" aria-label="Dashboard" data-ui-drop="left right above below tabs" data-ui-collapsed="false">"##,
         r##"<div class="ui-share ui-share-700"><div class="ui-split ui-split-column""##,
         r##"<div class="ui-tabs" data-ui-tabs role="group""##,
         r##"<div role="tablist" aria-label="Tabs: Item, Trail">"##,
@@ -1263,12 +1282,18 @@ fn a_reorder_moves_a_tab_along_its_list() {
         let err = format!("{:?}", workspace::apply(&ws, &args(&all)).unwrap_err());
         assert!(err.contains(says), "{err}");
     }
+    // A close is an edit now (ledger #3953), refused here only for naming no pane.
     let err = format!(
         "{:?}",
         workspace::apply(&ws, &args(&[("op", "close")])).unwrap_err()
     );
+    assert!(err.contains("the edit has no `pane`"), "{err}");
+    let err = format!(
+        "{:?}",
+        workspace::apply(&ws, &args(&[("op", "split")])).unwrap_err()
+    );
     assert!(
-        err.contains("`close` is not an edit this workspace makes yet"),
+        err.contains("`split` is not an edit this workspace makes"),
         "{err}"
     );
 }
@@ -1311,14 +1336,19 @@ fn every_pane_has_a_pane_menu_of_edits() {
     };
     assert_eq!(
         forms(menu("Dashboard")),
-        ["Move Dashboard…", "Put Dashboard in tabs with…"]
+        [
+            "Move Dashboard…",
+            "Put Dashboard in tabs with…",
+            "Close Dashboard"
+        ]
     );
     assert_eq!(
         forms(menu("Item")),
         [
             "Move Item…",
             "Put Item in tabs with…",
-            "Move Item tab later"
+            "Move Item tab later",
+            "Close Item"
         ]
     );
     assert_eq!(
@@ -1326,7 +1356,8 @@ fn every_pane_has_a_pane_menu_of_edits() {
         [
             "Move Trail…",
             "Put Trail in tabs with…",
-            "Move Trail tab earlier"
+            "Move Trail tab earlier",
+            "Close Trail"
         ]
     );
     let item = menu("Item");
@@ -1381,7 +1412,7 @@ fn the_html_face_renders_the_pane_menu() {
     let html = face_html();
     assert!(
         html.contains(
-            r#"id="pane-session" aria-label="Session" data-ui-drop="left right above below tabs">"#
+            r#"id="pane-session" aria-label="Session" data-ui-drop="left right above below tabs" data-ui-collapsed="false">"#
         ),
         "{html}"
     );

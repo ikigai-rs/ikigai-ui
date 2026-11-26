@@ -184,6 +184,9 @@ meter { width: 12rem; height: 1rem; vertical-align: middle; }
 .ui-split > .ui-share-collapsed { flex: 0 0 auto; }
 .ui-split-row > .ui-share-collapsed { max-width: 16rem; }
 .ui-split-column > .ui-share-collapsed { min-height: 0; }
+/* A pane's header toggles (Collapse or Expand, Maximize or Restore): 24px targets (SC 2.5.8). */
+.ui-pane-toggle { display: inline-block; margin: 0 0.5rem 0.5rem 0; }
+.ui-pane-toggle > button { min-height: 24px; min-width: 24px; }
 .ui-pane { margin: 0; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; overflow-wrap: anywhere; }
 .ui-pane > :last-child { margin-bottom: 0; }
 /* The splitter between two children (ledger #3951): a 24px hit area (SC 2.5.8), 44px on a coarse
