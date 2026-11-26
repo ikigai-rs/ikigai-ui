@@ -14,7 +14,7 @@
 //! | `urn:iki:uidemo:fragment:{name}` | composition | the page's body: a note and the screen it shows |
 //! | `urn:iki:uidemo:page:lens:{lens}:resource:{iri}` | composition | a lensed view of `{iri}` in the shell ([`ikigai_ui::Pages::lenses`]); the door's `/lens/name/{lens}/resource/{iri}` |
 //! | `urn:iki:ui:workspace:person:urn:person:demo:name:contacts` | data | the demo's one workspace atom ([`WORKSPACE`]), a fixture over the example lenses |
-//! | `…:name:contacts:edit`, `…:revert`, `…:version:{n}` | service, data | the workspace's edit and revert Sinks over an in-memory store of every version ([`Layouts`], ledger #3952), and each version |
+//! | `…:name:contacts:edit`, `…:revert`, `…:version:{n}`, `…:addable` | service, data | the workspace's edit and revert Sinks over an in-memory store of every version ([`Layouts`], ledger #3952), and each version |
 //! | `urn:iki:uidemo:page:workspace:{iri}` | composition | a workspace in the shell ([`ikigai_ui::Pages::workspaces`]); the door's `/workspace/{iri}` ([`WORKSPACE_PATH`]) |
 //!
 //! The contact form is not written by hand: it is the `form` node ikigai-ui generates from the
@@ -66,6 +66,9 @@ pub const WORKSPACE: &str = "urn:iki:ui:workspace:person:urn:person:demo:name:co
 /// The workspace atom: the contact list beside a tab list of the dashboard and the table, each
 /// pane following `graph`.
 pub const WORKSPACE_ATOM: &str = include_str!("../assets/workspace.json");
+/// What the demo's workspace can open in a new pane (ledger #3953): its `addable` list, the
+/// three example contact lenses over the selected graph.
+pub const WORKSPACE_ADDABLE: &str = include_str!("../assets/addable.json");
 /// Where the door serves [`WORKSPACE`]: the path its "Panes" list links to.
 pub const WORKSPACE_PATH: &str =
     "/workspace/urn:iki:ui:workspace:person:urn:person:demo:name:contacts";
@@ -435,19 +438,20 @@ fn workspace_edit(layouts: Layouts) -> FnEndpoint {
         let mut held = held(&layouts)?;
         check_version(&args, held.len())?;
         let latest = ikigai_ui::workspace::validate(held.last().expect("version 1"))?;
-        let (next, said) = ikigai_ui::workspace::apply(&latest, &args)?;
-        held.push(ikigai_ui::workspace::atom(&next));
+        let list = ikigai_ui::workspace::addable(WORKSPACE_ADDABLE.as_bytes())?;
+        let edited = ikigai_ui::workspace::apply_with(&latest, &args, &list)?;
+        held.push(ikigai_ui::workspace::atom(&edited.workspace));
         let body = ikigai_ui::workspace::edited_html(
             WORKSPACE,
-            args.get("pane").map(String::as_str),
-            &said,
+            edited.pane.as_deref(),
+            &edited.said,
         );
         Ok(Representation::new(ReprType::new(HTML), body.into_bytes()))
     })
     .with_description(edit_description(
         "uidemo-workspace-edit",
         "Edit the workspace's layout",
-        "Applies one edit (resize, move or reorder) to the latest version and writes the next \
+        "Applies one edit (resize, move, reorder, collapse, expand, close or add) to the latest version and writes the next \
          one; refused, naming why, when if-version is not the latest or the result breaks a \
          bound.",
     ))
@@ -479,6 +483,27 @@ fn workspace_revert(layouts: Layouts) -> FnEndpoint {
     ))
 }
 
+/// `{WORKSPACE}:addable`: the demo's [`WORKSPACE_ADDABLE`] list, as JSON.
+fn workspace_addable() -> FnEndpoint {
+    FnEndpoint::new("uidemo-workspace-addable", |_: &Invocation<'_>| {
+        Ok(Representation::new(
+            ReprType::new(JSON),
+            WORKSPACE_ADDABLE.as_bytes().to_vec(),
+        ))
+    })
+    .with_description(
+        Description::new("uidemo-workspace-addable")
+            .title("What the demo's workspace can open")
+            .summary(
+                "The workspace's addable list (fixtures only): the example contact lenses over \
+                 the selected graph. The workspace screen offers only those the viewer can read.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output(JSON),
+    )
+}
+
 fn edit_description(id: &str, title: &str, summary: &str) -> Description {
     Description::new(id)
         .title(title)
@@ -505,6 +530,10 @@ pub fn service(store: Store) -> EndpointSpace {
         .bind(
             Exact::new(format!("{WORKSPACE}:edit")),
             workspace_edit(layouts.clone()),
+        )
+        .bind(
+            Exact::new(format!("{WORKSPACE}:addable")),
+            workspace_addable(),
         )
         .bind(
             Exact::new(format!("{WORKSPACE}:revert")),

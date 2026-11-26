@@ -788,6 +788,15 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                         .filter(|a| ["row", "column"].contains(a))
                         .map(str::to_string),
                     ("group", "pane-key") => Some(pane_key(node)?.to_string()),
+                    // Collapsed to its header (ledger #3953): a fixed word, never the hint's text.
+                    ("group", "collapsed") => Some(
+                        if node.hint.contains_key(crate::workspace::COLLAPSED) {
+                            "true"
+                        } else {
+                            "false"
+                        }
+                        .to_string(),
+                    ),
                     // The places a drag may drop on this pane (ledger #3952): only the words of
                     // [`crate::workspace::PLACES`] enter markup.
                     ("group", "drop") => Some(
@@ -984,7 +993,10 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
                             if i > 0 {
                                 out.push_str(&splitter(node, &shares, i - 1)?);
                             }
-                            let class = share_class(shares.get(i).copied().unwrap_or_default());
+                            let mut class = share_class(shares.get(i).copied().unwrap_or_default());
+                            if child.hint.contains_key(crate::workspace::COLLAPSED) {
+                                class.push_str(" ui-share-collapsed");
+                            }
                             out.push_str(&format!("<div class=\"ui-share {class}\">"));
                             out.push_str(&child_view(path).await?);
                             out.push_str("</div>");

@@ -643,6 +643,175 @@ struct Whole<'a> {
     workspace: &'a Workspace,
     iri: &'a str,
     version: u64,
+    /// The selection in the address, kept by the maximize and restore links.
+    address: &'a BTreeMap<String, String>,
+    /// The pane maximized in the address, if any.
+    maximized: Option<&'a str>,
+    /// What can be opened in a new pane now, read under the viewer's capability.
+    offers: &'a [Offer],
+}
+
+/// The workspace page's address with the selection, `maximize={key}` when given, and `#pane-{at}`.
+fn workspace_href(
+    iri: &str,
+    address: &BTreeMap<String, String>,
+    maximize: Option<&str>,
+    at: &str,
+) -> String {
+    let mut query: Vec<String> = address
+        .iter()
+        .map(|(role, value)| format!("select.{role}={}", crate::lens::pct(value)))
+        .collect();
+    if let Some(k) = maximize {
+        query.push(format!("maximize={k}"));
+    }
+    let query = if query.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", query.join("&"))
+    };
+    format!("/workspace/{iri}{query}#pane-{at}")
+}
+
+fn button(label: impl Into<String>) -> Node {
+    node("button", vec![text("label", label)], vec![])
+}
+
+/// The collapse or expand, close and "Open in a new pane" forms of a pane's menu (ledger #3953).
+fn structure_forms(key: &str, whole: &Whole<'_>) -> Vec<Node> {
+    let ws = whole.workspace;
+    let label = &ws.panes[key].label;
+    let mut forms = Vec::new();
+    let mut layout = ws.layout.clone();
+    if let Some((children, i)) = child_of(&mut layout, key) {
+        let collapsed = children[i].collapsed;
+        let last_open = !collapsed
+            && children
+                .iter()
+                .enumerate()
+                .all(|(j, c)| j == i || c.collapsed);
+        if collapsed {
+            forms.push(edit_form(
+                whole,
+                format!("Expand {label}"),
+                None,
+                vec![
+                    hidden("Edit", "op", "expand"),
+                    hidden("Pane", "pane", key),
+                    button("Expand"),
+                ],
+            ));
+        } else if !last_open {
+            forms.push(edit_form(
+                whole,
+                format!("Collapse {label}"),
+                Some(format!(
+                    "Shrinks {label} to its heading; it keeps its size for when it is expanded."
+                )),
+                vec![
+                    hidden("Edit", "op", "collapse"),
+                    hidden("Pane", "pane", key),
+                    button("Collapse"),
+                ],
+            ));
+        }
+    }
+    if ws.panes.len() > 1 {
+        forms.push(edit_form(
+            whole,
+            format!("Close {label}"),
+            Some(format!(
+                "Takes {label} out of the workspace. Reverting to this version brings it back."
+            )),
+            vec![
+                hidden("Edit", "op", "close"),
+                hidden("Pane", "pane", key),
+                button("Close"),
+            ],
+        ));
+    }
+    if let Some(role) = ws.panes[key].emits.as_deref() {
+        if ws.panes.len() < MAX_PANES {
+            for offer in whole
+                .offers
+                .iter()
+                .filter(|o| o.role.as_deref() == Some(role))
+            {
+                forms.push(edit_form(
+                    whole,
+                    format!("Open this selection in a new pane: {}", offer.label),
+                    Some(format!(
+                        "Opens {} in a new pane to the right of {label}, pinned to the {role} selected now.",
+                        offer.label
+                    )),
+                    vec![
+                        hidden("Edit", "op", "add"),
+                        hidden("Open", "content", &offer.content),
+                        hidden("Beside", "to", key),
+                        hidden("Where", "place", "right"),
+                        button(format!("Open {} in a new pane", offer.label)),
+                    ],
+                ));
+            }
+        }
+    }
+    forms
+}
+
+/// The workspace's "Add pane" form (section 5A "Add"): what can be opened, beside which pane and
+/// where, posting one `add` edit. `None` when nothing can be opened.
+fn add_form(whole: &Whole<'_>) -> Option<Node> {
+    let ws = whole.workspace;
+    if whole.offers.is_empty() {
+        return None;
+    }
+    if ws.panes.len() >= MAX_PANES {
+        return Some(node(
+            "text",
+            vec![text(
+                "content",
+                format!("A workspace holds at most {MAX_PANES} panes: close one to add another."),
+            )],
+            vec![],
+        ));
+    }
+    let beside = reading_order(&ws.layout)
+        .into_iter()
+        .map(|k| (k.to_string(), ws.panes[k].label.clone()))
+        .collect();
+    Some(edit_form(
+        whole,
+        "Add pane".to_string(),
+        Some("Opens a new pane. Saving writes a new version.".to_string()),
+        vec![
+            hidden("Edit", "op", "add"),
+            choice(
+                "Open",
+                "content",
+                whole
+                    .offers
+                    .iter()
+                    .map(|o| (o.content.clone(), o.label.clone()))
+                    .collect(),
+            ),
+            choice("Beside", "to", beside),
+            choice(
+                "Where",
+                "place",
+                [
+                    ("right", "To its right"),
+                    ("left", "To its left"),
+                    ("above", "Above it"),
+                    ("below", "Below it"),
+                    ("tabs", "Into tabs with it"),
+                ]
+                .into_iter()
+                .map(|(v, l)| (v.to_string(), l.to_string()))
+                .collect(),
+            ),
+            button("Add pane"),
+        ],
+    ))
 }
 
 fn hidden(label: &str, name: &str, value: impl Into<String>) -> Node {
@@ -713,42 +882,41 @@ fn pane_menu(key: &str, whole: &Whole<'_>) -> Option<Node> {
         .into_iter()
         .filter(|k| *k != key)
         .collect();
-    if others.is_empty() {
-        return None;
-    }
     let mut forms = Vec::new();
     let names = |keys: &[&str]| -> Vec<(String, String)> {
         keys.iter()
             .map(|k| (k.to_string(), ws.panes[*k].label.clone()))
             .collect()
     };
-    forms.push(edit_form(
-        whole,
-        format!("Move {label}…"),
-        Some(format!(
+    if !others.is_empty() {
+        forms.push(edit_form(
+            whole,
+            format!("Move {label}…"),
+            Some(format!(
             "Puts {label} beside another pane, or into tabs with it. Saving writes a new version."
         )),
-        vec![
-            hidden("Edit", "op", "move"),
-            hidden("Pane", "pane", key),
-            choice("Next to", "to", names(&others)),
-            choice(
-                "Where",
-                "place",
-                [
-                    ("left", "To its left"),
-                    ("right", "To its right"),
-                    ("above", "Above it"),
-                    ("below", "Below it"),
-                    ("tabs", "Into tabs with it"),
-                ]
-                .into_iter()
-                .map(|(v, l)| (v.to_string(), l.to_string()))
-                .collect(),
-            ),
-            node("button", vec![text("label", "Move")], vec![]),
-        ],
-    ));
+            vec![
+                hidden("Edit", "op", "move"),
+                hidden("Pane", "pane", key),
+                choice("Next to", "to", names(&others)),
+                choice(
+                    "Where",
+                    "place",
+                    [
+                        ("left", "To its left"),
+                        ("right", "To its right"),
+                        ("above", "Above it"),
+                        ("below", "Below it"),
+                        ("tabs", "Into tabs with it"),
+                    ]
+                    .into_iter()
+                    .map(|(v, l)| (v.to_string(), l.to_string()))
+                    .collect(),
+                ),
+                node("button", vec![text("label", "Move")], vec![]),
+            ],
+        ));
+    }
     let own = tab_group(&ws.layout, key);
     let mut full = Vec::new();
     let room: Vec<&str> = others
@@ -809,6 +977,10 @@ fn pane_menu(key: &str, whole: &Whole<'_>) -> Option<Node> {
             }
         }
     }
+    forms.extend(structure_forms(key, whole));
+    if forms.is_empty() {
+        return None;
+    }
     Some(hinted(
         node("group", vec![text("label", label)], forms),
         MENU,
@@ -844,6 +1016,22 @@ fn pane_region(
                 vec![
                     text("label", format!("Open {} alone", pane.label)),
                     text("href", alone_href(alone)),
+                ],
+                vec![],
+            ));
+            let (word, maximize) = if whole.maximized == Some(key) {
+                ("Restore every pane".to_string(), None)
+            } else {
+                (format!("Maximize {}", pane.label), Some(key))
+            };
+            children.push(node(
+                "link",
+                vec![
+                    text("label", word),
+                    text(
+                        "href",
+                        workspace_href(whole.iri, whole.address, maximize, key),
+                    ),
                 ],
                 vec![],
             ));
@@ -1129,56 +1317,117 @@ pub fn resize(workspace: &Workspace, args: &BTreeMap<String, String>) -> Result<
 /// The workspace as an ordinary screen: its heading, the pane list, the layout (groups with
 /// the split and tabs hints, panes as regions) and the "Layout" form. A pure function of the
 /// atom, its IRI, its version and the selection in the address: it reads nothing and writes
-/// nothing.
+/// nothing. [`compose_with`] with nothing maximized and nothing to add.
 pub fn compose(
     workspace: &Workspace,
     iri: &str,
     version: u64,
     address: &BTreeMap<String, String>,
 ) -> Result<Node, Error> {
+    compose_with(workspace, iri, version, address, None, &[])
+}
+
+/// [`compose`], with the pane `maximize={key}` in the address names (section 5A "Maximize":
+/// a view, never written) and what can be opened in a new pane ([`offers`], already read under
+/// the viewer's capability). Maximized, the layout is that pane alone: the others are not in
+/// the page (so out of the tab order and the accessibility tree), the pane list still lists
+/// them, "hidden while {pane} is maximized", each linking back to every pane at itself, and the
+/// pane's "Maximize" link is "Restore every pane" in the same place. With offers, an "Add pane"
+/// form after the pane list, and in each pane that emits a role, "Open this selection in a new
+/// pane".
+pub fn compose_with(
+    workspace: &Workspace,
+    iri: &str,
+    version: u64,
+    address: &BTreeMap<String, String>,
+    maximize: Option<&str>,
+    offers: &[Offer],
+) -> Result<Node, Error> {
     let selection = selection(workspace, address)?;
+    let max_label = match maximize {
+        Some(k) => Some(
+            workspace
+                .panes
+                .get(k)
+                .map(|p| p.label.clone())
+                .ok_or_else(|| refuse(format!("there is no pane `{k}` to maximize")))?,
+        ),
+        None => None,
+    };
     let list = reading_order(&workspace.layout)
         .into_iter()
         .map(|k| {
             let pane = &workspace.panes[k];
+            let (label, href) = match (&max_label, maximize) {
+                (Some(m), Some(mk)) if mk != k => (
+                    format!(
+                        "{}: {}, hidden while {m} is maximized",
+                        pane.label,
+                        says(pane, &selection)
+                    ),
+                    workspace_href(iri, address, None, k),
+                ),
+                (_, Some(mk)) => (
+                    format!("{}: {}", pane.label, says(pane, &selection)),
+                    workspace_href(iri, address, Some(mk), k),
+                ),
+                _ => (
+                    format!("{}: {}", pane.label, says(pane, &selection)),
+                    format!("/workspace/{iri}#pane-{k}"),
+                ),
+            };
             node(
                 "link",
-                vec![
-                    text(
-                        "label",
-                        format!("{}: {}", pane.label, says(pane, &selection)),
-                    ),
-                    text("href", format!("/workspace/{iri}#pane-{k}")),
-                ],
+                vec![text("label", label), text("href", href)],
                 vec![],
             )
         })
         .collect();
+    let whole = Whole {
+        workspace,
+        iri,
+        version,
+        address,
+        maximized: maximize,
+        offers,
+    };
+    let mut children = vec![
+        node(
+            "heading",
+            vec![
+                text("content", &workspace.label),
+                ("level".into(), Value::Number(1)),
+            ],
+            vec![],
+        ),
+        node("nav", vec![text("label", "Panes")], list),
+    ];
+    children.extend(add_form(&whole));
+    match (maximize, &max_label) {
+        (Some(k), Some(m)) => {
+            children.push(node(
+                "text",
+                vec![text(
+                    "content",
+                    format!("{m} maximized. Restore to see every pane."),
+                )],
+                vec![],
+            ));
+            children.push(pane_region(
+                k,
+                &workspace.panes[k],
+                &selection,
+                false,
+                &whole,
+            ));
+        }
+        _ => children.push(compose_layout(&workspace.layout, &whole, &selection, false)),
+    }
+    children.push(layout_form(workspace, iri, version));
     Ok(node(
         "group",
         vec![text("label", &workspace.label)],
-        vec![
-            node(
-                "heading",
-                vec![
-                    text("content", &workspace.label),
-                    ("level".into(), Value::Number(1)),
-                ],
-                vec![],
-            ),
-            node("nav", vec![text("label", "Panes")], list),
-            compose_layout(
-                &workspace.layout,
-                &Whole {
-                    workspace,
-                    iri,
-                    version,
-                },
-                &selection,
-                false,
-            ),
-            layout_form(workspace, iri, version),
-        ],
+        children,
     ))
 }
 
@@ -1201,10 +1450,13 @@ pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
                 }
                 let mut address = BTreeMap::new();
                 let mut version = 1u64;
+                let mut maximize: Option<String> = None;
                 for name in inv.request.args.keys() {
                     let value = inv.inline_str(name)?;
                     if let Some(role) = name.strip_prefix("select.") {
                         address.insert(role.to_string(), value.to_string());
+                    } else if name == "maximize" {
+                        maximize = (!value.is_empty()).then(|| value.to_string());
                     } else if name == "version" {
                         version = value
                             .parse()
@@ -1230,7 +1482,15 @@ pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
                     }
                 }
                 let workspace = validate(&atom.bytes)?;
-                let node = compose(&workspace, &iri, version, &address)?;
+                let offered = readable_offers(inv, &iri, &workspace, &address).await;
+                let node = compose_with(
+                    &workspace,
+                    &iri,
+                    version,
+                    &address,
+                    maximize.as_deref(),
+                    &offered,
+                )?;
                 crate::model::validate(&node)?;
                 let bytes = serde_json::to_vec(&node).map_err(|e| refuse(e.to_string()))?;
                 Ok(Representation::new(ReprType::new(crate::model::MEDIA_TYPE), bytes).cacheable())
@@ -1257,6 +1517,41 @@ pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
     )
 }
 
+/// What can be opened in a new pane now (ledger #3953): the host's `{iri}:addable` list, read
+/// under the caller's capability, filled from the selection ([`offers`]), and only the entries
+/// whose content screen the caller can read (each is read once, here, under the same
+/// capability). Nothing, when the host binds no list or it cannot be read.
+async fn readable_offers(
+    inv: &ikigai_core::Invocation<'_>,
+    iri: &str,
+    workspace: &Workspace,
+    address: &BTreeMap<String, String>,
+) -> Vec<Offer> {
+    use ikigai_core::{Request, Verb};
+    let Ok(at) = Iri::parse(addable_iri(iri)) else {
+        return Vec::new();
+    };
+    let Ok(answer) = inv.issue(Request::new(Verb::Source, at)).await else {
+        return Vec::new();
+    };
+    let Ok(list) = addable(&answer.bytes) else {
+        return Vec::new();
+    };
+    let Ok(chosen) = selection(workspace, address) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for offer in offers(&list, &chosen) {
+        let Ok(screen) = Iri::parse(format!("urn:iki:ui:screen:name:{}", offer.content)) else {
+            continue;
+        };
+        if inv.issue(Request::new(Verb::Source, screen)).await.is_ok() {
+            out.push(offer);
+        }
+    }
+    out
+}
+
 /// The workspace screen's face name, without [`FACE`]'s `urn:iki:ui:screen:name:` part:
 /// `workspace:resource:{iri}`, or `workspace:select:{role}={pct-iri}&…:resource:{iri}` with a
 /// selection. Each selected IRI is percent-encoded, so no `:` in it splits the name.
@@ -1272,16 +1567,61 @@ pub fn face_name(workspace: &str, selection: &BTreeMap<String, String>) -> Strin
     format!("workspace:select:{select}:resource:{workspace}")
 }
 
+/// [`face_name`] with a maximized pane (ledger #3953): `…:maximize:{key}:resource:{iri}`.
+pub fn face_name_with(
+    workspace: &str,
+    selection: &BTreeMap<String, String>,
+    maximize: Option<&str>,
+) -> String {
+    let Some(k) = maximize.filter(|k| is_key(k)) else {
+        return face_name(workspace, selection);
+    };
+    let select = if selection.is_empty() {
+        String::new()
+    } else {
+        let pairs = selection
+            .iter()
+            .map(|(role, iri)| format!("{role}={}", crate::lens::pct(iri)))
+            .collect::<Vec<_>>()
+            .join("&");
+        format!("select:{pairs}:")
+    };
+    format!("workspace:{select}maximize:{k}:resource:{workspace}")
+}
+
 /// A face name read back: the workspace's IRI and the selection by role.
 pub type FaceName = (String, BTreeMap<String, String>);
 
 /// A face name's workspace and selection, from what follows `workspace:`. `None` when it is
-/// not one; a refusal when its selection is malformed.
+/// not one; a refusal when its selection is malformed. A maximized pane in it is dropped
+/// ([`parse_face`] keeps it).
 pub fn parse_face_name(rest: &str) -> Option<Result<FaceName, Error>> {
-    if let Some(iri) = rest.strip_prefix("resource:") {
-        return (!iri.is_empty()).then(|| Ok((iri.to_string(), BTreeMap::new())));
-    }
-    let (select, iri) = rest.strip_prefix("select:")?.split_once(":resource:")?;
+    parse_face(rest).map(|r| r.map(|(iri, selection, _)| (iri, selection)))
+}
+
+/// A face name's workspace, selection and maximized pane (ledger #3953): what follows
+/// `workspace:`, `[select:{role}={pct-iri}&…:][maximize:{key}:]resource:{iri}`.
+pub fn parse_face(
+    rest: &str,
+) -> Option<Result<(String, BTreeMap<String, String>, Option<String>), Error>> {
+    let (select, rest) = match rest.strip_prefix("select:") {
+        Some(r) => {
+            let (select, r) = r.split_once(':')?;
+            (select, r)
+        }
+        None => ("", rest),
+    };
+    let (maximize, rest) = match rest.strip_prefix("maximize:") {
+        Some(r) => {
+            let (k, r) = r.split_once(':')?;
+            if !is_key(k) {
+                return Some(Err(refuse(format!("`{k}` is not a pane key to maximize"))));
+            }
+            (Some(k.to_string()), r)
+        }
+        None => (None, rest),
+    };
+    let iri = rest.strip_prefix("resource:")?;
     if iri.is_empty() {
         return None;
     }
@@ -1295,7 +1635,7 @@ pub fn parse_face_name(rest: &str) -> Option<Result<FaceName, Error>> {
             Err(e) => return Some(Err(e)),
         };
     }
-    Some(Ok((iri.to_string(), out)))
+    Some(Ok((iri.to_string(), out, maximize)))
 }
 
 /// The screen a browser's request names: a workspace face name with the request's
@@ -1305,13 +1645,20 @@ pub fn fold(inv: &ikigai_core::Invocation<'_>, screen: &str) -> Result<String, E
     let Some(rest) = screen.strip_prefix("workspace:") else {
         return Ok(screen.to_string());
     };
-    let Some(parsed) = parse_face_name(rest) else {
+    let Some(parsed) = parse_face(rest) else {
         return Ok(screen.to_string());
     };
-    let (iri, mut chosen) = parsed?;
+    let (iri, mut chosen, mut maximize) = parsed?;
     let mut changed = false;
     for name in inv.request.args.keys() {
-        if let Some(role) = name.strip_prefix("select.") {
+        if name == "maximize" {
+            let value = inv.inline_str(name)?;
+            if !value.is_empty() && !is_key(value) {
+                return Err(refuse(format!("`{value}` is not a pane key to maximize")));
+            }
+            changed = true;
+            maximize = (!value.is_empty()).then(|| value.to_string());
+        } else if let Some(role) = name.strip_prefix("select.") {
             let value = inv.inline_str(name)?;
             changed = true;
             if value.is_empty() {
@@ -1322,7 +1669,7 @@ pub fn fold(inv: &ikigai_core::Invocation<'_>, screen: &str) -> Result<String, E
         }
     }
     Ok(if changed {
-        face_name(&iri, &chosen)
+        face_name_with(&iri, &chosen, maximize.as_deref())
     } else {
         screen.to_string()
     })
@@ -1340,7 +1687,7 @@ pub(crate) fn face_endpoint() -> ikigai_core::AsyncFnEndpoint {
         |inv: &Invocation<'_>| -> InvokeFuture<'_> {
             Box::pin(async move {
                 let rest = inv.bindings.get("rest").unwrap_or_default();
-                let (iri, selection) = parse_face_name(rest)
+                let (iri, selection, maximize) = parse_face(rest)
                     .ok_or_else(|| Error::NotFound(format!("workspace:{rest}")))??;
                 let mut request = Request::new(
                     Verb::Source,
@@ -1351,6 +1698,9 @@ pub(crate) fn face_endpoint() -> ikigai_core::AsyncFnEndpoint {
                         format!("select.{role}"),
                         ArgRef::Inline(value.as_bytes().to_vec()),
                     );
+                }
+                if let Some(k) = maximize {
+                    request = request.with_arg("maximize", ArgRef::Inline(k.into_bytes()));
                 }
                 inv.issue(request).await
             })
@@ -1906,23 +2256,15 @@ pub fn reorder(
     ))
 }
 
-/// One edit applied (section 5A "The edit"): `op` is `resize` ([`resize`]), `move`
-/// ([`move_pane`]) or `reorder` ([`reorder`]); the result and the one sentence `#status` says
-/// for it (empty for a resize, whose splitter says it). `if-version` is the host's to check.
-/// The result is validated as the atom: a host stores [`atom`] of it as the next version.
+/// One edit applied (section 5A "The edit"): [`apply_with`] with no `addable` list, so an
+/// `add` is refused. The result and the one sentence `#status` says for it (empty for a resize,
+/// whose splitter says it). `if-version` is the host's to check. The result is validated as the
+/// atom: a host stores [`atom`] of it as the next version.
 pub fn apply(
     workspace: &Workspace,
     args: &BTreeMap<String, String>,
 ) -> Result<(Workspace, String), Error> {
-    match args.get("op").map(String::as_str) {
-        Some("resize") => Ok((resize(workspace, args)?, String::new())),
-        Some("move") => move_pane(workspace, args),
-        Some("reorder") => reorder(workspace, args),
-        Some(op) => Err(refuse(format!(
-            "`{op}` is not an edit this workspace makes yet (resize, move or reorder)"
-        ))),
-        None => Err(refuse("the edit has no `op`")),
-    }
+    apply_with(workspace, args, &[]).map(|e| (e.workspace, e.said))
 }
 
 /// What an edit Sink answers a form that posted with no script (section 5A): the sentence, in
@@ -1949,4 +2291,383 @@ pub fn edited_html(workspace: &str, pane: Option<&str>, sentence: &str) -> Strin
         esc(said),
         esc(workspace)
     )
+}
+
+// ---- Collapse, maximize, close and add (ledger #3953, section 5A, section 7 proposal 6) ----
+
+/// One entry of a workspace's `addable` list (section 5A "Close and add"): what the host offers
+/// to open in a new pane. `content` is a screen name; with `accepts` (a selection role) it holds
+/// `{role}` once, filled with that role's selected IRI, and it is offered only while that role
+/// has a selection. The list is the host's: it binds `{workspace}:addable` ([`addable_iri`])
+/// to a JSON array of these, and the workspace screen reads it under the viewer's capability
+/// and offers only the entries whose content the viewer can read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Addable {
+    /// What the new pane is called.
+    pub label: String,
+    /// Its address: a screen name, with `{role}` once when `accepts` is given.
+    pub content: String,
+    /// The selection role whose IRI fills `{role}` in `content`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepts: Option<String>,
+}
+
+/// The most entries an `addable` list holds.
+pub const MAX_ADDABLE: usize = 64;
+
+/// `{workspace}:addable`: the composed list of what can be opened in a new pane.
+pub fn addable_iri(workspace: &str) -> String {
+    format!("{workspace}:addable")
+}
+
+/// Parse an `addable` list: a JSON array of [`Addable`], closed and bounded.
+pub fn addable(bytes: &[u8]) -> Result<Vec<Addable>, Error> {
+    let list: Vec<Addable> = serde_json::from_slice(bytes)
+        .map_err(|e| refuse(format!("the addable list is not a list of panes: {e}")))?;
+    if list.len() > MAX_ADDABLE {
+        return Err(refuse(format!(
+            "an addable list holds at most {MAX_ADDABLE} entries"
+        )));
+    }
+    for entry in &list {
+        label(Some(&Json::String(entry.label.clone())), "an addable entry")?;
+        match &entry.accepts {
+            Some(role) => {
+                if !is_key(role) || entry.content.matches(&format!("{{{role}}}")).count() != 1 {
+                    return Err(refuse(format!(
+                        "addable `{}` accepts `{role}` but its content does not hold `{{{role}}}` once",
+                        entry.label
+                    )));
+                }
+            }
+            None => {
+                if entry.content.contains('{') {
+                    return Err(refuse(format!(
+                        "addable `{}` has a placeholder and accepts no role",
+                        entry.label
+                    )));
+                }
+            }
+        }
+    }
+    Ok(list)
+}
+
+/// One thing that can be opened now: its label, its filled content, and the role it was filled
+/// from (`None` for a pinned entry).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Offer {
+    /// What the new pane is called.
+    pub label: String,
+    /// Its filled content screen name.
+    pub content: String,
+    /// The selection role it was filled from.
+    pub role: Option<String>,
+}
+
+/// The entries of `list` that can be opened under `selection`: pinned ones as they are, and
+/// those that accept a selected role filled with its IRI. An entry whose role has nothing
+/// selected is not offered.
+pub fn offers(list: &[Addable], selection: &BTreeMap<String, String>) -> Vec<Offer> {
+    list.iter()
+        .filter_map(|e| match &e.accepts {
+            None => Some(Offer {
+                label: e.label.clone(),
+                content: e.content.clone(),
+                role: None,
+            }),
+            Some(role) => selection.get(role).map(|iri| Offer {
+                label: e.label.clone(),
+                content: e.content.replace(&format!("{{{role}}}"), iri),
+                role: Some(role.clone()),
+            }),
+        })
+        .collect()
+}
+
+/// Whether `content` is something `list` offers: a pinned entry's content, or an accepting
+/// entry's with one absolute IRI in its placeholder.
+fn is_offered(list: &[Addable], content: &str) -> Option<String> {
+    list.iter().find_map(|e| match &e.accepts {
+        None => (e.content == content).then(|| e.label.clone()),
+        Some(role) => {
+            let (before, after) = e.content.split_once(&format!("{{{role}}}"))?;
+            let iri = content.strip_prefix(before)?.strip_suffix(after)?;
+            (is_segment(iri) && Iri::parse(iri).is_ok()).then(|| e.label.clone())
+        }
+    })
+}
+
+/// What one edit did: the workspace it gives, the one sentence `#status` says for it (empty
+/// for a resize), and the pane focus goes to after it (the moved, collapsed or added pane; after
+/// a close, the pane that took its place).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Edited {
+    /// The workspace after the edit, validated as the atom.
+    pub workspace: Workspace,
+    /// The `#status` sentence.
+    pub said: String,
+    /// The pane focus goes to.
+    pub pane: Option<String>,
+}
+
+fn label_of(workspace: &Workspace, key: &str) -> Result<String, Error> {
+    workspace
+        .panes
+        .get(key)
+        .map(|p| p.label.clone())
+        .ok_or_else(|| refuse(format!("there is no pane `{key}` in this workspace")))
+}
+
+/// The split child whose node is the unit holding `key`, with its siblings' collapsed flags.
+fn child_of<'a>(layout: &'a mut Layout, key: &str) -> Option<(&'a mut Vec<Child>, usize)> {
+    let Layout::Split { children, .. } = layout else {
+        return None;
+    };
+    if let Some(i) = children.iter().position(|c| is_unit(&c.node, key)) {
+        return Some((children, i));
+    }
+    children.iter_mut().find_map(|c| child_of(&mut c.node, key))
+}
+
+/// One `collapse` or `expand` edit (section 5A "Collapse"): the unit holding `pane` (the pane,
+/// or its whole tab group) collapsed to its header, keeping its share, or opened again. Refused
+/// when the pane fills the workspace alone, when it is already so, or when collapsing it would
+/// leave no open pane beside it in its split.
+pub fn collapse(
+    workspace: &Workspace,
+    args: &BTreeMap<String, String>,
+    collapsed: bool,
+) -> Result<Edited, Error> {
+    let op = if collapsed { "collapse" } else { "expand" };
+    closed_args(args, op, &["pane"])?;
+    let pane = args_get(args, "pane")?;
+    let label = label_of(workspace, pane)?;
+    let mut layout = workspace.layout.clone();
+    let Some((children, i)) = child_of(&mut layout, pane) else {
+        return Err(refuse(format!(
+            "{label} fills the workspace: there is nothing beside it to collapse it into"
+        )));
+    };
+    if children[i].collapsed == collapsed {
+        return Err(refuse(if collapsed {
+            format!("{label} is already collapsed")
+        } else {
+            format!("{label} is not collapsed")
+        }));
+    }
+    if collapsed
+        && children
+            .iter()
+            .enumerate()
+            .all(|(j, c)| j == i || c.collapsed)
+    {
+        return Err(refuse(format!(
+            "{label} is the last open pane beside the collapsed ones: one stays open"
+        )));
+    }
+    children[i].collapsed = collapsed;
+    let out = validate(&atom(&Workspace {
+        layout,
+        ..workspace.clone()
+    }))?;
+    let said = if collapsed {
+        format!("Collapsed {label}.")
+    } else {
+        format!("Expanded {label}.")
+    };
+    Ok(Edited {
+        workspace: out,
+        said,
+        pane: Some(pane.to_string()),
+    })
+}
+
+/// One `close` edit (section 5A "Close"): `pane` taken out of the layout and out of the panes;
+/// its neighbor takes its space (as a move takes a pane out). The sentence names the version
+/// that still has it (`if-version`), since the version history is the undo; focus goes to the
+/// pane before it in reading order (after it, for the first). Refused for the last pane.
+pub fn close(workspace: &Workspace, args: &BTreeMap<String, String>) -> Result<Edited, Error> {
+    closed_args(args, "close", &["pane"])?;
+    let pane = args_get(args, "pane")?;
+    let label = label_of(workspace, pane)?;
+    let order = reading_order(&workspace.layout);
+    let at = order.iter().position(|k| *k == pane).unwrap_or(0);
+    let heir = if at > 0 {
+        order.get(at - 1)
+    } else {
+        order.get(1)
+    }
+    .map(|k| k.to_string());
+    let layout = take(workspace.layout.clone(), pane)
+        .ok_or_else(|| refuse(format!("{label} is the last pane: a workspace keeps one")))?;
+    let mut out = Workspace {
+        layout,
+        ..workspace.clone()
+    };
+    out.panes.remove(pane);
+    let out = validate(&atom(&out))?;
+    let said = match args
+        .get("if-version")
+        .and_then(|v| v.trim().parse::<u64>().ok())
+    {
+        Some(n) => format!("Closed {label}. Revert to version {n} brings it back."),
+        None => format!("Closed {label}."),
+    };
+    Ok(Edited {
+        workspace: out,
+        said,
+        pane: heir,
+    })
+}
+
+/// A new pane's key from its label: `[a-z0-9-]`, not already taken.
+fn new_key(workspace: &Workspace, label: &str) -> String {
+    let mut base: String = label
+        .chars()
+        .map(|c| {
+            let c = c.to_ascii_lowercase();
+            if c.is_ascii_lowercase() || c.is_ascii_digit() {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    base = base
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    base.truncate(24);
+    let base = base.trim_end_matches('-').to_string();
+    let base = if base.is_empty() { "pane".into() } else { base };
+    let mut key = base.clone();
+    let mut n = 2;
+    while workspace.panes.contains_key(&key) {
+        key = format!("{base}-{n}");
+        n += 1;
+    }
+    key
+}
+
+/// One `add` edit (section 5A "Add" and "Open this selection in a new pane"): a pinned pane
+/// with `content`, which must be one of `list`'s entries (an accepting entry filled with one
+/// absolute IRI), put at `place` (default `right`) of pane `to` (default the first pane). It
+/// can add only what the host's `addable` list offers (decision 10); its content is read under
+/// the viewer's capability like any pane's. Refused, naming why, for anything else or a result
+/// that breaks a bound.
+pub fn add(
+    workspace: &Workspace,
+    args: &BTreeMap<String, String>,
+    list: &[Addable],
+) -> Result<Edited, Error> {
+    closed_args(args, "add", &["content", "to", "place"])?;
+    let content = args_get(args, "content")?;
+    let Some(label) = is_offered(list, content) else {
+        return Err(refuse(format!(
+            "`{content}` is not something this workspace can open"
+        )));
+    };
+    let order = reading_order(&workspace.layout);
+    let to = match args.get("to").map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        Some(to) => to.to_string(),
+        None => order[0].to_string(),
+    };
+    let target = label_of(workspace, &to)?;
+    let place = args
+        .get("place")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("right");
+    if !PLACES.contains(&place) {
+        return Err(refuse(format!(
+            "`{place}` is not a place: left, right, above, below or tabs"
+        )));
+    }
+    if workspace.panes.len() >= MAX_PANES {
+        return Err(refuse(format!(
+            "A workspace holds at most {MAX_PANES} panes: close one to open {label}"
+        )));
+    }
+    if place == "tabs" {
+        if let Some((tabs, _)) = tab_group(&workspace.layout, &to) {
+            if tabs.len() >= MAX_TABS {
+                return Err(refuse(format!(
+                    "A tab group holds at most {MAX_TABS} panes"
+                )));
+            }
+        }
+    }
+    let key = new_key(workspace, &label);
+    let layout = put(workspace.layout.clone(), &key, &to, place);
+    if depth_of(&layout) > MAX_DEPTH {
+        return Err(refuse(format!(
+            "A layout nests at most {MAX_DEPTH} deep: {label} cannot open there"
+        )));
+    }
+    let mut out = Workspace {
+        layout,
+        ..workspace.clone()
+    };
+    out.panes.insert(
+        key.clone(),
+        Pane {
+            label: label.clone(),
+            content: content.to_string(),
+            follows: None,
+            emits: None,
+            accepts: None,
+            live: false,
+            as_of: false,
+            scopes: None,
+        },
+    );
+    let out = validate(&atom(&out))?;
+    let said = match place {
+        "tabs" => format!("Opened {label} in tabs with {target}."),
+        "left" => format!("Opened {label} to the left of {target}."),
+        "above" => format!("Opened {label} above {target}."),
+        "below" => format!("Opened {label} below {target}."),
+        _ => format!("Opened {label} to the right of {target}."),
+    };
+    Ok(Edited {
+        workspace: out,
+        said,
+        pane: Some(key),
+    })
+}
+
+/// One edit applied, with the host's `addable` list for an `add` (section 5A "The edit"):
+/// `resize`, `move`, `reorder`, `collapse`, `expand`, `close` or `add`. A host stores
+/// [`atom`] of the result as the next version and answers [`edited_html`] for `pane`.
+pub fn apply_with(
+    workspace: &Workspace,
+    args: &BTreeMap<String, String>,
+    list: &[Addable],
+) -> Result<Edited, Error> {
+    let moved = |(workspace, said): (Workspace, String)| Edited {
+        workspace,
+        said,
+        pane: args.get("pane").cloned(),
+    };
+    match args.get("op").map(String::as_str) {
+        Some("resize") => Ok(Edited {
+            workspace: resize(workspace, args)?,
+            said: String::new(),
+            pane: None,
+        }),
+        Some("move") => move_pane(workspace, args).map(moved),
+        Some("reorder") => reorder(workspace, args).map(moved),
+        Some("collapse") => collapse(workspace, args, true),
+        Some("expand") => collapse(workspace, args, false),
+        Some("close") => close(workspace, args),
+        Some("add") => add(workspace, args, list),
+        Some(op) => Err(refuse(format!(
+            "`{op}` is not an edit this workspace makes (resize, move, reorder, collapse, \
+             expand, close or add)"
+        ))),
+        None => Err(refuse("the edit has no `op`")),
+    }
 }

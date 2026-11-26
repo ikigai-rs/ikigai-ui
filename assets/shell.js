@@ -57,7 +57,9 @@
 //    live, and by the keyboard, saved as one `resize` edit through the workspace's "Layout" form.
 // 9. Workspace rearrange (ledger #3952): a pane dragged by its heading onto one of five drop
 //    targets, a tab dragged along its tab list, and the "Pane" menu's forms, each saved as one
-//    `move` or `reorder` edit; the layout then rebuilt around the panes' own elements.
+//    `move` or `reorder` edit; the layout then rebuilt around the panes' own elements. The
+//    menu's Collapse, Expand, Close and "Open in a new pane", and the "Add pane" form (ledger
+//    #3953), are sent the same way; focus goes to the pane the Sink's answer links back to.
 (function () {
   "use strict";
   var KEY = "ikigai-ui:theme";
@@ -1210,6 +1212,9 @@
       Array.prototype.forEach.call(root.querySelectorAll("section.ui-pane[id^='pane-']"), function (old) {
         var next = fresh.querySelector("#" + old.id);
         if (!next) return;
+        // Collapsed or expanded (ledger #3953): the new element, which has (or has not) its
+        // content; every other pane keeps its own.
+        if ((old.getAttribute("data-ui-collapsed") || "false") !== (next.getAttribute("data-ui-collapsed") || "false")) return;
         var menu = old.querySelector(":scope > details[data-ui-pane-menu]");
         var nextMenu = next.querySelector(":scope > details[data-ui-pane-menu]");
         if (menu && nextMenu) menu.replaceWith(nextMenu);
@@ -1243,13 +1248,21 @@
     }).then(function (r) {
       return r.text().then(function (t) {
         if (!r.ok) throw new Error(t || "the server answered " + r.status);
-        var answer = new DOMParser().parseFromString(t, "text/html").querySelector("[data-ui-said]");
+        var parsed = new DOMParser().parseFromString(t, "text/html");
+        var answer = parsed.querySelector("[data-ui-said]");
         said = answer ? answer.textContent : "";
+        // The pane focus goes to, as the Sink says it (after a close, the one that took its
+        // place; after an add, the new one).
+        var back = parsed.querySelector('a[href*="#pane-"]');
+        if (back) key = back.getAttribute("href").split("#pane-")[1] || key;
         return rebuild(root);
       });
-    }).then(function () {
-      var h = heading(key);
-      if (h) h.focus({ preventScroll: false });
+    }).then(function (fresh) {
+      var h = heading(key) || (fresh && fresh.querySelector("section.ui-pane > h2"));
+      if (h) {
+        h.setAttribute("tabindex", "-1");
+        h.focus({ preventScroll: false });
+      }
       say(said, false);
     }).catch(function (e) {
       say("The layout was not changed: " + (e && e.message ? e.message : "no answer") + ".", true);
@@ -1268,13 +1281,15 @@
   document.addEventListener("submit", function (e) {
     var form = e.target;
     var menu = form && form.closest && form.closest("details[data-ui-pane-menu]");
-    var root = menu && workspaceOf(menu);
+    // The workspace's "Add pane" form (ledger #3953) is sent the same way.
+    var adding = !menu && form && form.querySelector && form.querySelector('input[name="op"][value="add"]');
+    var root = (menu || adding) && workspaceOf(menu || form);
     if (!root) return;
     e.preventDefault();
     e.stopPropagation();
     var fields = fieldsOf(form);
-    menu.open = false;
-    send(root, fields, fields.pane || menu.getAttribute("data-ui-pane-menu"));
+    if (menu) menu.open = false;
+    send(root, fields, fields.pane || fields.to || (menu && menu.getAttribute("data-ui-pane-menu")));
   }, true);
   // Escape in an open menu closes it and puts focus back on its summary.
   document.addEventListener("keydown", function (e) {

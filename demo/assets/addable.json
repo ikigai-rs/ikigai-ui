@@ -1,0 +1,5 @@
+[
+  {"label": "Contact list", "content": "lens:contact-list:resource:{graph}", "accepts": "graph"},
+  {"label": "Contact dashboard", "content": "lens:contact-dashboard:resource:{graph}", "accepts": "graph"},
+  {"label": "Contact table", "content": "lens:contact-table:resource:{graph}", "accepts": "graph"}
+]
