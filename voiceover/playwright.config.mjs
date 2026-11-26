@@ -1,4 +1,4 @@
-// Real VoiceOver over the gallery (ledger #4278, from the #3545 spike), run as Guidepup's
+// Real VoiceOver over the gallery (ledgers #4278 and #4279, from the #3545 spike), run as Guidepup's
 // Playwright fixture expects: serially, headed, in WebKit. No retries: the job is informational
 // (never a gate), and a retry would hide how often it fails.
 import { devices } from "@playwright/test";
