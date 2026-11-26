@@ -49,3 +49,46 @@ jobs:
           name: screenshots
           path: target/screenshots
           if-no-files-found: ignore
+
+  # Real VoiceOver over the gallery (ledger #4278, from the #3545 spike:
+  # docs/research/screen-reader-ci.md). INFORMATIONAL, never a gate: `continue-on-error`, and it
+  # must never be made a required check. The blocking accessibility-tree check stays
+  # `axe/aria.spec.mjs` in the `axe` job; a red run here more often means "macOS or VoiceOver
+  # changed" than "we broke something". One job, no retries; what VoiceOver said is uploaded as
+  # the `voiceover` artifact. Guidepup's setup and packages are pinned exactly (its packages
+  # from voiceover/package-lock.json).
+  voiceover:
+    runs-on: macos-15
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Write the site (the one the axe job checks)
+        run: cargo run --example axe_site -- target/axe-site
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Allow VoiceOver to be driven (Guidepup's setup, exact version)
+        run: npx -y --ignore-scripts=false @guidepup/setup@0.29.3 setup --ci
+      - name: Install Guidepup and Playwright (exact pins, from its lock)
+        working-directory: voiceover
+        run: npm ci --no-audit --no-fund
+      - name: Install Guidepup's screen-reader assets and preferences (as its own CI does)
+        working-directory: voiceover
+        run: npx -y --ignore-scripts=false @guidepup/setup@0.29.3 install
+      - name: Install WebKit
+        working-directory: voiceover
+        run: npx playwright install webkit
+      - name: VoiceOver
+        working-directory: voiceover
+        env:
+          SITE: ${{ github.workspace }}/target/axe-site
+        run: npx playwright test
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voiceover
+          path: voiceover/results
+          if-no-files-found: ignore
