@@ -1,7 +1,7 @@
 // Real VoiceOver over the gallery and elements screens, in ONE VoiceOver session: the first html
 // HEAR check of each kind whose HEAR sentence names a name and a role (assets/criterion/*.json):
-// button, link, field and disclosure reached by Tab as their criteria word it (VoiceOver
-// following keyboard focus), heading, list and table by VoiceOver's own find commands
+// button, field and disclosure reached by Tab as their criteria word it (VoiceOver following
+// keyboard focus), link by Option+Tab (WebKit's Tab for links, below), heading, list and table by VoiceOver's own find commands
 // (VO-Command-H, -X, -T: "move by headings", "reach the list", "reach the table"), and meter by
 // VoiceOver's cursor (VO+Right), which has no find command for it. Ledger #4279, extending #4278
 // (from the #3545 spike, docs/research/screen-reader-ci.md).
@@ -24,6 +24,8 @@ const STEPS = 120;
 
 // One check per kind, in the order the route meets them. `reach` says how VoiceOver gets there;
 // `find` picks the item by its name; `hear` holds what the HEAR sentence asks to be said.
+// `expected` is the result ACCESSIBILITY.md records (pass unless it says otherwise): the test
+// holds each check to it, so the job goes red when any result changes, either way.
 const GALLERY = [
   {
     kind: "field",
@@ -42,7 +44,10 @@ const GALLERY = [
   {
     kind: "link",
     statement: "WHEN I Tab to the link with a desktop screen reader … I HEAR its purpose is clear and I HEAR it identify itself as a link",
-    reach: "tab",
+    // WebKit, like Safari with "Press Tab to highlight each item" off (its default), stops Tab at
+    // form controls only (run 45879605406: 80 presses cycled Theme … Save, never a link);
+    // Option+Tab is its Tab for links too.
+    reach: "optionTab",
     find: /\bhelp\b/i,
     hear: { name: /\bhelp\b/i, role: /\blink\b/i },
   },
@@ -76,6 +81,8 @@ const ELEMENTS = [
     reach: "tab",
     find: /how often is the gauge read/i,
     hear: { name: /how often is the gauge read/i, role: /\bbutton\b/i, state: /collapsed|expanded/i },
+    // Recorded as Fail in ACCESSIBILITY.md: VoiceOver says "collapsed summary", no button role.
+    expected: "fail",
   },
   {
     kind: "meter",
@@ -95,9 +102,10 @@ async function said(voiceOver) {
 }
 
 async function reach(voiceOver, check) {
-  const limit = check.reach === "tab" ? TABS : check.reach === "cursor" ? STEPS : FINDS;
+  const limit = check.reach === "tab" || check.reach === "optionTab" ? TABS : check.reach === "cursor" ? STEPS : FINDS;
   for (let i = 1; i <= limit; i++) {
     if (check.reach === "tab") await voiceOver.press("Tab");
+    else if (check.reach === "optionTab") await voiceOver.press("Option+Tab");
     else if (check.reach === "cursor") await voiceOver.next();
     else await voiceOver.perform(voiceOver.keyboardCommands[check.reach]);
     const heard = await said(voiceOver);
@@ -136,9 +144,10 @@ test("in one VoiceOver session, each kind's first HEAR check says its name and r
           heard: heard ? { phrase: heard.phrase, item: heard.item } : null,
           parts,
         });
+        const expected = check.expected ?? "pass";
         expect
-          .soft(pass, `${check.kind}: ${heard ? `heard "${heard.text.trim()}", parts ${JSON.stringify(parts)}` : `never reached ${check.find} by ${check.reach}`}`)
-          .toBe(true);
+          .soft(pass ? "pass" : "fail", `${check.kind} (recorded ${expected}): ${heard ? `heard "${heard.text.trim()}", parts ${JSON.stringify(parts)}` : `never reached ${check.find} by ${check.reach}`}`)
+          .toBe(expected);
       }
     }
   } finally {
