@@ -1599,11 +1599,12 @@ pub fn parse_face_name(rest: &str) -> Option<Result<FaceName, Error>> {
     parse_face(rest).map(|r| r.map(|(iri, selection, _)| (iri, selection)))
 }
 
+/// A face name read back with its maximized pane: the IRI, the selection, the pane.
+pub type Face = (String, BTreeMap<String, String>, Option<String>);
+
 /// A face name's workspace, selection and maximized pane (ledger #3953): what follows
 /// `workspace:`, `[select:{role}={pct-iri}&…:][maximize:{key}:]resource:{iri}`.
-pub fn parse_face(
-    rest: &str,
-) -> Option<Result<(String, BTreeMap<String, String>, Option<String>), Error>> {
+pub fn parse_face(rest: &str) -> Option<Result<Face, Error>> {
     let (select, rest) = match rest.strip_prefix("select:") {
         Some(r) => {
             let (select, r) = r.split_once(':')?;
