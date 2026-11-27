@@ -1,6 +1,6 @@
 // Real VoiceOver hears the workspace's two status sentences (ledger #3953, docs/design/workspace.md
 // section 5A and section 7 proposal 6): "Contacts maximized. Restore to see every pane." when a
-// pane is maximized, and "Closed Table. Revert to version {n} brings it back." when a pane is
+// pane is maximized, and "Closed Dashboard. Revert to version {n} brings it back." when a pane is
 // closed. Both are said in #status, the page's one polite live region; neither is focused, so
 // VoiceOver says them only as live-region announcements, which this checks.
 //
@@ -95,22 +95,22 @@ test("close: VoiceOver hears the Closed sentence", async ({ page, voiceOver, req
   test.setTimeout(8 * 60 * 1000);
   await revert(request);
   await openWorkspace(page, voiceOver);
-  // Table's menu is opened from the page: Safari's Tab reaches form controls, not a <summary>,
+  // Dashboard's menu is opened from the page: Safari's Tab reaches form controls, not a <summary>,
   // and what is checked here is the sentence after Close, which VoiceOver's own keys press.
-  const menu = page.locator("#pane-table > details[data-ui-pane-menu]");
+  const menu = page.locator("#pane-dashboard > details[data-ui-pane-menu]");
   await menu.evaluate((d) => { d.open = true; });
   await expect(menu).toHaveAttribute("open", "");
   try {
-    await tabTo(voiceOver, (t) => /\bclose\b/i.test(t) && /button/i.test(t), "Close in Table's menu");
+    await tabTo(voiceOver, (t) => /\bclose\b/i.test(t) && /button/i.test(t), "Close in Dashboard's menu");
   } finally {
     await keepLog(voiceOver, "spoken-close-tab");
   }
   const said = [];
   await voiceOver.press("Enter");
-  const found = await heard(voiceOver, /closed table\.? revert to version \d+ brings it back/i, said);
+  const found = await heard(voiceOver, /closed dashboard\.? revert to version \d+ brings it back/i, said);
   await keepSaid("spoken-close", said);
   await keepLog(voiceOver, "spoken-close");
-  await expect(page.locator("#pane-table")).toHaveCount(0, { timeout: 30000 });
-  await expect(page.locator("#status p")).toHaveText(/^Closed Table\. Revert to version \d+ brings it back\.$/, { timeout: 30000 });
+  await expect(page.locator("#pane-dashboard")).toHaveCount(0, { timeout: 30000 });
+  await expect(page.locator("#status p")).toHaveText(/^Closed Dashboard\. Revert to version \d+ brings it back\.$/, { timeout: 30000 });
   expect(found, "VoiceOver never said the Closed sentence").toBe(true);
 });
