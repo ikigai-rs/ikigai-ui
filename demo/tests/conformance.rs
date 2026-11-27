@@ -241,6 +241,12 @@ fn conforms() {
                 .binding("node", "n.0")
                 .binding("property", "label"),
         )
+        // The composed node every html view of it reads (ledger #4483).
+        .fixture(
+            Fixture::new("ui-html-model", Verb::Source)
+                .binding("screen", "gallery")
+                .binding("node", "n.1"),
+        )
         .fixture(
             Fixture::new("ui-face-target-screen", Verb::Source)
                 .binding("target", "gpui")

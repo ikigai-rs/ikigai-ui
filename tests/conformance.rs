@@ -338,6 +338,12 @@ fn conforms() {
                 .binding("node", "n.0")
                 .binding("property", "label"),
         )
+        // The composed node every html view of it reads (ledger #4483).
+        .fixture(
+            Fixture::new("ui-html-model", Verb::Source)
+                .binding("screen", "gallery")
+                .binding("node", "n.1.2"),
+        )
         .fixture(Fixture::new("ui-template-kind", Verb::Source).binding("kind", "table"))
         // The outline compiler (ledger #3365): an outline of one kind and one reference.
         .fixture(Fixture::new("ui-outline-compile", Verb::Source).arg(
@@ -357,6 +363,7 @@ fn conforms() {
         .cacheable("ui-html-node")
         .cacheable("ui-html-child")
         .cacheable("ui-html-property")
+        .cacheable("ui-html-model")
         // Descriptors are file-backed artifacts; support and faces are pure projections.
         .pure("ui-support")
         .pure("ui-face-target-screen")
