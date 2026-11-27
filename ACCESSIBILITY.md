@@ -158,6 +158,10 @@ checks no test verifies. On main today it counts, summed over the 16 kinds and 5
 | html | 124 | 103 | 0 | 53 |
 | gpui | 161 | 18 | 49 | 31 |
 
+The column counts every HEAR check as untested, because the matrix records no screen-reader
+result. One of the 53 html HEAR checks has been heard: `button`'s first, in the informational
+`voiceover` job (below). The other 52 are untested.
+
 The html SEE checks with a test are held by `tests/criterion.rs` on every node of their kind on
 the gallery and elements screens: the element or attribute emitted, native focusability or none,
 the 3px `:focus-visible` ring, the accessible name (from its text, `<label for>`,
@@ -178,6 +182,14 @@ and in CI's `ci / fmt · clippy · test` job; the browser checks in CI's `axe (W
 Playwright 1.64.0 and axe-core 4.13.0 (`@axe-core/playwright` 4.13.0, pinned in
 `axe/package-lock.json`), headless Chrome for Testing 156.0.8078.4. CI repeats both on every pull
 request and every push to main. A historical run CI does not repeat is Blocked, with its date.
+The screen-reader check was run separately, in CI's informational `voiceover` job on main at
+2a72d63 on 2026-11-26
+([run 45764115337](https://github.com/ikigai-rs/ikigai-ui/actions/runs/45764115337), job
+[139720782204](https://github.com/ikigai-rs/ikigai-ui/actions/runs/45764115337/job/139720782204),
+2 tests passed). It used real VoiceOver on GitHub's `macos-15-arm64` image (macOS 15.8.2,
+image 20261118.0550.1), driven by Guidepup 0.40.0 (`@guidepup/playwright` 0.21.0,
+`@guidepup/setup` 0.29.3, pinned in `voiceover/package-lock.json` and the workflow), with
+Playwright 1.64.0's WebKit 27.2 and Node 24.
 
 | Check | Result | Evidence |
 |---|---|---|
@@ -214,7 +226,9 @@ request and every push to main. A historical run CI does not repeat is Blocked, 
 | 400% zoom and reflow (SC 1.4.4, 1.4.10) | Blocked | Each kind's 400% zoom check has no probe, and no browser run at 320 CSS px or 400% zoom is part of CI. |
 | Real native windows looked at | Blocked | Looked at on macOS by hand, and on Linux (X11 under Xvfb, Wayland under weston, lawnboy) on 2026-11-12 for text and theme only (`gpui/README.md`, "Verification"). Never on Windows or FreeBSD; nobody has driven a real keyboard, IME or appearance change on Linux or Windows. |
 | Manual keyboard | Blocked | The keyboard checks above are scripted. No person has done a keyboard pass of the HTML face for this review. |
-| Screen reader | Blocked | No screen reader has been used for this review, and no screen-reader job runs, so every html HEAR check (53) is untested. The native face cannot be heard at all: GPUI 0.2.2 exposes no accessibility tree, so every gpui HEAR check (31) is blocked by the toolkit. |
+| `button`'s first html HEAR check: "WHEN I Tab to the button with a desktop screen reader … I HEAR its purpose is clear and I HEAR it identify its role of button" | Pass | `voiceover/button.spec.mjs` in the `voiceover` job, [run 45764115337](https://github.com/ikigai-rs/ikigai-ui/actions/runs/45764115337) on main at 2a72d63: VoiceOver (macOS 15, WebKit, Guidepup 0.40.0) said the gallery's "Sign up" button with its name and the role button, both when it was reached by Tab with VoiceOver following focus and when it was reached by VoiceOver's own cursor (VO+Right). Both tests passed. What VoiceOver said is uploaded as the run's `voiceover` artifact. Name and role are matched by pattern, not VoiceOver's exact wording. Covers one button, one reader, one browser and one OS image. It is not NVDA, JAWS or a mobile reader, and not a person's pass. |
+| The `voiceover` job (`.github/workflows/ci.yml`, ledger #4278) | Informational | Runs on every pull request and every push to main, with `continue-on-error: true`, no retries and a 30-minute limit. It is never a required check and must never be made one. A red run usually means macOS or VoiceOver changed, not that the face regressed. The blocking accessibility-tree check stays `axe/aria.spec.mjs` in the `axe` job. |
+| Screen reader, every other check | Blocked | Apart from `button`'s first html HEAR check (above), no screen reader has been used for this review, so 52 of the 53 html HEAR checks are untested. The native face cannot be heard at all: GPUI 0.2.2 exposes no accessibility tree, so every gpui HEAR check (31) is blocked by the toolkit. |
 | Screen magnifier | Blocked | No magnifier has been used on either face. GPUI 0.2.2 does not report focus to one (blocked by the toolkit). |
 | Speech input | Blocked | No speech-input software has been used on either face. |
 | Switch access | Blocked | No switch-access software has been used on either face. |
