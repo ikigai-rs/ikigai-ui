@@ -1320,12 +1320,17 @@
   // the region is in the tree, the way Collapse and Expand do: after a full-page load a screen
   // reader sits on the web content and does not speak a polite change made before focus lands
   // inside it. Only that announced load moves focus; an ordinary load leaves it where it is.
-  document.addEventListener("DOMContentLoaded", function () {
+  // It waits for `load`, then a frame: the address ends in #pane-{key}, and scrolling to that
+  // fragment runs the browser's focusing steps, which put focus back on the viewport (the pane's
+  // section is not focusable) if Restore were focused before it.
+  window.addEventListener("load", function () {
     var said = document.querySelector("main [data-ui-announce]");
     if (!said) return;
-    var restore = document.querySelector('main section.ui-pane > form.ui-pane-toggle > button[aria-pressed="true"]');
-    if (restore) restore.focus();
-    window.setTimeout(function () { say(said.textContent, false); }, 300);
+    window.requestAnimationFrame(function () {
+      var restore = document.querySelector('main section.ui-pane > form.ui-pane-toggle > button[aria-pressed="true"]');
+      if (restore) restore.focus();
+      window.setTimeout(function () { say(said.textContent, false); }, 300);
+    });
   });
   // Escape in an open menu closes it and puts focus back on its summary.
   document.addEventListener("keydown", function (e) {
