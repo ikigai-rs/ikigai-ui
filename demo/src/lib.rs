@@ -351,13 +351,20 @@ fn held(layouts: &Layouts) -> Result<std::sync::MutexGuard<'_, Vec<Vec<u8>>>, Er
         .map_err(|_| Error::Endpoint("poisoned".into()))
 }
 
-/// One version as the store answers it: the atom, its type saying which version it is, never
-/// cached (the next edit changes the bare name's answer).
+/// One version as the store answers it: the atom, its type saying which version it is. The
+/// bare name's answer is never cached (the next edit changes it); a saved version's is
+/// ([`saved_rep`]).
 fn version_rep(n: usize, bytes: &[u8]) -> Representation {
     Representation::new(
         ReprType::new(JSON).with_param("version", n.to_string()),
         bytes.to_vec(),
     )
+}
+
+/// One saved version, `…:version:{n}`: never rewritten, so its answer is cacheable (ledger
+/// #4483), and the workspace page composed over it is too.
+fn saved_rep(n: usize, bytes: &[u8]) -> Representation {
+    version_rep(n, bytes).cacheable()
 }
 
 fn workspace_atom(layouts: Layouts) -> FnEndpoint {
@@ -388,12 +395,15 @@ fn workspace_version(layouts: Layouts) -> FnEndpoint {
             .ok()
             .filter(|n| (1..=held.len()).contains(n))
             .ok_or_else(|| Error::NotFound(format!("no version `{n}`")))?;
-        Ok(version_rep(at, &held[at - 1]))
+        Ok(saved_rep(at, &held[at - 1]))
     })
     .with_description(
         Description::new("uidemo-workspace-version")
             .title("One version of the demo's workspace")
-            .summary("One saved version of the workspace atom, never rewritten.")
+            .summary(
+                "One saved version of the workspace atom, never rewritten, so its answer is \
+                 cacheable.",
+            )
             .verb(Verb::Source)
             .verb(Verb::Meta)
             .input(ArgSpec::new("n").class(XSD_INTEGER).binding())
@@ -483,13 +493,15 @@ fn workspace_revert(layouts: Layouts) -> FnEndpoint {
     ))
 }
 
-/// `{WORKSPACE}:addable`: the demo's [`WORKSPACE_ADDABLE`] list, as JSON.
+/// `{WORKSPACE}:addable`: the demo's [`WORKSPACE_ADDABLE`] list, as JSON. A constant compiled
+/// in, so its answer is cacheable (ledger #4483): every workspace screen reads it, and an
+/// uncacheable list would keep the page composed over a saved version from being cached.
 fn workspace_addable() -> FnEndpoint {
     FnEndpoint::new("uidemo-workspace-addable", |_: &Invocation<'_>| {
-        Ok(Representation::new(
-            ReprType::new(JSON),
-            WORKSPACE_ADDABLE.as_bytes().to_vec(),
-        ))
+        Ok(
+            Representation::new(ReprType::new(JSON), WORKSPACE_ADDABLE.as_bytes().to_vec())
+                .cacheable(),
+        )
     })
     .with_description(
         Description::new("uidemo-workspace-addable")

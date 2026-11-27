@@ -457,6 +457,95 @@ fn locate<'a>(root: &'a Node, at: &str) -> Result<(&'a Node, Option<&'a Node>), 
     Ok((node, parent))
 }
 
+/// The model resource of node `at` of `screen` (ledger #4483):
+/// `urn:iki:ui:html:screen:{screen}:model:{node}`. A lensed or workspace name is escaped the
+/// way a compose template expands it, so every endpoint names the same resource and the
+/// kernel's cache answers them all from one entry.
+fn model_iri(screen: &str, at: &str) -> Result<Iri, Error> {
+    let name = crate::lens::unescape_screen(screen);
+    let name = if name.starts_with("lens:") || name.starts_with("workspace:") {
+        crate::lens::pct(&name)
+    } else {
+        name
+    };
+    Iri::parse(format!("{SCREEN_PREFIX}{name}:model:{at}")).map_err(|e| Error::InvalidArgument {
+        name: "screen".into(),
+        detail: e.to_string(),
+    })
+}
+
+/// Node `at` of the screen bound in `inv`, composed for the html face, with its subtree: read
+/// through the kernel ([`model_endpoint`]), so a render composes the screen once and each
+/// node's endpoints share one cached answer instead of each re-reading the whole screen.
+async fn node_at(inv: &Invocation<'_>, at: &str) -> Result<Node, Error> {
+    let screen = inv.bindings.get("screen").unwrap_or_default();
+    let rep = inv
+        .issue(Request::new(Verb::Source, model_iri(screen, at)?))
+        .await?;
+    serde_json::from_slice(&rep.bytes)
+        .map_err(|e| Error::Endpoint(format!("{at}: not a composed node: {e}")))
+}
+
+/// The parent's position of `at`: `n.1.2` is in `n.1`; `n` has none.
+fn parent_of(at: &str) -> Option<&str> {
+    at.rsplit_once('.').map(|(parent, _)| parent)
+}
+
+/// A screen's node composed for the html face, as JSON, with its subtree (ledger #4483). The
+/// root is [`screen`]: the screen's model read and composed once. Any other node is its
+/// parent's answer, read through the kernel, narrowed to one child (or `r`, its replacement):
+/// a node costs one read of its parent's subtree, never the whole screen.
+pub(crate) fn model_endpoint() -> AsyncFnEndpoint {
+    AsyncFnEndpoint::new(
+        "ui-html-model",
+        |inv: &Invocation<'_>| -> InvokeFuture<'_> {
+            Box::pin(async move {
+                let at = inv.bindings.get("node").unwrap_or_default();
+                let node = match parent_of(at) {
+                    None => {
+                        let root = screen(inv).await?;
+                        // Only `n` has no parent; anything else is no node.
+                        locate(&root, at)?;
+                        root
+                    }
+                    Some(parent) => {
+                        let mut parent = node_at(inv, parent).await?;
+                        let missing = || Error::NotFound(format!("{at}: no such node"));
+                        match at.rsplit_once('.').map(|(_, last)| last) {
+                            Some("r") => *parent.replacement.take().ok_or_else(missing)?,
+                            Some(i) => {
+                                let i: usize = i.parse().map_err(|_| missing())?;
+                                if i >= parent.children.len() {
+                                    return Err(missing());
+                                }
+                                parent.children.swap_remove(i)
+                            }
+                            None => return Err(missing()),
+                        }
+                    }
+                };
+                let bytes =
+                    serde_json::to_vec(&node).map_err(|e| Error::Endpoint(format!("{at}: {e}")))?;
+                Ok(Representation::new(ReprType::new(model::MEDIA_TYPE), bytes).cacheable())
+            })
+        },
+    )
+    .with_description(
+        Description::new("ui-html-model")
+            .title("A UI node as the html face composes it")
+            .summary(
+                "One node of a screen, with its subtree, as JSON: the screen composed for the \
+                 html descriptor (references resolved under the caller's capability, the hints \
+                 and scenes it does not claim dropped), the node every html view of it reads.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(screen_arg())
+            .input(node_arg())
+            .output(model::MEDIA_TYPE),
+    )
+}
+
 fn screen_arg() -> ArgSpec {
     argument("screen", "the screen, urn:iki:ui:screen:name:{screen}")
 }
@@ -506,11 +595,20 @@ async fn view(
     let given = inv.bindings.get("screen").unwrap_or_default().to_string();
     let screen = crate::lens::fold(inv, &given)?;
     let screen = crate::workspace::fold(inv, &screen)?;
+    // A workspace page is pinned to the version its bare name answers now (ledger #4483): the
+    // page reads the moving name once, and its screen and nodes are composed over the saved
+    // version, which the kernel's cache can answer.
+    let screen = crate::workspace::pin(inv, &screen).await;
     let mut named = Bindings::new();
     named.insert("screen", screen.as_str());
     let inv = &inv.with_bindings(&named);
-    let root = self::screen(inv).await?;
-    let (node, parent) = locate(&root, at)?;
+    let node = &node_at(inv, at).await?;
+    // Only an option asks for its parent: whether it is in a choice, and which kind of one.
+    let parent = match parent_of(at) {
+        Some(parent) if node.kind == "option" => Some(node_at(inv, parent).await?),
+        _ => None,
+    };
+    let parent = parent.as_ref();
     if !composers.contains_key(node.kind.as_str()) && node.kind != "option" {
         return Err(Error::NotFound(format!(
             "{at}: the html face has no template for {}",
@@ -810,9 +908,13 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
         "ui-html-property",
         |inv: &Invocation<'_>| -> InvokeFuture<'_> {
             Box::pin(async move {
-                let root = screen(inv).await?;
                 let at = inv.bindings.get("node").unwrap_or_default();
-                let (node, _) = locate(&root, at)?;
+                let node = &node_at(inv, at).await?;
+                // An option's choice, the only parent a property reads (ledger #3537).
+                let parent = match parent_of(at) {
+                    Some(parent) if node.kind == "option" => node_at(inv, parent).await.ok(),
+                    _ => None,
+                };
                 let name = inv.bindings.get("property").unwrap_or_default();
                 let value = match (node.kind.as_str(), name) {
                     (crate::meter::IRI, "control-id") => Some(format!("ui-meter-{at}")),
@@ -900,20 +1002,15 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                         .to_string(),
                     ),
                     // A radio option's group is its choice's name (ledger #3537).
-                    ("option", "group") => at
-                        .rsplit_once('.')
-                        .and_then(|(parent, _)| locate(&root, parent).ok())
-                        .and_then(|(parent, _)| text_of(parent, "name"))
+                    ("option", "group") => parent
+                        .as_ref()
+                        .and_then(|parent| text_of(parent, "name"))
                         .map(str::to_string),
                     ("option", "selected" | "checked") => {
-                        let selected = at
-                            .rsplit_once('.')
-                            .and_then(|(parent, _)| locate(&root, parent).ok())
-                            .is_some_and(|(parent, _)| {
-                                parent.kind == "choice"
-                                    && parent.properties.get("value")
-                                        == node.properties.get("value")
-                            });
+                        let selected = parent.as_ref().is_some_and(|parent| {
+                            parent.kind == "choice"
+                                && parent.properties.get("value") == node.properties.get("value")
+                        });
                         // A boolean HTML attribute: only these fixed strings enter markup.
                         Some(
                             if !selected {
@@ -959,9 +1056,8 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
         "ui-html-child",
         |inv: &Invocation<'_>| -> InvokeFuture<'_> {
             Box::pin(async move {
-                let root = screen(inv).await?;
                 let at = inv.bindings.get("node").unwrap_or_default();
-                let (node, _) = locate(&root, at)?;
+                let node = &node_at(inv, at).await?;
                 let screen = inv.bindings.get("screen").unwrap_or_default();
                 let child_view = |path: String| async move {
                     let iri = Iri::parse(format!("{SCREEN_PREFIX}{screen}:node:{path}"))

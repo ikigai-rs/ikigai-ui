@@ -881,6 +881,10 @@ pub fn space() -> EndpointSpace {
             html::node_endpoint(),
         )
         .bind(
+            template("urn:iki:ui:html:screen:{screen}:model:{node}"),
+            html::model_endpoint(),
+        )
+        .bind(
             template("urn:iki:ui:html:screen:{screen}"),
             html::screen_endpoint(),
         )

@@ -198,6 +198,12 @@ fn conforms() {
              moves the latest on, so no fixed body is accepted twice. demo/tests/door.rs posts \
              real edits through the door and reads every version back.",
         )
+        // A saved version is never rewritten (ledger #4483): each `n` answers the same atom for
+        // as long as it exists.
+        .fixture(Fixture::new("uidemo-workspace-version", Verb::Source).binding("n", "1"))
+        .pure("uidemo-workspace-version")
+        // The addable list is a compiled-in constant.
+        .pure("uidemo-workspace-addable")
         .fixture(Fixture::new("ui-page-uidemo", Verb::Source).binding("name", "gallery"))
         .pure("uidemo-header")
         .pure("uidemo-title")
@@ -240,6 +246,12 @@ fn conforms() {
                 .binding("screen", "gallery")
                 .binding("node", "n.0")
                 .binding("property", "label"),
+        )
+        // The composed node every html view of it reads (ledger #4483).
+        .fixture(
+            Fixture::new("ui-html-model", Verb::Source)
+                .binding("screen", "gallery")
+                .binding("node", "n.1"),
         )
         .fixture(
             Fixture::new("ui-face-target-screen", Verb::Source)
