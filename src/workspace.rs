@@ -11,6 +11,7 @@
 //! | `…:name:{name}:edit` | the edit Sink the "Layout" form posts to, with `if-version` (section 5A) |
 //! | [`SHAPE`] | the atom's closed SHACL shape; [`validate`] says the same in Rust |
 //! | `urn:iki:ui:screen:workspace:{workspace-iri}` | the workspace as a screen ([`compose`]) |
+//! | `urn:iki:ui:screen:name:workspace:[select:…:][maximize:{key}:][version:{n}:]resource:{workspace-iri}` | the screen under its face name ([`face_name`]); `version:{n}:` pins a page to the saved version its bare name answered, so the page is composed over a name that never changes (ledger #4483) |
 //!
 //! ikigai-ui stores nothing (decision 4). It validates the atom and composes it.
 //!
@@ -1471,6 +1472,9 @@ pub fn compose_with(
 /// the caller's capability (`Source`, never anything else), validates it and [`compose`]s it.
 /// The selection is the request's `select.{role}` arguments; `version` (the version the host's
 /// store answered for the bare name, default 1) is what the "Layout" form's `if-version` says.
+/// `at-version` (a pinned face name's `n`, [`pin`]) reads the atom at `{iri}:version:{n}`
+/// instead, and that `n` is the `if-version`; a store that withholds that version is read at
+/// `{iri}`, as with no `at-version`.
 pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
     use ikigai_core::{
         ArgSpec, AsyncFnEndpoint, Description, Invocation, InvokeFuture, ReprType, Representation,
@@ -1487,6 +1491,7 @@ pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
                 let mut address = BTreeMap::new();
                 let mut version = 1u64;
                 let mut maximize: Option<String> = None;
+                let mut at: Option<u64> = None;
                 for name in inv.request.args.keys() {
                     let value = inv.inline_str(name)?;
                     if let Some(role) = name.strip_prefix("select.") {
@@ -1497,23 +1502,46 @@ pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
                         version = value
                             .parse()
                             .map_err(|_| refuse("`version` is not a whole number"))?;
+                    } else if name == "at-version" {
+                        at = Some(
+                            value
+                                .parse()
+                                .map_err(|_| refuse("`at-version` is not a whole number"))?,
+                        );
                     }
                 }
-                let atom = inv
-                    .issue(Request::new(
-                        Verb::Source,
-                        Iri::parse(iri.as_str()).map_err(|e| refuse(e.to_string()))?,
-                    ))
-                    .await?;
+                let bare = Iri::parse(iri.as_str()).map_err(|e| refuse(e.to_string()))?;
+                // Pinned to a saved version (ledger #4483): its atom, never rewritten, so this
+                // screen is as cacheable as what it composes. A store that serves no such
+                // version (or withholds it) is read at the bare name, as an unpinned screen is.
+                let pinned = match at.filter(|_| parse_name(&iri).is_some()) {
+                    Some(n) => {
+                        let saved = Iri::parse(self::version(&iri, n))
+                            .map_err(|e| refuse(e.to_string()))?;
+                        match inv.issue(Request::new(Verb::Source, saved)).await {
+                            Ok(atom) => Some(atom),
+                            Err(e) if withheld(&e) => None,
+                            Err(e) => return Err(e),
+                        }
+                    }
+                    None => None,
+                };
+                let read_at = pinned.as_ref().and(at);
+                let atom = match pinned {
+                    Some(atom) => atom,
+                    None => inv.issue(Request::new(Verb::Source, bare)).await?,
+                };
                 // A host's store may say which version it answered (`application/json;
-                // version=3`, ledger #3952), so the edit forms carry the right `if-version`.
+                // version=3`, ledger #3952), so the edit forms carry the right `if-version`;
+                // a pinned screen's is the version it read.
                 if !inv.request.args.contains_key("version") {
-                    if let Some(n) = atom
-                        .repr_type
-                        .params
-                        .get("version")
-                        .and_then(|v| v.parse().ok())
-                    {
+                    let said = || {
+                        atom.repr_type
+                            .params
+                            .get("version")
+                            .and_then(|v| v.parse().ok())
+                    };
+                    if let Some(n) = read_at.or_else(said) {
                         version = n;
                     }
                 }
@@ -1653,9 +1681,24 @@ pub fn face_name_with(
     selection: &BTreeMap<String, String>,
     maximize: Option<&str>,
 ) -> String {
-    let Some(k) = maximize.filter(|k| is_key(k)) else {
+    face_name_at(workspace, selection, maximize, None)
+}
+
+/// [`face_name_with`] pinned to one saved version (ledger #4483):
+/// `…[maximize:{key}:]version:{n}:resource:{iri}`, `{iri}` still the bare name. The html face
+/// pins a page to the version the bare name answered ([`pin`]), so the page's screen and every
+/// node of it are read over [`version`], which never changes, and the kernel's cache answers
+/// their re-reads.
+fn face_name_at(
+    workspace: &str,
+    selection: &BTreeMap<String, String>,
+    maximize: Option<&str>,
+    at: Option<u64>,
+) -> String {
+    let maximize = maximize.filter(|k| is_key(k));
+    if maximize.is_none() && at.is_none() {
         return face_name(workspace, selection);
-    };
+    }
     let select = if selection.is_empty() {
         String::new()
     } else {
@@ -1666,7 +1709,11 @@ pub fn face_name_with(
             .join("&");
         format!("select:{pairs}:")
     };
-    format!("workspace:{select}maximize:{k}:resource:{workspace}")
+    let maximize = maximize
+        .map(|k| format!("maximize:{k}:"))
+        .unwrap_or_default();
+    let at = at.map(|n| format!("version:{n}:")).unwrap_or_default();
+    format!("workspace:{select}{maximize}{at}resource:{workspace}")
 }
 
 /// A face name read back: the workspace's IRI and the selection by role.
@@ -1683,8 +1730,15 @@ pub fn parse_face_name(rest: &str) -> Option<Result<FaceName, Error>> {
 pub type Face = (String, BTreeMap<String, String>, Option<String>);
 
 /// A face name's workspace, selection and maximized pane (ledger #3953): what follows
-/// `workspace:`, `[select:{role}={pct-iri}&…:][maximize:{key}:]resource:{iri}`.
+/// `workspace:`, `[select:{role}={pct-iri}&…:][maximize:{key}:]resource:{iri}`. A version the
+/// name is pinned to (`version:{n}:`, ledger #4483) is dropped.
 pub fn parse_face(rest: &str) -> Option<Result<Face, Error>> {
+    parse_pinned(rest).map(|r| r.map(|(face, _)| face))
+}
+
+/// [`parse_face`] with the version the name is pinned to, if any (ledger #4483):
+/// `[select:…:][maximize:{key}:][version:{n}:]resource:{iri}`.
+fn parse_pinned(rest: &str) -> Option<Result<(Face, Option<u64>), Error>> {
     let (select, rest) = match rest.strip_prefix("select:") {
         Some(r) => {
             let (select, r) = r.split_once(':')?;
@@ -1702,6 +1756,17 @@ pub fn parse_face(rest: &str) -> Option<Result<Face, Error>> {
         }
         None => (None, rest),
     };
+    let (at, rest) = match rest.strip_prefix("version:") {
+        Some(r) => {
+            let (n, r) = r.split_once(':')?;
+            // One spelling per version, so one name (and one cache entry) per page.
+            match n.parse::<u64>() {
+                Ok(v) if v.to_string() == n => (Some(v), r),
+                _ => return Some(Err(refuse(format!("`{n}` is not a workspace version")))),
+            }
+        }
+        None => (None, rest),
+    };
     let iri = rest.strip_prefix("resource:")?;
     if iri.is_empty() {
         return None;
@@ -1716,7 +1781,7 @@ pub fn parse_face(rest: &str) -> Option<Result<Face, Error>> {
             Err(e) => return Some(Err(e)),
         };
     }
-    Some(Ok((iri.to_string(), out, maximize)))
+    Some(Ok(((iri.to_string(), out, maximize), at)))
 }
 
 /// The screen a browser's request names: a workspace face name with the request's
@@ -1726,10 +1791,10 @@ pub fn fold(inv: &ikigai_core::Invocation<'_>, screen: &str) -> Result<String, E
     let Some(rest) = screen.strip_prefix("workspace:") else {
         return Ok(screen.to_string());
     };
-    let Some(parsed) = parse_face(rest) else {
+    let Some(parsed) = parse_pinned(rest) else {
         return Ok(screen.to_string());
     };
-    let (iri, mut chosen, mut maximize) = parsed?;
+    let ((iri, mut chosen, mut maximize), at) = parsed?;
     let mut changed = false;
     for name in inv.request.args.keys() {
         if name == "maximize" {
@@ -1750,10 +1815,43 @@ pub fn fold(inv: &ikigai_core::Invocation<'_>, screen: &str) -> Result<String, E
         }
     }
     Ok(if changed {
-        face_name_with(&iri, &chosen, maximize.as_deref())
+        face_name_at(&iri, &chosen, maximize.as_deref(), at)
     } else {
         screen.to_string()
     })
+}
+
+/// A workspace face name pinned to the version its bare name answers now (ledger #4483): the
+/// html face reads the bare name once per page to learn `n` (its type says `version=n`), and
+/// names the page's screen and every node of it over `…:version:{n}`, which is never
+/// rewritten, so the kernel's cache answers each node's re-read of the screen. The bare name
+/// stays uncacheable, so the page that read it is never cached and an edit shows at once.
+/// Any other name, a name already pinned, or a bare name that says no version (or cannot be
+/// read: the screen says why) is `screen` as it is.
+pub(crate) async fn pin(inv: &ikigai_core::Invocation<'_>, screen: &str) -> String {
+    use ikigai_core::{Request, Verb};
+    let Some(Ok(((iri, chosen, maximize), None))) =
+        screen.strip_prefix("workspace:").and_then(parse_pinned)
+    else {
+        return screen.to_string();
+    };
+    let Ok(at) = Iri::parse(iri.as_str()) else {
+        return screen.to_string();
+    };
+    let Ok(atom) = inv.issue(Request::new(Verb::Source, at)).await else {
+        return screen.to_string();
+    };
+    match atom
+        .repr_type
+        .params
+        .get("version")
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        Some(n) if parse_name(&iri).is_some() => {
+            face_name_at(&iri, &chosen, maximize.as_deref(), Some(n))
+        }
+        _ => screen.to_string(),
+    }
 }
 
 /// [`FACE`]`{rest}`: the workspace screen under its face name, read through
@@ -1768,7 +1866,7 @@ pub(crate) fn face_endpoint() -> ikigai_core::AsyncFnEndpoint {
         |inv: &Invocation<'_>| -> InvokeFuture<'_> {
             Box::pin(async move {
                 let rest = inv.bindings.get("rest").unwrap_or_default();
-                let (iri, selection, maximize) = parse_face(rest)
+                let ((iri, selection, maximize), at) = parse_pinned(rest)
                     .ok_or_else(|| Error::NotFound(format!("workspace:{rest}")))??;
                 let mut request = Request::new(
                     Verb::Source,
@@ -1782,6 +1880,11 @@ pub(crate) fn face_endpoint() -> ikigai_core::AsyncFnEndpoint {
                 }
                 if let Some(k) = maximize {
                     request = request.with_arg("maximize", ArgRef::Inline(k.into_bytes()));
+                }
+                // Pinned ([`pin`]): the atom is read at its saved version, not the bare name.
+                if let Some(n) = at {
+                    request =
+                        request.with_arg("at-version", ArgRef::Inline(n.to_string().into_bytes()));
                 }
                 inv.issue(request).await
             })

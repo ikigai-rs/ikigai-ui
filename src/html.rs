@@ -595,6 +595,10 @@ async fn view(
     let given = inv.bindings.get("screen").unwrap_or_default().to_string();
     let screen = crate::lens::fold(inv, &given)?;
     let screen = crate::workspace::fold(inv, &screen)?;
+    // A workspace page is pinned to the version its bare name answers now (ledger #4483): the
+    // page reads the moving name once, and its screen and nodes are composed over the saved
+    // version, which the kernel's cache can answer.
+    let screen = crate::workspace::pin(inv, &screen).await;
     let mut named = Bindings::new();
     named.insert("screen", screen.as_str());
     let inv = &inv.with_bindings(&named);

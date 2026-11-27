@@ -198,6 +198,10 @@ fn conforms() {
              moves the latest on, so no fixed body is accepted twice. demo/tests/door.rs posts \
              real edits through the door and reads every version back.",
         )
+        // A saved version is never rewritten (ledger #4483): each `n` answers the same atom for
+        // as long as it exists.
+        .fixture(Fixture::new("uidemo-workspace-version", Verb::Source).binding("n", "1"))
+        .pure("uidemo-workspace-version")
         .fixture(Fixture::new("ui-page-uidemo", Verb::Source).binding("name", "gallery"))
         .pure("uidemo-header")
         .pure("uidemo-title")
