@@ -17,6 +17,7 @@ const WORKSPACE = "urn:iki:ui:workspace:person:urn:person:demo:name:contacts";
 const PATH = "/workspace/" + WORKSPACE;
 const enc = (iri) => "/resolution/iri/" + encodeURIComponent(iri);
 const WAIT = 45000;
+const STEPS = 150;
 
 function door() {
   const base = process.env.DEMO_BASE;
@@ -65,14 +66,24 @@ test.afterAll(async ({ request }) => {
   if (process.env.DEMO_BASE) await revert(request);
 });
 
+// Tab with VoiceOver (keys it sends, so it follows focus, as in button.spec.mjs) until it says
+// a phrase `match` accepts, at most STEPS presses. Playwright's own focus and key events are
+// synthesized in the page and VoiceOver says nothing for them (the first run, ledger #3953).
+async function tabTo(voiceOver, match, what) {
+  for (let i = 0; i < STEPS; i++) {
+    await voiceOver.press("Tab");
+    if (match((await voiceOver.lastSpokenPhrase()) ?? "")) return;
+  }
+  throw new Error(`Tab never reached ${what} in ${STEPS} presses`);
+}
+
 test("maximize: VoiceOver hears the maximize sentence", async ({ page, voiceOver, request }) => {
-  test.setTimeout(5 * 60 * 1000);
+  test.setTimeout(8 * 60 * 1000);
   await revert(request);
   await openWorkspace(page, voiceOver);
-  const max = page.locator("#pane-list > form.ui-pane-toggle > button[aria-pressed]");
-  await max.focus();
+  await tabTo(voiceOver, (t) => /maximize contacts/i.test(t), "Maximize Contacts");
   const said = [];
-  await Promise.all([page.waitForURL(/maximize=list/), page.keyboard.press("Enter")]);
+  await Promise.all([page.waitForURL(/maximize=list/), voiceOver.press("Enter")]);
   const found = await heard(voiceOver, /contacts maximized\.? restore to see every pane/i, said);
   await keepSaid("spoken-maximize", said);
   await keepLog(voiceOver, "spoken-maximize");
@@ -81,18 +92,17 @@ test("maximize: VoiceOver hears the maximize sentence", async ({ page, voiceOver
 });
 
 test("close: VoiceOver hears the Closed sentence", async ({ page, voiceOver, request }) => {
-  test.setTimeout(5 * 60 * 1000);
+  test.setTimeout(8 * 60 * 1000);
   await revert(request);
   await openWorkspace(page, voiceOver);
-  // Opened by a click: WebKit keeps a closed <details>' content out of the accessibility tree,
-  // so the Close button is found by CSS once the menu is open.
+  // Table's menu is opened from the page: Safari's Tab reaches form controls, not a <summary>,
+  // and what is checked here is the sentence after Close, which VoiceOver's own keys press.
   const menu = page.locator("#pane-table > details[data-ui-pane-menu]");
-  await menu.locator("> summary").click();
+  await menu.evaluate((d) => { d.open = true; });
   await expect(menu).toHaveAttribute("open", "");
-  const close = menu.locator("button", { hasText: /^Close$/ });
-  await close.focus();
+  await tabTo(voiceOver, (t) => /\bclose\b/i.test(t) && /button/i.test(t), "Close in Table's menu");
   const said = [];
-  await page.keyboard.press("Enter");
+  await voiceOver.press("Enter");
   const found = await heard(voiceOver, /closed table\.? revert to version \d+ brings it back/i, said);
   await keepSaid("spoken-close", said);
   await keepLog(voiceOver, "spoken-close");
