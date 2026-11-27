@@ -202,6 +202,8 @@ fn conforms() {
         // as long as it exists.
         .fixture(Fixture::new("uidemo-workspace-version", Verb::Source).binding("n", "1"))
         .pure("uidemo-workspace-version")
+        // The addable list is a compiled-in constant.
+        .pure("uidemo-workspace-addable")
         .fixture(Fixture::new("ui-page-uidemo", Verb::Source).binding("name", "gallery"))
         .pure("uidemo-header")
         .pure("uidemo-title")

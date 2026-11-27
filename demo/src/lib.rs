@@ -493,13 +493,15 @@ fn workspace_revert(layouts: Layouts) -> FnEndpoint {
     ))
 }
 
-/// `{WORKSPACE}:addable`: the demo's [`WORKSPACE_ADDABLE`] list, as JSON.
+/// `{WORKSPACE}:addable`: the demo's [`WORKSPACE_ADDABLE`] list, as JSON. A constant compiled
+/// in, so its answer is cacheable (ledger #4483): every workspace screen reads it, and an
+/// uncacheable list would keep the page composed over a saved version from being cached.
 fn workspace_addable() -> FnEndpoint {
     FnEndpoint::new("uidemo-workspace-addable", |_: &Invocation<'_>| {
-        Ok(Representation::new(
-            ReprType::new(JSON),
-            WORKSPACE_ADDABLE.as_bytes().to_vec(),
-        ))
+        Ok(
+            Representation::new(ReprType::new(JSON), WORKSPACE_ADDABLE.as_bytes().to_vec())
+                .cacheable(),
+        )
     })
     .with_description(
         Description::new("uidemo-workspace-addable")
