@@ -5,7 +5,7 @@
 // VoiceOver says them only as live-region announcements, which this checks.
 //
 // Over the demo door (demo-door.mjs starts it as globalSetup; DEMO_BASE names it), since close
-// needs its edit Sink. Each test reverts the workspace to version 1 first and after. Assertions
+// needs its edit Sink (a workspace read takes seconds in the demo's debug build). Each test reverts the workspace to version 1 first and after. Assertions
 // are loose on purpose, as in button.spec.mjs: the sentence by pattern, anywhere in what
 // VoiceOver said after the action, never its exact wording around it. What VoiceOver said is
 // written to results/, which the job uploads as the `voiceover` artifact.
@@ -16,7 +16,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 const WORKSPACE = "urn:iki:ui:workspace:person:urn:person:demo:name:contacts";
 const PATH = "/workspace/" + WORKSPACE;
 const enc = (iri) => "/resolution/iri/" + encodeURIComponent(iri);
-const WAIT = 20000;
+const WAIT = 45000;
 
 function door() {
   const base = process.env.DEMO_BASE;
@@ -35,16 +35,24 @@ async function keepLog(voiceOver, name) {
   await writeFile(`results/${name}.json`, JSON.stringify(log, null, 2));
 }
 
-// Whether VoiceOver said something matching `pattern` after the first `from` phrases of its log,
-// within WAIT ms.
-async function heard(voiceOver, from, pattern) {
+// Whether VoiceOver said something matching `pattern` within WAIT ms. A live-region
+// announcement is not a Guidepup command, so it never enters spokenPhraseLog: VoiceOver's last
+// phrase is read directly, every 100 ms, and each distinct one is kept in `said` (written to
+// results/ with the log).
+async function heard(voiceOver, pattern, said) {
   const until = Date.now() + WAIT;
   while (Date.now() < until) {
-    const log = await voiceOver.spokenPhraseLog();
-    if (log.slice(from).some((p) => pattern.test(p ?? ""))) return true;
-    await new Promise((r) => setTimeout(r, 250));
+    const last = (await voiceOver.lastSpokenPhrase()) ?? "";
+    if (last && said[said.length - 1] !== last) said.push(last);
+    if (pattern.test(last)) return true;
+    await new Promise((r) => setTimeout(r, 100));
   }
   return false;
+}
+
+async function keepSaid(name, said) {
+  await mkdir("results", { recursive: true });
+  await writeFile(`results/${name}-last-phrases.json`, JSON.stringify(said, null, 2));
 }
 
 async function openWorkspace(page, voiceOver) {
@@ -63,11 +71,12 @@ test("maximize: VoiceOver hears the maximize sentence", async ({ page, voiceOver
   await openWorkspace(page, voiceOver);
   const max = page.locator("#pane-list > form.ui-pane-toggle > button[aria-pressed]");
   await max.focus();
-  const from = (await voiceOver.spokenPhraseLog()).length;
+  const said = [];
   await Promise.all([page.waitForURL(/maximize=list/), page.keyboard.press("Enter")]);
-  await expect(page.locator("#status p")).toHaveText("Contacts maximized. Restore to see every pane.");
-  const found = await heard(voiceOver, from, /contacts maximized\.? restore to see every pane/i);
+  const found = await heard(voiceOver, /contacts maximized\.? restore to see every pane/i, said);
+  await keepSaid("spoken-maximize", said);
   await keepLog(voiceOver, "spoken-maximize");
+  await expect(page.locator("#status p")).toHaveText("Contacts maximized. Restore to see every pane.");
   expect(found, "VoiceOver never said the maximize sentence").toBe(true);
 });
 
@@ -75,16 +84,19 @@ test("close: VoiceOver hears the Closed sentence", async ({ page, voiceOver, req
   test.setTimeout(5 * 60 * 1000);
   await revert(request);
   await openWorkspace(page, voiceOver);
-  const summary = page.locator("#pane-table > details[data-ui-pane-menu] > summary");
-  await summary.focus();
-  await page.keyboard.press("Enter");
-  const close = page.locator("#pane-table > details[data-ui-pane-menu]").getByRole("button", { name: "Close" });
+  // Opened by a click: WebKit keeps a closed <details>' content out of the accessibility tree,
+  // so the Close button is found by CSS once the menu is open.
+  const menu = page.locator("#pane-table > details[data-ui-pane-menu]");
+  await menu.locator("> summary").click();
+  await expect(menu).toHaveAttribute("open", "");
+  const close = menu.locator("button", { hasText: /^Close$/ });
   await close.focus();
-  const from = (await voiceOver.spokenPhraseLog()).length;
+  const said = [];
   await page.keyboard.press("Enter");
+  const found = await heard(voiceOver, /closed table\.? revert to version \d+ brings it back/i, said);
+  await keepSaid("spoken-close", said);
+  await keepLog(voiceOver, "spoken-close");
   await expect(page.locator("#pane-table")).toHaveCount(0, { timeout: 30000 });
   await expect(page.locator("#status p")).toHaveText(/^Closed Table\. Revert to version \d+ brings it back\.$/, { timeout: 30000 });
-  const found = await heard(voiceOver, from, /closed table\.? revert to version \d+ brings it back/i);
-  await keepLog(voiceOver, "spoken-close");
   expect(found, "VoiceOver never said the Closed sentence").toBe(true);
 });
