@@ -12,6 +12,7 @@
 import { voiceOverTest as test } from "@guidepup/playwright";
 import { expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 
 const WORKSPACE = "urn:iki:ui:workspace:person:urn:person:demo:name:contacts";
 const PATH = "/workspace/" + WORKSPACE;
@@ -36,14 +37,32 @@ async function keepLog(voiceOver, name) {
   await writeFile(`results/${name}.json`, JSON.stringify(log, null, 2));
 }
 
-// Whether VoiceOver said something matching `pattern` within WAIT ms. A live-region
-// announcement is not a Guidepup command, so it never enters spokenPhraseLog: VoiceOver's last
-// phrase is read directly, every 100 ms, and each distinct one is kept in `said` (written to
-// results/ with the log).
-async function heard(voiceOver, pattern, said) {
+// VoiceOver's last phrase, asked of VoiceOver itself (the AppleScript Guidepup runs for its own
+// log). Guidepup 0.40's `voiceOver.lastSpokenPhrase()` is NOT that: it returns the last entry of
+// Guidepup's log, filled only after a Guidepup command, so polling it after Enter re-read the
+// same cached "" for the whole wait and never saw a live-region announcement (run 46000455135,
+// ledger #3953: both `said` lists were empty).
+const LAST_PHRASE = 'tell application "VoiceOver"\nwith transaction\nreturn content of last phrase\nend transaction\nend tell';
+function livePhrase() {
+  return new Promise((resolve) => {
+    const child = execFile("/usr/bin/osascript", [], { timeout: 5000 }, (error, stdout) => {
+      resolve(error ? "" : String(stdout).trim().replace(/^missing value$/, "").replace(/\s\s+/g, " "));
+    });
+    child.stdin.end(LAST_PHRASE);
+  });
+}
+
+// Whether VoiceOver said something matching `pattern` within WAIT ms: its live last phrase is
+// read every 100 ms until the phrase comes (never a fixed sleep), and each distinct one is kept
+// in `said` (written to results/ with the log).
+async function heard(voiceOver, from, pattern, said) {
+  // What Guidepup itself captured while its Enter command waited counts too.
+  const logged = (await voiceOver.spokenPhraseLog()).slice(from);
+  said.push(...logged.filter(Boolean));
+  if (logged.some((t) => pattern.test(t))) return true;
   const until = Date.now() + WAIT;
   while (Date.now() < until) {
-    const last = (await voiceOver.lastSpokenPhrase()) ?? "";
+    const last = await livePhrase();
     if (last && said[said.length - 1] !== last) said.push(last);
     if (pattern.test(last)) return true;
     await new Promise((r) => setTimeout(r, 100));
@@ -83,8 +102,9 @@ test("maximize: VoiceOver hears the maximize sentence", async ({ page, voiceOver
   await openWorkspace(page, voiceOver);
   await tabTo(voiceOver, (t) => /maximize contacts/i.test(t), "Maximize Contacts");
   const said = [];
+  const from = (await voiceOver.spokenPhraseLog()).length;
   await Promise.all([page.waitForURL(/maximize=list/), voiceOver.press("Enter")]);
-  const found = await heard(voiceOver, /contacts maximized\.? restore to see every pane/i, said);
+  const found = await heard(voiceOver, from, /contacts maximized\.? restore to see every pane/i, said);
   await keepSaid("spoken-maximize", said);
   await keepLog(voiceOver, "spoken-maximize");
   await expect(page.locator("#status p")).toHaveText("Contacts maximized. Restore to see every pane.");
@@ -106,8 +126,9 @@ test("close: VoiceOver hears the Closed sentence", async ({ page, voiceOver, req
     await keepLog(voiceOver, "spoken-close-tab");
   }
   const said = [];
+  const from = (await voiceOver.spokenPhraseLog()).length;
   await voiceOver.press("Enter");
-  const found = await heard(voiceOver, /closed dashboard\.? revert to version \d+ brings it back/i, said);
+  const found = await heard(voiceOver, from, /closed dashboard\.? revert to version \d+ brings it back/i, said);
   await keepSaid("spoken-close", said);
   await keepLog(voiceOver, "spoken-close");
   await expect(page.locator("#pane-dashboard")).toHaveCount(0, { timeout: 30000 });
