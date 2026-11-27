@@ -151,6 +151,8 @@ test("maximize by pointer and restore by keyboard: a view, aria-pressed, the pan
   const pressed = page.locator("#pane-list > form.ui-pane-toggle > button[aria-pressed]");
   await expect(pressed).toBeFocused();
   await expect(pressed).toHaveAttribute("aria-pressed", "true");
+  // Shot as the page arrives, focus ring on Restore.
+  await shoot(page, "maximized");
   await expect(page.locator("section.ui-pane[id^='pane-']")).toHaveCount(1);
   await expect(page.locator("#pane-table, #pane-dashboard")).toHaveCount(0);
   const listed = await page.locator('nav[aria-label="Panes"] a').allTextContents();
@@ -170,7 +172,6 @@ test("maximize by pointer and restore by keyboard: a view, aria-pressed, the pan
   const restore = page.locator("#pane-list > form.ui-pane-toggle > button[aria-pressed]");
   await expect(restore).toHaveAccessibleName("Restore every pane");
   await expect(restore).toHaveAttribute("aria-pressed", "true");
-  await shoot(page, "maximized");
   await axe(page, "maximized");
   await restore.focus();
   await Promise.all([page.waitForURL((u) => !u.search.includes("maximize")), page.keyboard.press("Enter")]);
