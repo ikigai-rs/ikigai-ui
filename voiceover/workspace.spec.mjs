@@ -17,7 +17,7 @@ const WORKSPACE = "urn:iki:ui:workspace:person:urn:person:demo:name:contacts";
 const PATH = "/workspace/" + WORKSPACE;
 const enc = (iri) => "/resolution/iri/" + encodeURIComponent(iri);
 const WAIT = 45000;
-const STEPS = 150;
+const STEPS = 300;
 
 function door() {
   const base = process.env.DEMO_BASE;
@@ -100,7 +100,11 @@ test("close: VoiceOver hears the Closed sentence", async ({ page, voiceOver, req
   const menu = page.locator("#pane-table > details[data-ui-pane-menu]");
   await menu.evaluate((d) => { d.open = true; });
   await expect(menu).toHaveAttribute("open", "");
-  await tabTo(voiceOver, (t) => /\bclose\b/i.test(t) && /button/i.test(t), "Close in Table's menu");
+  try {
+    await tabTo(voiceOver, (t) => /\bclose\b/i.test(t) && /button/i.test(t), "Close in Table's menu");
+  } finally {
+    await keepLog(voiceOver, "spoken-close-tab");
+  }
   const said = [];
   await voiceOver.press("Enter");
   const found = await heard(voiceOver, /closed table\.? revert to version \d+ brings it back/i, said);
