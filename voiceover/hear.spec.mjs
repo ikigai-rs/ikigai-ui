@@ -3,8 +3,8 @@
 // button, field and disclosure reached by Tab as their criteria word it (VoiceOver following
 // keyboard focus), link by Option+Tab (WebKit's Tab for links, below), heading, list and table by VoiceOver's own find commands
 // (VO-Command-H, -X, -T: "move by headings", "reach the list", "reach the table"), and meter by
-// VoiceOver's cursor (VO+Right), which has no find command for it. Ledger #4279, extending #4278
-// (from the #3545 spike, docs/research/screen-reader-ci.md).
+// VoiceOver's cursor (VO+Right), which has no find command for it. Ledger #4279, extending ledger
+// #4278 (from the ledger #3545 spike, docs/research/screen-reader-ci.md).
 //
 // The site is the one the axe job checks (`cargo run --example axe_site`), served by
 // axe/serve.mjs with the door's CSP. Assertions are loose on purpose: name and role by pattern,
@@ -25,7 +25,10 @@ const STEPS = 120;
 // One check per kind, in the order the route meets them. `reach` says how VoiceOver gets there;
 // `find` picks the item by its name; `hear` holds what the HEAR sentence asks to be said.
 // `expected` is the result ACCESSIBILITY.md records (pass unless it says otherwise): the test
-// holds each check to it, so the job goes red when any result changes, either way.
+// holds each check to it, so the job goes red when any result changes, either way. A check
+// recorded as Fail must be a HEARD failure: it also names, in `expectedParts`, which parts of
+// `hear` were heard and which were not, and the test asserts the item was reached and its parts
+// are exactly those. A Fail never rests on a run that reached nothing or heard less than it says.
 const GALLERY = [
   {
     kind: "field",
@@ -70,7 +73,8 @@ const GALLERY = [
     statement: "WHEN I reach the table with a desktop screen reader … I HEAR its caption and its number of rows and columns",
     reach: "findNextTable",
     find: /totals/i,
-    hear: { name: /totals/i, role: /\btable\b/i, rows: /\b\d+ rows?\b/i, columns: /\b\d+ columns?\b/i },
+    hear: { name: /totals/i, role: /\btable\b/i, rows: /\b2 rows\b/i, columns: /\b2 columns\b/i },
+    // assets/example/table.json holds 2 rows (Headers, Row 1) of 2 columns (Fruit, Count).
   },
 ];
 
@@ -82,7 +86,9 @@ const ELEMENTS = [
     find: /how often is the gauge read/i,
     hear: { name: /how often is the gauge read/i, role: /\bbutton\b/i, state: /collapsed|expanded/i },
     // Recorded as Fail in ACCESSIBILITY.md: VoiceOver says "collapsed summary", no button role.
+    // The failure must be heard: reached, its text and state said, and only the role missing.
     expected: "fail",
+    expectedParts: { name: true, role: false, state: true },
   },
   {
     kind: "meter",
@@ -145,9 +151,14 @@ test("in one VoiceOver session, each kind's first HEAR check says its name and r
           parts,
         });
         const expected = check.expected ?? "pass";
-        expect
-          .soft(pass ? "pass" : "fail", `${check.kind} (recorded ${expected}): ${heard ? `heard "${heard.text.trim()}", parts ${JSON.stringify(parts)}` : `never reached ${check.find} by ${check.reach}`}`)
-          .toBe(expected);
+        const what = `${check.kind} (recorded ${expected}): ${heard ? `heard "${heard.text.trim()}", parts ${JSON.stringify(parts)}` : `never reached ${check.find} by ${check.reach}`}`;
+        expect.soft(pass ? "pass" : "fail", what).toBe(expected);
+        if (expected === "fail") {
+          // A recorded Fail is a heard failure: reached, with exactly the parts it records.
+          if (!check.expectedParts) throw new Error(`${check.kind}: a check recorded as fail must name its expectedParts`);
+          expect.soft(heard !== null, `${what}: a Fail must be reached`).toBe(true);
+          expect.soft(parts, `${what}: a Fail must hear exactly its recorded parts`).toEqual(check.expectedParts);
+        }
       }
     }
   } finally {
