@@ -1064,7 +1064,6 @@ pub(crate) fn screen_endpoint(id: &'static str, binding: bool) -> AsyncFnEndpoin
              as=text/x-ikigai-ui-sexpr.",
         )
         .verb(Verb::Source)
-        .verb(Verb::Exists)
         .verb(Verb::Meta)
         .input(
             ArgSpec::new("open")

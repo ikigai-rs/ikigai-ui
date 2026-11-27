@@ -2221,7 +2221,8 @@ pub fn fold(inv: &Invocation<'_>, screen: &str) -> Result<String, Error> {
 /// A lensed screen's `Exists` (ledger #3953): whether its lens is there for the caller, asked
 /// with `Exists` of the lens's definition, without reading the resource or running the lens.
 /// The operations lens is ikigai-ui's own, always there. A denial or a missing lens is the
-/// definition's error, as for `Source`.
+/// definition's error, as for `Source`. Undeclared, as [`crate::screen`]'s screens' `Exists`:
+/// the kernel routes it here under `Source`'s requires.
 async fn lens_exists(inv: &Invocation<'_>, lens: &str) -> Result<Representation, Error> {
     if lens == "operations" {
         return Ok(crate::screen::exists_answer(true).with_expiry(ikigai_core::Expiry::Always));
@@ -2285,7 +2286,6 @@ pub(crate) fn bind_screens(space: EndpointSpace) -> EndpointSpace {
                 .title("A lensed view as a screen")
                 .summary("The lensed view, named as a screen so the html face renders it: urn:iki:ui:html:screen:lens:{lens}:resource:{iri} opens it in a browser, and its form's lens= and facet parameters pick another.")
                 .verb(Verb::Source)
-                .verb(Verb::Exists)
                 .output(model::MEDIA_TYPE)
                 .output(model::JSON_LD),
         ),
