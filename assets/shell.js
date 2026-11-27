@@ -1316,20 +1316,19 @@
     send(root, fields, fields.pane || fields.to || (menu && menu.getAttribute("data-ui-pane-menu")));
   }, true);
   // A page that arrives with a sentence to say (a maximized workspace, ledger #3953) moves focus
-  // to its Restore toggle (aria-pressed="true"), then says the sentence once in #status, after
-  // the region is in the tree, the way Collapse and Expand do: after a full-page load a screen
-  // reader sits on the web content and does not speak a polite change made before focus lands
-  // inside it. Only that announced load moves focus; an ordinary load leaves it where it is.
-  // It waits for `load`, then a frame: the address ends in #pane-{key}, and scrolling to that
-  // fragment runs the browser's focusing steps, which put focus back on the viewport (the pane's
-  // section is not focusable) if Restore were focused before it.
+  // to its Restore toggle (aria-pressed="true"). The server renders the sentence at load as
+  // #ui-said and Restore carries aria-describedby="ui-said", so a screen reader says Restore's
+  // name, role and the sentence as its description, once, when focus lands: no live-region
+  // change, so no race with the reader settling on the new document, and #status stays empty
+  // (the sentence is not heard twice). Only that announced load moves focus; an ordinary load
+  // leaves it where it is. It waits for `load`, then a frame: the address ends in #pane-{key},
+  // and scrolling to that fragment runs the browser's focusing steps, which put focus back on
+  // the viewport (the pane's section is not focusable) if Restore were focused before it.
   window.addEventListener("load", function () {
-    var said = document.querySelector("main [data-ui-announce]");
-    if (!said) return;
+    if (!document.querySelector("main [data-ui-announce]")) return;
     window.requestAnimationFrame(function () {
-      var restore = document.querySelector('main section.ui-pane > form.ui-pane-toggle > button[aria-pressed="true"]');
+      var restore = document.querySelector('main section.ui-pane > form.ui-pane-toggle > button[aria-pressed="true"][aria-describedby]');
       if (restore) restore.focus();
-      window.setTimeout(function () { say(said.textContent, false); }, 300);
     });
   });
   // Escape in an open menu closes it and puts focus back on its summary.

@@ -445,6 +445,17 @@ async fn collapse_maximize_close_and_add_work_with_no_script() {
     );
     assert!(max.contains("hidden while Table is maximized"), "{max}");
     assert!(max.contains(">Restore every pane<"), "{max}");
+    // The sentence is rendered at load as #ui-said and describes Restore (ledger #3953).
+    assert!(
+        max.contains(
+            "<p id=\"ui-said\" data-ui-announce>Table maximized. Restore to see every pane.</p>"
+        ),
+        "{max}"
+    );
+    assert!(
+        max.contains("<button type=\"submit\" aria-pressed=\"true\" aria-describedby=\"ui-said\">Restore every pane</button>"),
+        "{max}"
+    );
     assert!(
         max.contains("name=\"if-version\" value=\"1\""),
         "maximize wrote nothing"

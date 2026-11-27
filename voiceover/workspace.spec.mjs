@@ -1,8 +1,10 @@
 // Real VoiceOver hears the workspace's two status sentences (ledger #3953, docs/design/workspace.md
 // section 5A and section 7 proposal 6): "Contacts maximized. Restore to see every pane." when a
 // pane is maximized, and "Closed Dashboard. Revert to version {n} brings it back." when a pane is
-// closed. Both are said in #status, the page's one polite live region; neither is focused, so
-// VoiceOver says them only as live-region announcements, which this checks.
+// closed. The Closed sentence is said in #status, the page's one polite live region, as a
+// live-region announcement. The maximize sentence is rendered with the page as #ui-said and
+// describes the Restore toggle, which the page focuses on arrival, so VoiceOver says Restore's
+// name and then the sentence as its description, which this checks in that order.
 //
 // Over the demo door (demo-door.mjs starts it as globalSetup; DEMO_BASE names it), since close
 // needs its edit Sink (a workspace read takes seconds in the demo's debug build). Each test reverts the workspace to version 1 first and after. Assertions
@@ -104,11 +106,17 @@ test("maximize: VoiceOver hears the maximize sentence", async ({ page, voiceOver
   const said = [];
   const from = (await voiceOver.spokenPhraseLog()).length;
   await Promise.all([page.waitForURL(/maximize=list/), voiceOver.press("Enter")]);
+  // Focus lands on Restore, described by the sentence the page renders at load (#ui-said): VoiceOver
+  // says its name, then the sentence as its description, in that order.
   const found = await heard(voiceOver, from, /contacts maximized\.? restore to see every pane/i, said);
   await keepSaid("spoken-maximize", said);
   await keepLog(voiceOver, "spoken-maximize");
-  await expect(page.locator("#status p")).toHaveText("Contacts maximized. Restore to see every pane.");
+  await expect(page.locator("main #ui-said")).toHaveText("Contacts maximized. Restore to see every pane.");
   expect(found, "VoiceOver never said the maximize sentence").toBe(true);
+  const all = said.join(" ").toLowerCase();
+  const name = all.indexOf("restore every pane");
+  const sentence = all.search(/contacts maximized\.? restore to see every pane/);
+  expect(name >= 0 && name < sentence, `VoiceOver said Restore's name before the sentence: ${JSON.stringify(said)}`).toBe(true);
 });
 
 test("close: VoiceOver hears the Closed sentence", async ({ page, voiceOver, request }) => {

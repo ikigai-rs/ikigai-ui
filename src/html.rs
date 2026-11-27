@@ -107,9 +107,11 @@ pub const HINT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:hint:";
 /// hint or note (ledger #3967), since there is no control for a label to name; and a pane's
 /// "Pane" menu as a `<details>` of its edit forms (ledger #3952); a pane's header toggle (its
 /// Collapse or Expand with `aria-expanded`, its Maximize or Restore with `aria-pressed`) as a
-/// one-button form, and the sentence a page says on arriving (maximized) marked for the shell's
-/// script to put in `#status` (ledger #3953).
-pub const HINT_TEMPLATES: [crate::Artifact; 12] = [
+/// one-button form, Restore's describing the sentence the maximized page says, which is
+/// rendered at load as `#ui-said` (not a live change) and marked for the shell's script to move
+/// focus to Restore, so a screen reader says its name, role and the sentence once (ledger
+/// #3953).
+pub const HINT_TEMPLATES: [crate::Artifact; 13] = [
     crate::Artifact {
         iri: "urn:iki:ui:template:hint:choice-radio",
         id: "ui-template-hint",
@@ -186,6 +188,13 @@ pub const HINT_TEMPLATES: [crate::Artifact; 12] = [
         file: "template/hint/form-toggle.html",
         media_type: crate::HTML,
         bytes: include_bytes!("../assets/template/hint/form-toggle.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:form-restore",
+        id: "ui-template-hint",
+        file: "template/hint/form-restore.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/form-restore.html"),
     },
     crate::Artifact {
         iri: "urn:iki:ui:template:hint:text-said",
@@ -522,6 +531,11 @@ async fn view(
         "group" if layout(node, crate::workspace::PANE).is_some() => "group-pane",
         "group" if layout(node, crate::workspace::MENU).is_some() => "group-menu",
         "field" if property(node, "input").as_deref() == Some("hidden") => "field-hidden",
+        // Restore (only on a maximized page, which says its sentence as `#ui-said`) is described
+        // by that sentence (ledger #3953).
+        "form" if hint_text(node, crate::workspace::TOGGLE) == Some("pressed true") => {
+            "form-restore"
+        }
         "form" if hint_text(node, crate::workspace::TOGGLE).is_some() => "form-toggle",
         "text" if hint_text(node, crate::workspace::SAID).is_some() => "text-said",
         // A read-only form without a Sink resource navigates. Enhancing it with

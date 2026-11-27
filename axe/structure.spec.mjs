@@ -11,8 +11,9 @@
 // 2. Maximize by a single pointer click: a GET (no edit sent); only Contacts is in the page, so the
 //    other panes are out of the tab order and the accessibility tree; the "Panes" list still
 //    lists them, "hidden while Contacts is maximized"; the toggle is "Restore every pane"
-//    (aria-pressed="true") and has focus on arrival (a plain load moves no focus); #status says
-//    "Contacts maximized. Restore to see every pane." Restore by keyboard brings every pane back. Axe and screenshots maximized.
+//    (aria-pressed="true") and has focus on arrival (a plain load moves no focus); it is described
+//    (aria-describedby) by #ui-said, rendered at load: "Contacts maximized. Restore to see every
+//    pane.", and #status stays empty. Restore by keyboard brings every pane back. Axe and screenshots maximized.
 // 3. Add by keyboard from the "Add pane" form, then close: the new pane's heading has focus and
 //    #status says "Opened Contact table below Table."; its menu's Close sends one edit, focus is
 //    on the heading of the pane that took its place (Table), and #status says "Closed Contact
@@ -145,12 +146,17 @@ test("maximize by pointer and restore by keyboard: a view, aria-pressed, the pan
   await Promise.all([page.waitForURL(/maximize=list/), max.click()]);
   await page.waitForLoadState("networkidle");
   expect(edits.length, "maximize writes nothing").toBe(0);
-  await expect(page.locator("#status p")).toHaveText("Contacts maximized. Restore to see every pane.");
-  // The announced load puts focus on the Restore toggle, so a screen reader is inside the page
-  // when the sentence is said.
+  // The sentence is rendered with the page as #ui-said (present at load, not a live change),
+  // and #status says nothing, so it is not heard twice.
+  await expect(page.locator("main #ui-said")).toHaveText("Contacts maximized. Restore to see every pane.");
+  await expect(page.locator("#status p")).toHaveCount(0);
+  // The announced load puts focus on the Restore toggle, which the sentence describes, so a
+  // screen reader says its name, role and the sentence once as focus lands.
   const pressed = page.locator("#pane-list > form.ui-pane-toggle > button[aria-pressed]");
   await expect(pressed).toBeFocused();
   await expect(pressed).toHaveAttribute("aria-pressed", "true");
+  await expect(pressed).toHaveAttribute("aria-describedby", "ui-said");
+  await expect(pressed).toHaveAccessibleDescription("Contacts maximized. Restore to see every pane.");
   // Shot as the page arrives, focus ring on Restore.
   await shoot(page, "maximized");
   await expect(page.locator("section.ui-pane[id^='pane-']")).toHaveCount(1);
