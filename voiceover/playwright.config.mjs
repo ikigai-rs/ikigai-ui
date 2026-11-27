@@ -5,6 +5,8 @@ import { devices } from "@playwright/test";
 
 export default {
   testDir: ".",
+  // The demo door, for workspace.spec.mjs (ledger #3953): see demo-door.mjs.
+  globalSetup: "./demo-door.mjs",
   testMatch: /.*\.spec\.mjs/,
   workers: 1,
   retries: 0,

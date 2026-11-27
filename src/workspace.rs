@@ -1555,10 +1555,15 @@ pub(crate) fn screen_endpoint() -> ikigai_core::AsyncFnEndpoint {
 
 /// What can be opened in a new pane now (ledger #3953): the host's `{iri}:addable` list, read
 /// under the caller's capability, filled from the selection ([`offers`]), and only the entries
-/// the caller can read. Readability is asked with `Exists`, not by rendering each screen: of the
-/// selected IRI an accepting entry opens (once per IRI, however many entries accept it), and of
-/// a pinned entry's screen name. A denial (or a name concealed as not found) leaves the entry
-/// out; any other failure is the page's, named, never hidden. No list bound is nothing offered.
+/// the caller can read. Readability is asked of the very screen each entry would open (its
+/// filled content as a screen name: `urn:iki:ui:screen:name:lens:{lens}:resource:{iri}` for an
+/// accepting entry, not the selected IRI alone) with `Exists`, once per screen, not by
+/// rendering it: ikigai-ui's own screens answer `Exists` without compiling or running a lens
+/// ([`crate::screen`], [`crate::lens`]). An `Exists` may answer Ok with `false`, so its body is
+/// read: `false` leaves the entry out, as does a denial (or a name concealed as not found or
+/// unresolved). Any other body is an answer, so the entry is readable (an endpoint that does
+/// not dispatch on the verb answers `Exists` with its content). Any other failure is the
+/// page's, named, never hidden. No list bound is nothing offered.
 async fn readable_offers(
     inv: &ikigai_core::Invocation<'_>,
     iri: &str,
@@ -1566,12 +1571,6 @@ async fn readable_offers(
     address: &BTreeMap<String, String>,
 ) -> Result<Vec<Offer>, Error> {
     use ikigai_core::{Request, Verb};
-    fn withheld(e: &Error) -> bool {
-        matches!(
-            e,
-            Error::Denied(_) | Error::NotFound(_) | Error::Unresolved(_)
-        )
-    }
     let at = Iri::parse(addable_iri(iri)).map_err(|e| refuse(e.to_string()))?;
     let answer = match inv.issue(Request::new(Verb::Source, at)).await {
         Ok(answer) => answer,
@@ -1583,19 +1582,17 @@ async fn readable_offers(
     let mut readable: BTreeMap<String, bool> = BTreeMap::new();
     let mut out = Vec::new();
     for offer in offers(&list, &chosen) {
-        let target = match &offer.role {
-            Some(role) => chosen[role].clone(),
-            None => format!("urn:iki:ui:screen:name:{}", offer.content),
-        };
+        let target = offer_screen(&offer.content);
         let ok = match readable.get(&target) {
             Some(ok) => *ok,
             None => {
-                let name = Iri::parse(target.as_str()).map_err(|e| refuse(e.to_string()))?;
-                let ok = match inv.issue(Request::new(Verb::Exists, name)).await {
-                    Ok(_) => true,
-                    Err(e) if withheld(&e) => false,
-                    Err(e) => return Err(e),
-                };
+                let name = Iri::parse(target.as_str()).map_err(|e| {
+                    refuse(format!(
+                        "addable `{}` opens `{target}`, not an IRI: {e}",
+                        offer.label
+                    ))
+                })?;
+                let ok = exists(inv.issue(Request::new(Verb::Exists, name)).await)?;
                 readable.insert(target, ok);
                 ok
             }
@@ -1605,6 +1602,34 @@ async fn readable_offers(
         }
     }
     Ok(out)
+}
+
+/// The screen an offer's filled `content` opens, as a pane's [`content`] names it.
+fn offer_screen(content: &str) -> String {
+    if content.starts_with("urn:iki:ui:screen:name:") {
+        content.to_string()
+    } else {
+        format!("urn:iki:ui:screen:name:{content}")
+    }
+}
+
+/// A failure that withholds a name from the caller: denied, or concealed as not found or
+/// unresolved.
+fn withheld(e: &Error) -> bool {
+    matches!(
+        e,
+        Error::Denied(_) | Error::NotFound(_) | Error::Unresolved(_)
+    )
+}
+
+/// [`readable_offers`]' reading of one `Exists` answer: Ok unless its body is `false`; a
+/// withheld name is not readable; any other failure is the caller's.
+fn exists(answer: Result<ikigai_core::Representation, Error>) -> Result<bool, Error> {
+    match answer {
+        Ok(answer) => Ok(answer.bytes.trim_ascii() != b"false"),
+        Err(e) if withheld(&e) => Ok(false),
+        Err(e) => Err(e),
+    }
 }
 
 /// The workspace screen's face name, without [`FACE`]'s `urn:iki:ui:screen:name:` part:
