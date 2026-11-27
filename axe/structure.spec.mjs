@@ -11,8 +11,8 @@
 // 2. Maximize by a single pointer click: a GET (no edit sent); only Contacts is in the page, so the
 //    other panes are out of the tab order and the accessibility tree; the "Panes" list still
 //    lists them, "hidden while Contacts is maximized"; the toggle is "Restore every pane"
-//    (aria-pressed="true"); #status says "Contacts maximized. Restore to see every pane." Restore by
-//    keyboard brings every pane back. Axe and screenshots maximized.
+//    (aria-pressed="true") and has focus on arrival (a plain load moves no focus); #status says
+//    "Contacts maximized. Restore to see every pane." Restore by keyboard brings every pane back. Axe and screenshots maximized.
 // 3. Add by keyboard from the "Add pane" form, then close: the new pane's heading has focus and
 //    #status says "Opened Contact table below Table."; its menu's Close sends one edit, focus is
 //    on the heading of the pane that took its place (Table), and #status says "Closed Contact
@@ -137,6 +137,8 @@ test("collapse by keyboard and expand by pointer: aria-expanded, focus, one sent
 
 test("maximize by pointer and restore by keyboard: a view, aria-pressed, the pane list", async ({ page }) => {
   const { errors, edits } = await open(page);
+  // An ordinary load moves no focus.
+  expect(await page.evaluate(() => document.activeElement === document.body), "a plain load moves no focus").toBe(true);
   const max = page.locator("#pane-list > form.ui-pane-toggle > button[aria-pressed]");
   await expect(max).toHaveAccessibleName("Maximize Contacts");
   await expect(max).toHaveAttribute("aria-pressed", "false");
@@ -144,6 +146,11 @@ test("maximize by pointer and restore by keyboard: a view, aria-pressed, the pan
   await page.waitForLoadState("networkidle");
   expect(edits.length, "maximize writes nothing").toBe(0);
   await expect(page.locator("#status p")).toHaveText("Contacts maximized. Restore to see every pane.");
+  // The announced load puts focus on the Restore toggle, so a screen reader is inside the page
+  // when the sentence is said.
+  const pressed = page.locator("#pane-list > form.ui-pane-toggle > button[aria-pressed]");
+  await expect(pressed).toBeFocused();
+  await expect(pressed).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("section.ui-pane[id^='pane-']")).toHaveCount(1);
   await expect(page.locator("#pane-table, #pane-dashboard")).toHaveCount(0);
   const listed = await page.locator('nav[aria-label="Panes"] a').allTextContents();
@@ -170,6 +177,8 @@ test("maximize by pointer and restore by keyboard: a view, aria-pressed, the pan
   await page.waitForLoadState("networkidle");
   await expect(page.locator("section.ui-pane[id^='pane-']")).toHaveCount(3);
   expect(page.url()).toContain("#pane-list");
+  // The restored page carries no sentence: an ordinary load moves no focus.
+  expect(await page.evaluate(() => document.activeElement === document.body), "a plain load moves no focus").toBe(true);
   expect(edits.length).toBe(0);
   expect(errors).toEqual([]);
 });

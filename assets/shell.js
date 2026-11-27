@@ -1315,11 +1315,17 @@
     if (menu) menu.open = false;
     send(root, fields, fields.pane || fields.to || (menu && menu.getAttribute("data-ui-pane-menu")));
   }, true);
-  // A page that arrives with a sentence to say (a maximized workspace, ledger #3953) says it once
-  // in #status, after the region is in the tree, so a reader hears it.
+  // A page that arrives with a sentence to say (a maximized workspace, ledger #3953) moves focus
+  // to its Restore toggle (aria-pressed="true"), then says the sentence once in #status, after
+  // the region is in the tree, the way Collapse and Expand do: after a full-page load a screen
+  // reader sits on the web content and does not speak a polite change made before focus lands
+  // inside it. Only that announced load moves focus; an ordinary load leaves it where it is.
   document.addEventListener("DOMContentLoaded", function () {
     var said = document.querySelector("main [data-ui-announce]");
-    if (said) window.setTimeout(function () { say(said.textContent, false); }, 300);
+    if (!said) return;
+    var restore = document.querySelector('main section.ui-pane > form.ui-pane-toggle > button[aria-pressed="true"]');
+    if (restore) restore.focus();
+    window.setTimeout(function () { say(said.textContent, false); }, 300);
   });
   // Escape in an open menu closes it and puts focus back on its summary.
   document.addEventListener("keydown", function (e) {
