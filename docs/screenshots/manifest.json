@@ -1,49 +1,49 @@
 {
   "lens-board-page-2-light.webp": {
-    "inputs": "b174f94cc83ca5106c13e9a84fb0718fcd606c929219415cdf4029ea14c1be0d"
+    "inputs": "0e923760a541cde74fc13cacaecc591c2e462deb481ebd715593fa630b9938e8"
   },
   "lens-board-page-2-dark.webp": {
-    "inputs": "b174f94cc83ca5106c13e9a84fb0718fcd606c929219415cdf4029ea14c1be0d"
+    "inputs": "0e923760a541cde74fc13cacaecc591c2e462deb481ebd715593fa630b9938e8"
   },
   "gallery-light.webp": {
-    "inputs": "e7de34f8c84d271aa85daa64d6a5b45490e88ef5525bb476197f2a3bfe99d3a2"
+    "inputs": "6ef55fe1ad110a7a05740b703347c6d69a85a2f83e630095fcbcce06a328d6c3"
   },
   "gallery-dark.webp": {
-    "inputs": "e7de34f8c84d271aa85daa64d6a5b45490e88ef5525bb476197f2a3bfe99d3a2"
+    "inputs": "6ef55fe1ad110a7a05740b703347c6d69a85a2f83e630095fcbcce06a328d6c3"
   },
   "elements-light.webp": {
-    "inputs": "c6f3abef0b83e580cd0c88b7ad9492d932d2722020c782f43a2d7040b53e2361"
+    "inputs": "f34eb45a449a0abcb210c131b626056769dd3ed44fb88ac9b30d2fc69938e70d"
   },
   "elements-dark.webp": {
-    "inputs": "c6f3abef0b83e580cd0c88b7ad9492d932d2722020c782f43a2d7040b53e2361"
+    "inputs": "f34eb45a449a0abcb210c131b626056769dd3ed44fb88ac9b30d2fc69938e70d"
   },
   "contact-refusal-light.webp": {
-    "inputs": "261d09eb17fcbb2f8a4c839a75aa394f72600d8c056e282a12f431d2dbd4eed6"
+    "inputs": "3c9acfdcfcf08514ee7b73449f31974bcb1f20f2cf1c43e01330ae18da5d9551"
   },
   "contact-refusal-dark.webp": {
-    "inputs": "261d09eb17fcbb2f8a4c839a75aa394f72600d8c056e282a12f431d2dbd4eed6"
+    "inputs": "3c9acfdcfcf08514ee7b73449f31974bcb1f20f2cf1c43e01330ae18da5d9551"
   },
   "support-light.webp": {
-    "inputs": "2155d6c553e2e0f780c0093c3adbba9f8db5246d5df4e47fa32aedcb6d4643e8"
+    "inputs": "cfd4f830d5ea6737adf64c59e5d5bc8fb0679f8a942ae3fa0c66848714b69b70"
   },
   "support-dark.webp": {
-    "inputs": "2155d6c553e2e0f780c0093c3adbba9f8db5246d5df4e47fa32aedcb6d4643e8"
+    "inputs": "cfd4f830d5ea6737adf64c59e5d5bc8fb0679f8a942ae3fa0c66848714b69b70"
   },
   "workspace-light.webp": {
-    "inputs": "2b1ce6e091b8375fbc40bfbe51a99bf339728a521904c810a241fe4c2be23ff2"
+    "inputs": "c948c38f17a35338511eaac473f34fdafaeafb9bc98a9a734e7aa2bae68725a3"
   },
   "workspace-dark.webp": {
-    "inputs": "2b1ce6e091b8375fbc40bfbe51a99bf339728a521904c810a241fe4c2be23ff2"
+    "inputs": "c948c38f17a35338511eaac473f34fdafaeafb9bc98a9a734e7aa2bae68725a3"
   },
   "workspace-more-contrast.webp": {
-    "inputs": "2b1ce6e091b8375fbc40bfbe51a99bf339728a521904c810a241fe4c2be23ff2"
+    "inputs": "c948c38f17a35338511eaac473f34fdafaeafb9bc98a9a734e7aa2bae68725a3"
   },
   "scene-light.webp": {
-    "inputs": "e7de34f8c84d271aa85daa64d6a5b45490e88ef5525bb476197f2a3bfe99d3a2",
+    "inputs": "6ef55fe1ad110a7a05740b703347c6d69a85a2f83e630095fcbcce06a328d6c3",
     "webgpu": false
   },
   "scene-dark.webp": {
-    "inputs": "e7de34f8c84d271aa85daa64d6a5b45490e88ef5525bb476197f2a3bfe99d3a2",
+    "inputs": "6ef55fe1ad110a7a05740b703347c6d69a85a2f83e630095fcbcce06a328d6c3",
     "webgpu": false
   }
 }

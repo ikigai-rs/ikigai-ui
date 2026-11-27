@@ -2218,6 +2218,21 @@ pub fn fold(inv: &Invocation<'_>, screen: &str) -> Result<String, Error> {
     Ok(screen_name(&lens, &resource, &chosen))
 }
 
+/// A lensed screen's `Exists` (ledger #3953): whether its lens is there for the caller, asked
+/// with `Exists` of the lens's definition, without reading the resource or running the lens.
+/// The operations lens is ikigai-ui's own, always there. A denial or a missing lens is the
+/// definition's error, as for `Source`. Undeclared, as [`crate::screen`]'s screens' `Exists`:
+/// the kernel routes it here under `Source`'s requires.
+async fn lens_exists(inv: &Invocation<'_>, lens: &str) -> Result<Representation, Error> {
+    if lens == "operations" {
+        return Ok(crate::screen::exists_answer(true).with_expiry(ikigai_core::Expiry::Always));
+    }
+    let at = format!("{NAME}{lens}");
+    let answer = inv.issue(Request::new(Verb::Exists, iri(&at)?)).await?;
+    let yes = answer.bytes.trim_ascii() != b"false";
+    Ok(crate::screen::exists_answer(yes).with_expiry(answer.expiry))
+}
+
 /// The lensed screens, in [`crate::space`].
 pub(crate) fn bind_screens(space: EndpointSpace) -> EndpointSpace {
     space.bind(
@@ -2256,6 +2271,9 @@ pub(crate) fn bind_screens(space: EndpointSpace) -> EndpointSpace {
                 let (lens, chosen, resource) =
                     parse_screen(&name).ok_or_else(|| Error::NotFound(name.clone()))??;
                 iri(&resource)?;
+                if inv.request.verb == Verb::Exists {
+                    return lens_exists(inv, &lens).await;
+                }
                 let n = lensed(inv, &lens, &resource, &chosen).await?;
                 let rep = crate::model_face(inv, &n)?;
                 Ok(if lens == "operations" { rep.with_expiry(ikigai_core::Expiry::Always) } else { rep })

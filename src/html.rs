@@ -105,8 +105,13 @@ pub const HINT_TEMPLATE_PREFIX: &str = "urn:iki:ui:template:hint:";
 /// or column sized by its shares, tabs as a real tab list, and a pane as a section with its
 /// fragment id; and a field whose `input` is `hidden` as the hidden input alone, with no label,
 /// hint or note (ledger #3967), since there is no control for a label to name; and a pane's
-/// "Pane" menu as a `<details>` of its edit forms (ledger #3952).
-pub const HINT_TEMPLATES: [crate::Artifact; 10] = [
+/// "Pane" menu as a `<details>` of its edit forms (ledger #3952); a pane's header toggle (its
+/// Collapse or Expand with `aria-expanded`, its Maximize or Restore with `aria-pressed`) as a
+/// one-button form, Restore's describing the sentence the maximized page says, which is
+/// rendered at load as `#ui-said` (not a live change) and marked for the shell's script to move
+/// focus to Restore, so a screen reader says its name, role and the sentence once (ledger
+/// #3953).
+pub const HINT_TEMPLATES: [crate::Artifact; 13] = [
     crate::Artifact {
         iri: "urn:iki:ui:template:hint:choice-radio",
         id: "ui-template-hint",
@@ -176,6 +181,27 @@ pub const HINT_TEMPLATES: [crate::Artifact; 10] = [
         file: "template/hint/group-menu.html",
         media_type: crate::HTML,
         bytes: include_bytes!("../assets/template/hint/group-menu.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:form-toggle",
+        id: "ui-template-hint",
+        file: "template/hint/form-toggle.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/form-toggle.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:form-restore",
+        id: "ui-template-hint",
+        file: "template/hint/form-restore.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/form-restore.html"),
+    },
+    crate::Artifact {
+        iri: "urn:iki:ui:template:hint:text-said",
+        id: "ui-template-hint",
+        file: "template/hint/text-said.html",
+        media_type: crate::HTML,
+        bytes: include_bytes!("../assets/template/hint/text-said.html"),
     },
 ];
 
@@ -505,6 +531,13 @@ async fn view(
         "group" if layout(node, crate::workspace::PANE).is_some() => "group-pane",
         "group" if layout(node, crate::workspace::MENU).is_some() => "group-menu",
         "field" if property(node, "input").as_deref() == Some("hidden") => "field-hidden",
+        // Restore (only on a maximized page, which says its sentence as `#ui-said`) is described
+        // by that sentence (ledger #3953).
+        "form" if hint_text(node, crate::workspace::TOGGLE) == Some("pressed true") => {
+            "form-restore"
+        }
+        "form" if hint_text(node, crate::workspace::TOGGLE).is_some() => "form-toggle",
+        "text" if hint_text(node, crate::workspace::SAID).is_some() => "text-said",
         // A read-only form without a Sink resource navigates. Enhancing it with
         // hx-target=this would put the returned page inside the controls alone.
         "form"
@@ -577,6 +610,14 @@ pub(crate) fn node_endpoint() -> AsyncFnEndpoint {
 fn layout<'a>(node: &'a Node, key: &str) -> Option<&'a str> {
     match node.hint.get(key) {
         Some(model::Hint::Plain(Value::Text(s))) if node.kind == "group" => Some(s),
+        _ => None,
+    }
+}
+
+/// A workspace hint's text on a node of any kind (a pane's header toggle, ledger #3953).
+fn hint_text<'a>(node: &'a Node, key: &str) -> Option<&'a str> {
+    match node.hint.get(key) {
+        Some(model::Hint::Plain(Value::Text(s))) => Some(s),
         _ => None,
     }
 }
@@ -788,6 +829,15 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                         .filter(|a| ["row", "column"].contains(a))
                         .map(str::to_string),
                     ("group", "pane-key") => Some(pane_key(node)?.to_string()),
+                    // Collapsed to its header (ledger #3953): a fixed word, never the hint's text.
+                    ("group", "collapsed") => Some(
+                        if node.hint.contains_key(crate::workspace::COLLAPSED) {
+                            "true"
+                        } else {
+                            "false"
+                        }
+                        .to_string(),
+                    ),
                     // The places a drag may drop on this pane (ledger #3952): only the words of
                     // [`crate::workspace::PLACES`] enter markup.
                     ("group", "drop") => Some(
@@ -798,6 +848,22 @@ pub(crate) fn property_endpoint() -> AsyncFnEndpoint {
                             .collect::<Vec<_>>()
                             .join(" "),
                     ),
+                    // A header toggle's state attribute and value (ledger #3953): fixed words only.
+                    ("form", "toggle-attr" | "toggle-state") => {
+                        let hint = hint_text(node, crate::workspace::TOGGLE).unwrap_or_default();
+                        let (attr, state) = match hint {
+                            "expanded true" => ("aria-expanded", "true"),
+                            "expanded false" => ("aria-expanded", "false"),
+                            "pressed true" => ("aria-pressed", "true"),
+                            "pressed false" => ("aria-pressed", "false"),
+                            other => {
+                                return Err(Error::Endpoint(format!(
+                                    "`{other}` is not a pane toggle"
+                                )))
+                            }
+                        };
+                        Some(if name == "toggle-attr" { attr } else { state }.to_string())
+                    }
                     ("group", "menu-key") => {
                         let key = layout(node, crate::workspace::MENU).unwrap_or_default();
                         if !crate::workspace::is_key(key) {
@@ -984,7 +1050,10 @@ pub(crate) fn child_endpoint() -> AsyncFnEndpoint {
                             if i > 0 {
                                 out.push_str(&splitter(node, &shares, i - 1)?);
                             }
-                            let class = share_class(shares.get(i).copied().unwrap_or_default());
+                            let mut class = share_class(shares.get(i).copied().unwrap_or_default());
+                            if child.hint.contains_key(crate::workspace::COLLAPSED) {
+                                class.push_str(" ui-share-collapsed");
+                            }
                             out.push_str(&format!("<div class=\"ui-share {class}\">"));
                             out.push_str(&child_view(path).await?);
                             out.push_str("</div>");

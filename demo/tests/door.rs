@@ -408,3 +408,118 @@ async fn a_rearrangement_is_a_write_a_second_viewer_sees() {
     assert_eq!(pane_order(&fifth), ["list", "dashboard", "table"]);
     assert!(fifth.contains("name=\"if-version\" value=\"5\""));
 }
+
+/// Collapse, maximize, close and add with no script (ledger #3953, design section 5A): each a
+/// form post or a link, so a keyboard and one pointer make every one. A collapse writes the
+/// next version with the pane's content gone and its heading kept; maximize is an address that
+/// writes nothing; an add from the "Add pane" form opens a pinned pane the Sink's answer links
+/// to; a close names the version that still has the pane and links to the one that took it.
+#[tokio::test(flavor = "current_thread")]
+async fn collapse_maximize_close_and_add_work_with_no_script() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(ikigai_ui_demo::serve(listener, Store::default()));
+    let edit = format!(
+        "/resolution/iri/{}",
+        format!("{}:edit", ikigai_ui_demo::WORKSPACE).replace(':', "%3A")
+    );
+    let path = ikigai_ui_demo::WORKSPACE_PATH;
+    let first = call(addr, "GET", path, "").await;
+    assert!(first.contains("Collapse Contacts"), "{first}");
+    assert!(first.contains("Close Table"), "{first}");
+    assert!(first.contains(">Maximize Contacts<"), "{first}");
+    assert!(first.contains("Add pane"), "{first}");
+    // The addable list, filled from the selection: the three example lenses on the graph.
+    assert!(
+        first.contains("value=\"lens:contact-table:resource:urn:iki:ui:example:graph:contact\""),
+        "{first}"
+    );
+
+    // Maximize: a link, read with GET, and nothing written.
+    let max = call(addr, "GET", &format!("{path}?maximize=table"), "").await;
+    assert!(max.starts_with("HTTP/1.1 200"), "{max}");
+    assert_eq!(pane_order(&max), ["table"]);
+    assert!(
+        max.contains("Table maximized. Restore to see every pane."),
+        "{max}"
+    );
+    assert!(max.contains("hidden while Table is maximized"), "{max}");
+    assert!(max.contains(">Restore every pane<"), "{max}");
+    // The sentence is rendered at load as #ui-said and describes Restore (ledger #3953).
+    assert!(
+        max.contains(
+            "<p id=\"ui-said\" data-ui-announce>Table maximized. Restore to see every pane.</p>"
+        ),
+        "{max}"
+    );
+    assert!(
+        max.contains("<button type=\"submit\" aria-pressed=\"true\" aria-describedby=\"ui-said\">Restore every pane</button>"),
+        "{max}"
+    );
+    assert!(
+        max.contains("name=\"if-version\" value=\"1\""),
+        "maximize wrote nothing"
+    );
+
+    let collapse = call(addr, "POST", &edit, "if-version=1&op=collapse&pane=list").await;
+    assert!(
+        collapse.contains("data-ui-said>Collapsed Contacts.</p>"),
+        "{collapse}"
+    );
+    let second = call(addr, "GET", path, "").await;
+    assert!(
+        second.contains("id=\"pane-list\" aria-label=\"Contacts\"")
+            && second.contains("data-ui-collapsed=\"true\""),
+        "{second}"
+    );
+    assert!(second.contains("ui-share-collapsed"), "{second}");
+    assert!(second.contains("Expand Contacts"), "{second}");
+
+    let add = call(
+        addr,
+        "POST",
+        &edit,
+        "if-version=2&op=add&content=lens%3Acontact-table%3Aresource%3Aurn%3Aiki%3Aui%3Aexample%3Agraph%3Acontact&to=table&place=below",
+    )
+    .await;
+    assert!(
+        add.contains("data-ui-said>Opened Contact table below Table.</p>"),
+        "{add}"
+    );
+    assert!(
+        add.contains(&format!("href=\"{path}#pane-contact-table\"")),
+        "{add}"
+    );
+    let refused = call(
+        addr,
+        "POST",
+        &edit,
+        "if-version=3&op=add&content=lens%3Asecret%3Aresource%3Aurn%3Ax",
+    )
+    .await;
+    assert!(!refused.starts_with("HTTP/1.1 200"), "{refused}");
+    let third = call(addr, "GET", path, "").await;
+    assert_eq!(
+        pane_order(&third),
+        ["list", "dashboard", "table", "contact-table"]
+    );
+
+    let close = call(
+        addr,
+        "POST",
+        &edit,
+        "if-version=3&op=close&pane=contact-table",
+    )
+    .await;
+    assert!(
+        close
+            .contains("data-ui-said>Closed Contact table. Revert to version 3 brings it back.</p>"),
+        "{close}"
+    );
+    assert!(
+        close.contains(&format!("href=\"{path}#pane-table\"")),
+        "{close}"
+    );
+    let fourth = call(addr, "GET", path, "").await;
+    assert_eq!(pane_order(&fourth), ["list", "dashboard", "table"]);
+}

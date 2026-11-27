@@ -1028,8 +1028,31 @@ fn screen_face(
     Ok(face)
 }
 
+/// A screen's `Exists` (ledger #3953): whether its source exists for the caller, asked with
+/// `Exists` of `{screen}:source`, never compiled. `true` or `false` as text, no fresher than
+/// the source's answer; a denial or a missing source is the source's error, as for `Source`.
+async fn source_exists(inv: &Invocation<'_>) -> Result<Representation, Error> {
+    let mut request = source_request(inv)?;
+    request.verb = Verb::Exists;
+    let answer = inv.issue(request).await?;
+    let yes = answer.bytes.trim_ascii() != b"false";
+    Ok(exists_answer(yes).with_expiry(answer.expiry))
+}
+
+/// An `Exists` answer: `true` or `false` as text.
+pub(crate) fn exists_answer(yes: bool) -> Representation {
+    Representation::new(
+        ReprType::new("text/plain").with_param("charset", "utf-8"),
+        if yes {
+            b"true".to_vec()
+        } else {
+            b"false".to_vec()
+        },
+    )
+}
+
 /// `urn:iki:ui:screen:name:{screen}`: its source, read through the kernel and compiled by
-/// [`COMPILER`], in the face asked for. `id` names it; `binding` declares `{screen}` (an exact
+/// [`COMPILER`], in the face asked for; its `Exists`, its source's ([`source_exists`]). `id` names it; `binding` declares `{screen}` (an exact
 /// name, the gallery, has none).
 pub(crate) fn screen_endpoint(id: &'static str, binding: bool) -> AsyncFnEndpoint {
     let description = Description::new(id)
@@ -1066,6 +1089,9 @@ pub(crate) fn screen_endpoint(id: &'static str, binding: bool) -> AsyncFnEndpoin
         // Synchronous work out of line, as in [`compile`]: this body is one frame of every
         // level of a chain of screens.
         Box::pin(async move {
+            if inv.request.verb == Verb::Exists {
+                return source_exists(inv).await;
+            }
             let open = inv.optional_str("open")?;
             let source = inv.issue(source_request(inv)?).await?;
             let source_expiry = source.expiry;

@@ -57,7 +57,9 @@
 //    live, and by the keyboard, saved as one `resize` edit through the workspace's "Layout" form.
 // 9. Workspace rearrange (ledger #3952): a pane dragged by its heading onto one of five drop
 //    targets, a tab dragged along its tab list, and the "Pane" menu's forms, each saved as one
-//    `move` or `reorder` edit; the layout then rebuilt around the panes' own elements.
+//    `move` or `reorder` edit; the layout then rebuilt around the panes' own elements. The
+//    menu's Collapse, Expand, Close and "Open in a new pane", and the "Add pane" form (ledger
+//    #3953), are sent the same way; focus goes to the pane the Sink's answer links back to.
 (function () {
   "use strict";
   var KEY = "ikigai-ui:theme";
@@ -1210,10 +1212,19 @@
       Array.prototype.forEach.call(root.querySelectorAll("section.ui-pane[id^='pane-']"), function (old) {
         var next = fresh.querySelector("#" + old.id);
         if (!next) return;
+        // Collapsed or expanded (ledger #3953): the new element, which has (or has not) its
+        // content; every other pane keeps its own.
+        if ((old.getAttribute("data-ui-collapsed") || "false") !== (next.getAttribute("data-ui-collapsed") || "false")) return;
         var menu = old.querySelector(":scope > details[data-ui-pane-menu]");
         var nextMenu = next.querySelector(":scope > details[data-ui-pane-menu]");
         if (menu && nextMenu) menu.replaceWith(nextMenu);
         else if (nextMenu) old.insertBefore(nextMenu, old.children[2] || null);
+        // The header toggles too (whether a Collapse is offered depends on the siblings).
+        var h2 = old.querySelector(":scope > h2");
+        Array.prototype.forEach.call(old.querySelectorAll(":scope > form.ui-pane-toggle"), function (f) { f.remove(); });
+        Array.prototype.slice.call(next.querySelectorAll(":scope > form.ui-pane-toggle")).reverse().forEach(function (f) {
+          if (h2) h2.after(f);
+        });
         old.setAttribute("data-ui-drop", next.getAttribute("data-ui-drop") || "");
         old.removeAttribute("data-ui-dragged");
         next.replaceWith(old);
@@ -1243,13 +1254,37 @@
     }).then(function (r) {
       return r.text().then(function (t) {
         if (!r.ok) throw new Error(t || "the server answered " + r.status);
-        var answer = new DOMParser().parseFromString(t, "text/html").querySelector("[data-ui-said]");
+        var parsed = new DOMParser().parseFromString(t, "text/html");
+        var answer = parsed.querySelector("[data-ui-said]");
         said = answer ? answer.textContent : "";
+        // The pane focus goes to, as the Sink marks it (after a close, the one that took its
+        // place; after an add, the new one): its own attribute, never any pane link.
+        var back = parsed.querySelector("[data-ui-focus-pane]");
+        if (back) key = back.getAttribute("data-ui-focus-pane") || key;
         return rebuild(root);
       });
-    }).then(function () {
-      var h = heading(key);
-      if (h) h.focus({ preventScroll: false });
+    }).then(function (fresh) {
+      // After a Collapse or Expand, focus stays on the toggle (now Expand or Collapse, in the
+      // same place); after any other edit, on the pane's heading.
+      var toggle = (fields.op === "collapse" || fields.op === "expand") &&
+        document.querySelector("#pane-" + key + " > form.ui-pane-toggle > button[aria-expanded]");
+      if (toggle) {
+        toggle.focus();
+        say(said, false);
+        return;
+      }
+      var h = heading(key) || (fresh && fresh.querySelector("section.ui-pane > h2"));
+      // A pane in a tab that is not shown (the one that took a closed pane's place may be)
+      // has its tab shown first, so focus lands on it and never on <body>.
+      var panel = h && h.closest('[role="tabpanel"]');
+      if (panel && (panel.hidden || panel.classList.contains("ui-tabpanel-inactive"))) {
+        var tab = document.getElementById(panel.getAttribute("aria-labelledby") || "");
+        if (tab) tab.click();
+      }
+      if (h) {
+        h.setAttribute("tabindex", "-1");
+        h.focus({ preventScroll: false });
+      }
       say(said, false);
     }).catch(function (e) {
       say("The layout was not changed: " + (e && e.message ? e.message : "no answer") + ".", true);
@@ -1268,14 +1303,34 @@
   document.addEventListener("submit", function (e) {
     var form = e.target;
     var menu = form && form.closest && form.closest("details[data-ui-pane-menu]");
-    var root = menu && workspaceOf(menu);
+    // The workspace's "Add pane" form, a pane's "Open in a new pane" and its header Collapse or
+    // Expand (ledger #3953) are sent the same way; Maximize and Restore are GETs, left to load.
+    var other = !menu && form && form.querySelector && (form.method || "").toLowerCase() === "post" &&
+      form.querySelector('input[name="op"][value="add"], input[name="op"][value="collapse"], input[name="op"][value="expand"]');
+    var root = (menu || other) && workspaceOf(menu || form);
     if (!root) return;
     e.preventDefault();
     e.stopPropagation();
     var fields = fieldsOf(form);
-    menu.open = false;
-    send(root, fields, fields.pane || menu.getAttribute("data-ui-pane-menu"));
+    if (menu) menu.open = false;
+    send(root, fields, fields.pane || fields.to || (menu && menu.getAttribute("data-ui-pane-menu")));
   }, true);
+  // A page that arrives with a sentence to say (a maximized workspace, ledger #3953) moves focus
+  // to its Restore toggle (aria-pressed="true"). The server renders the sentence at load as
+  // #ui-said and Restore carries aria-describedby="ui-said", so a screen reader says Restore's
+  // name, role and the sentence as its description, once, when focus lands: no live-region
+  // change, so no race with the reader settling on the new document, and #status stays empty
+  // (the sentence is not heard twice). Only that announced load moves focus; an ordinary load
+  // leaves it where it is. It waits for `load`, then a frame: the address ends in #pane-{key},
+  // and scrolling to that fragment runs the browser's focusing steps, which put focus back on
+  // the viewport (the pane's section is not focusable) if Restore were focused before it.
+  window.addEventListener("load", function () {
+    if (!document.querySelector("main [data-ui-announce]")) return;
+    window.requestAnimationFrame(function () {
+      var restore = document.querySelector('main section.ui-pane > form.ui-pane-toggle > button[aria-pressed="true"][aria-describedby]');
+      if (restore) restore.focus();
+    });
+  });
   // Escape in an open menu closes it and puts focus back on its summary.
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;

@@ -175,15 +175,28 @@ fn a_selection_never_writes() {
     );
     assert!(refs.contains(&"urn:iki:ui:screen:name:lens:dashboard:resource:urn:iki:ledger:default"));
 
-    // Every form is an edit form (the "Layout" form, and each pane's "Pane" menu, ledger
-    // #3952), posting to the edit Sink. The selection is in none of their fields.
+    // Every form that writes is an edit form (the "Layout" form, each pane's "Pane" menu, ledger
+    // #3952, and its Collapse toggle, ledger #3953), posting to the edit Sink: 1 + 4 × (move,
+    // tabs, close) + 4 collapse + the 2 reorders. The selection is in none of their fields. The
+    // rest are the four Maximize toggles, GETs of the workspace's own address that keep the
+    // selection and write nothing.
     let forms = all(&screen, "form");
-    assert_eq!(forms.len(), 11);
-    for form in forms {
+    let (edits, views): (Vec<&Node>, Vec<&Node>) =
+        forms.into_iter().partition(|f| text(f, "method") == "post");
+    assert_eq!(edits.len(), 19);
+    for form in edits {
         assert_eq!(text(form, "resource"), format!("{WORKSPACE}:edit"));
         for field in all(form, "field") {
             assert!(!text(field, "value").contains(chosen), "{field:?}");
         }
+    }
+    assert_eq!(views.len(), 4);
+    for form in views {
+        assert!(text(form, "label").starts_with("Maximize "), "{form:?}");
+        assert!(text(form, "action").starts_with(&format!("/workspace/{WORKSPACE}#pane-")));
+        assert!(all(form, "field")
+            .iter()
+            .any(|f| text(f, "value") == chosen));
     }
 }
 
@@ -225,11 +238,17 @@ fn a_selection_never_writes_through_the_face() {
     ));
     assert_eq!(html.matches("A pane&#39;s content.").count(), 4, "{html}");
 
-    // The Layout form and the "Pane" menus' forms (ledger #3952): every one an edit.
-    assert_eq!(html.matches("<form").count(), 11, "{html}");
+    // The Layout form, the "Pane" menus' forms (ledger #3952) and the Collapse toggles (ledger
+    // #3953): every one an edit. The four Maximize toggles are GETs that write nothing.
+    assert_eq!(html.matches("<form").count(), 23, "{html}");
+    assert_eq!(html.matches("method=\"get\"").count(), 4, "{html}");
     for (at, _) in html.match_indices("<form") {
         let form = &html[at..];
         let form = &form[..form.find("</form>").unwrap()];
+        if form.contains("method=\"get\"") {
+            assert!(form.contains("aria-pressed=\"false\">Maximize "), "{form}");
+            continue;
+        }
         assert!(!form.contains(chosen), "{form}");
         assert!(form.contains("name%3Aitem%3Aedit\""), "{form}");
         assert!(form.contains("name=\"if-version\""), "{form}");
@@ -255,7 +274,7 @@ fn the_html_face_renders_the_layout_hints() {
     let html = String::from_utf8(rep.bytes).unwrap();
     for part in [
         r##"<div class="ui-split ui-split-row" role="group" aria-label="Side by side: Dashboard, Session">"##,
-        r##"<div class="ui-share ui-share-300"><section class="ui-group ui-pane" id="pane-dashboard" aria-label="Dashboard" data-ui-drop="left right above below tabs">"##,
+        r##"<div class="ui-share ui-share-300"><section class="ui-group ui-pane" id="pane-dashboard" aria-label="Dashboard" data-ui-drop="left right above below tabs" data-ui-collapsed="false">"##,
         r##"<div class="ui-share ui-share-700"><div class="ui-split ui-split-column""##,
         r##"<div class="ui-tabs" data-ui-tabs role="group""##,
         r##"<div role="tablist" aria-label="Tabs: Item, Trail">"##,
@@ -898,6 +917,191 @@ fn a_shared_workspace_shows_each_viewer_only_their_own_reads() {
     );
 }
 
+// --- proposal 6: the `addable` filter (ledger #3953) -----------------------------------------
+
+/// What the `{workspace}:addable` list offers in the addable host below.
+const ADDABLE: &str = r#"[
+  {"label": "Trail again", "content": "lens:trail:resource:{item}", "accepts": "item"},
+  {"label": "Notes", "content": "lens:notes:resource:urn:test:notes"},
+  {"label": "Retired", "content": "lens:retired:resource:urn:test:notes"},
+  {"label": "Saved", "content": "urn:iki:ui:screen:name:saved-question"},
+  {"label": "Unsaved", "content": "urn:iki:ui:screen:name:never-saved"}
+]"#;
+
+/// The selected item no viewer may read on its own: an `Exists` of it is denied to everyone,
+/// so an offer checked against the selected IRI, not the screen it opens, would be left out.
+const SELECTED: &str = "urn:test:item:secret";
+
+/// [`shared_host`]'s two viewers with an `addable` list: the trail lens needs a grant only Bob
+/// holds; `retired` answers `Exists` Ok with `false`; `saved-question` is a screen with a source
+/// (compiled by ikigai-ui's `screens()`, placed last), `never-saved` one without; and the
+/// selected item itself is denied to everyone. Records every request with its viewer.
+fn addable_host() -> (Kernel, SeenBy) {
+    let seen: SeenBy = Arc::default();
+    let who = |cap: &Capability| match (cap.allows(ALICE), cap.allows(BOB)) {
+        (true, false) => "Alice",
+        (false, true) => "Bob",
+        _ => "nobody",
+    };
+    let answering = |id: &'static str, seen: SeenBy, body: &'static str, media: &'static str| {
+        FnEndpoint::new(id, move |inv: &Invocation<'_>| {
+            seen.lock().unwrap().push((
+                inv.request.verb,
+                inv.request.target.as_str().to_string(),
+                who(inv.capability),
+            ));
+            if id == "retired" && inv.request.verb == Verb::Exists {
+                return Ok(Representation::new(
+                    ReprType::new("text/plain"),
+                    b"false".to_vec(),
+                ));
+            }
+            if id == "selected" {
+                return Err(Error::Denied("nobody reads the selected item alone".into()));
+            }
+            Ok(Representation::new(
+                ReprType::new(media),
+                body.as_bytes().to_vec(),
+            ))
+        })
+        .with_description(
+            Description::new(id)
+                .title(id)
+                .summary("Records what it is asked.")
+                .verb(Verb::Source)
+                .verb(Verb::Meta)
+                .output(media),
+        )
+    };
+    let pane = r#"{"kind": "text", "properties": {"content": "A pane."}}"#;
+    let space = EndpointSpace::new()
+        .bind(
+            Exact::new(WORKSPACE),
+            answering(
+                "atom",
+                seen.clone(),
+                std::str::from_utf8(ITEM).unwrap(),
+                "application/json",
+            ),
+        )
+        .bind(
+            Exact::new(workspace::addable_iri(WORKSPACE).as_str()),
+            answering("addable", seen.clone(), ADDABLE, "application/json"),
+        )
+        .bind(
+            Exact::new(SELECTED),
+            answering("selected", seen.clone(), "", "application/json"),
+        )
+        .bind(
+            Exact::new("urn:iki:ui:screen:name:saved-question:source"),
+            answering(
+                "saved",
+                seen.clone(),
+                "group label=Saved\n  text content=Saved\n",
+                "text/plain",
+            ),
+        )
+        .bind(
+            UriTemplate::parse("urn:iki:ui:screen:name:lens:trail:{rest}").unwrap(),
+            answering("trail", seen.clone(), pane, model::MEDIA_TYPE).with_description(
+                Description::new("trail")
+                    .title("trail")
+                    .summary("Only Bob reads the trail.")
+                    .verb(Verb::Source)
+                    .verb(Verb::Meta)
+                    .output(model::MEDIA_TYPE)
+                    .requires(TRAIL_READ),
+            ),
+        )
+        .bind(
+            UriTemplate::parse("urn:iki:ui:screen:name:lens:retired:{rest}").unwrap(),
+            answering("retired", seen.clone(), pane, model::MEDIA_TYPE),
+        )
+        .bind(
+            UriTemplate::parse("urn:iki:ui:screen:name:lens:{rest}").unwrap(),
+            answering("panes", seen.clone(), pane, model::MEDIA_TYPE),
+        );
+    let root = Arc::new(ikigai_core::Fallback::new(vec![
+        Arc::new(space) as Arc<dyn ikigai_core::Space>,
+        common::root(None, Vec::new()),
+        Arc::new(ikigai_ui::screen::screens()),
+    ]));
+    (common::kernel(root), seen)
+}
+
+/// What the workspace screen's "Add pane" form offers to open, by label, under `scopes`.
+fn offered_to(kernel: &Kernel, scopes: &[&str]) -> Vec<String> {
+    let request = Request::new(
+        Verb::Source,
+        Iri::parse(workspace::screen(WORKSPACE)).unwrap(),
+    )
+    .with_arg("select.item", ArgRef::Inline(SELECTED.as_bytes().to_vec()));
+    let rep = block_on(kernel.issue(request, &Capability::scoped(scopes.iter().copied()))).unwrap();
+    let screen = model::parse(&rep.bytes).unwrap();
+    all(&screen, "choice")
+        .into_iter()
+        .filter(|c| text(c, "name") == "content")
+        .flat_map(|c| c.children.iter().map(|o| text(o, "label").to_string()))
+        .collect()
+}
+
+/// Proposal 6: the `addable` filter never offers what the viewer cannot read, on a kernel
+/// whose capability lacks that read. Alice holds no grant for the trail lens, so "Trail again"
+/// is not offered to her and is to Bob, who holds it. Readability is asked of the screen an
+/// entry would open, not of the selected IRI (denied to both, yet "Trail again" is Bob's). An
+/// `Exists` answering Ok with `false` is not readable; a saved screen with no source is not
+/// either; and a saved screen with one is, its `Exists` answered from its source's without a
+/// compile. Every check is an `Exists`: nothing offered is rendered to decide.
+#[test]
+fn the_addable_filter_never_offers_what_the_viewer_cannot_read() {
+    let (kernel, seen) = addable_host();
+    // The saved screen is a real one: it compiles when read.
+    let saved = block_on(kernel.issue(
+        Request::new(
+            Verb::Source,
+            Iri::parse("urn:iki:ui:screen:name:saved-question").unwrap(),
+        ),
+        &Capability::scoped(["urn:cap:test:read", ALICE]),
+    ))
+    .unwrap();
+    assert!(model::parse(&saved.bytes).is_ok());
+    seen.lock().unwrap().clear();
+    let alice = offered_to(&kernel, &["urn:cap:test:read", ALICE]);
+    assert_eq!(alice, ["Notes", "Saved"], "Alice may not read the trail");
+    let bob = offered_to(&kernel, &["urn:cap:test:read", BOB, TRAIL_READ]);
+    assert_eq!(bob, ["Trail again", "Notes", "Saved"]);
+
+    let seen = seen.lock().unwrap();
+    // The trail was asked of the screen it opens, by Exists, and never for Alice past the
+    // floor (her Exists was denied before the endpoint ran).
+    let trail = format!("urn:iki:ui:screen:name:lens:trail:resource:{SELECTED}");
+    assert!(
+        seen.iter()
+            .any(|(v, iri, w)| *v == Verb::Exists && *iri == trail && *w == "Bob"),
+        "{seen:?}"
+    );
+    assert!(
+        !seen
+            .iter()
+            .any(|(_, iri, w)| iri.contains(":lens:trail:") && *w == "Alice"),
+        "{seen:?}"
+    );
+    // The selected IRI is not what was asked.
+    assert!(!seen.iter().any(|(_, iri, _)| iri == SELECTED), "{seen:?}");
+    // No offered screen was read with Source to decide: only Exists, and the saved screen's
+    // source only by Exists (no compile).
+    for (verb, iri, _) in seen.iter() {
+        if iri.starts_with("urn:iki:ui:screen:name:") {
+            assert_eq!(*verb, Verb::Exists, "{iri} was read to decide: {seen:?}");
+        }
+    }
+    assert!(
+        seen.iter().any(|(v, iri, _)| *v == Verb::Exists
+            && iri == "urn:iki:ui:screen:name:saved-question:source"),
+        "{seen:?}"
+    );
+}
+
 /// The Layout form's hidden fields (`op`, `if-version`) are hidden inputs and nothing else: no
 /// visible `<label>`, no hint or note, so a sighted keyboard user and a screen reader meet no
 /// label without a control. The visible share fields keep theirs.
@@ -1263,12 +1467,18 @@ fn a_reorder_moves_a_tab_along_its_list() {
         let err = format!("{:?}", workspace::apply(&ws, &args(&all)).unwrap_err());
         assert!(err.contains(says), "{err}");
     }
+    // A close is an edit now (ledger #3953), refused here only for naming no pane.
     let err = format!(
         "{:?}",
         workspace::apply(&ws, &args(&[("op", "close")])).unwrap_err()
     );
+    assert!(err.contains("the edit has no `pane`"), "{err}");
+    let err = format!(
+        "{:?}",
+        workspace::apply(&ws, &args(&[("op", "split")])).unwrap_err()
+    );
     assert!(
-        err.contains("`close` is not an edit this workspace makes yet"),
+        err.contains("`split` is not an edit this workspace makes"),
         "{err}"
     );
 }
@@ -1311,14 +1521,19 @@ fn every_pane_has_a_pane_menu_of_edits() {
     };
     assert_eq!(
         forms(menu("Dashboard")),
-        ["Move Dashboard…", "Put Dashboard in tabs with…"]
+        [
+            "Move Dashboard…",
+            "Put Dashboard in tabs with…",
+            "Close Dashboard"
+        ]
     );
     assert_eq!(
         forms(menu("Item")),
         [
             "Move Item…",
             "Put Item in tabs with…",
-            "Move Item tab later"
+            "Move Item tab later",
+            "Close Item"
         ]
     );
     assert_eq!(
@@ -1326,7 +1541,8 @@ fn every_pane_has_a_pane_menu_of_edits() {
         [
             "Move Trail…",
             "Put Trail in tabs with…",
-            "Move Trail tab earlier"
+            "Move Trail tab earlier",
+            "Close Trail"
         ]
     );
     let item = menu("Item");
@@ -1381,7 +1597,7 @@ fn the_html_face_renders_the_pane_menu() {
     let html = face_html();
     assert!(
         html.contains(
-            r#"id="pane-session" aria-label="Session" data-ui-drop="left right above below tabs">"#
+            r#"id="pane-session" aria-label="Session" data-ui-drop="left right above below tabs" data-ui-collapsed="false">"#
         ),
         "{html}"
     );
